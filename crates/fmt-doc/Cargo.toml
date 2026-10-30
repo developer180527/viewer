@@ -1,0 +1,13 @@
+[package]
+name = "viewer-fmt-doc"
+description = "Text, source code and Markdown loaders."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+viewer-core.workspace = true
+anyhow.workspace = true
+memchr.workspace = true
+# fancy-regex instead of Oniguruma: no C dependency, builds on every target.
+syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }

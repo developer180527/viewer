@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.90"
+
+[workspace.dependencies]
+viewer-core = { path = "crates/core" }
+viewer-fmt-image = { path = "crates/fmt-image" }
+viewer-fmt-doc = { path = "crates/fmt-doc" }
+viewer-fmt-data = { path = "crates/fmt-data" }
+viewer-fmt-archive = { path = "crates/fmt-archive" }
+
+anyhow = "1"
+memmap2 = "0.9"
+memchr = "2"
+infer = "0.22"
+
+# Startup and size matter more than build time: see PLAN.md §7.
+[profile.release]
+lto = "fat"
+codegen-units = 1
+# No `panic = "abort"`: a panicking decoder must fall back to the next loader
+# (see Registry::open), not take the window down.
+strip = true
+
+# Decoders are unusably slow unoptimised; keep our own crates debuggable.
+[profile.dev.package."*"]
+opt-level = 2
