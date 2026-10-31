@@ -1,16 +1,20 @@
 //! The GPU side of a scene: what has been uploaded, and the instance batches to draw.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use rendererx_scene::glam::{Mat3, Vec3, Vec4};
-use rendererx_scene::{Aabb, CpuScene, Indices, MeshData, MeshId, ParamValue, SceneRead, Topology};
+use rendererx_scene::glam::{Mat3, Vec4};
+use rendererx_scene::{CpuScene, Indices, MeshData, MeshId, ParamValue, ReaderGuard, SceneRead, Topology};
 use wgpu::util::DeviceExt;
 
 /// Clay colour for nodes without a material colour, linear.
 const CLAY: Vec4 = Vec4::new(0.60, 0.57, 0.53, 1.0);
-/// Model matrix (4 × vec4), normal matrix (3 × vec4), colour (vec4).
+/// Model matrix (4 × vec4), normal matrix (3 × vec4; the first column's w is the
+/// mirror sign), colour (vec4).
 pub(crate) const INSTANCE_FLOATS: usize = 32;
+const INSTANCE_BYTES: u64 = INSTANCE_FLOATS as u64 * 4;
+const TOO_MANY_INSTANCES: &str = "too many placed meshes";
 
 static NEXT_ID: AtomicU64 = AtomicU64::new(1);
 
@@ -34,19 +38,38 @@ pub(crate) struct Batch {
 /// A [`CpuScene`] attached to a renderer. Uploads happen in [`Renderer::sync`](crate::Renderer::sync),
 /// a budget at a time, so a huge model never stalls a frame. Dropping it frees all its
 /// GPU memory.
+///
+/// Several `GpuScene`s may follow one `CpuScene` (one per device or renderer); CPU data
+/// is freed only once all of them have uploaded it. Attach them before the first sync:
+/// one attached later finds released meshes gone ([`unavailable_meshes`](Self::unavailable_meshes)).
+/// Views of one model on one renderer should share a single `GpuScene`.
 pub struct GpuScene {
     pub(crate) id: u64,
     pub(crate) scene: CpuScene,
+    _reader: ReaderGuard,
     pub(crate) meshes: Vec<Option<GpuMesh>>,
+    /// Meshes that can't be uploaded (over a device limit), by the revision that failed.
+    failed: HashMap<usize, u64>,
+    errors: Vec<(MeshId, String)>,
+    unavailable: usize,
     pub(crate) batches: Vec<Batch>,
     pub(crate) instances: Option<wgpu::Buffer>,
     /// Bumped whenever what a frame would draw changes.
     pub(crate) generation: u64,
     seen: u64,
     pending: bool,
-    bounds: Option<Aabb>,
+    bounds: Option<rendererx_scene::Aabb>,
     pub(crate) first_mesh_traced: bool,
     pub(crate) first_frame_traced: AtomicBool,
+}
+
+/// What one sync did.
+pub(crate) struct Synced {
+    /// Uploaded this time (for tracing).
+    pub uploaded: usize,
+    /// Meshes this scene is done with (uploaded or refused), whose CPU data may go.
+    pub done: Vec<MeshId>,
+    pub changed: bool,
 }
 
 impl GpuScene {
@@ -54,7 +77,11 @@ impl GpuScene {
         Self {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             scene: scene.clone(),
+            _reader: scene.add_reader(),
             meshes: Vec::new(),
+            failed: HashMap::new(),
+            errors: Vec::new(),
+            unavailable: 0,
             batches: Vec::new(),
             instances: None,
             generation: 0,
@@ -76,7 +103,7 @@ impl GpuScene {
     }
 
     /// The scene's bounds as of the last sync, for framing the camera.
-    pub fn bounds(&self) -> Option<Aabb> {
+    pub fn bounds(&self) -> Option<rendererx_scene::Aabb> {
         self.bounds
     }
 
@@ -86,48 +113,83 @@ impl GpuScene {
         meshes + self.instances.as_ref().map_or(0, |b| b.size())
     }
 
+    /// Meshes (and instances) the device refused, e.g. a buffer over its
+    /// `max_buffer_size`. They are skipped; the rest of the model still draws.
+    pub fn upload_errors(&self) -> &[(MeshId, String)] {
+        &self.errors
+    }
+
+    /// Meshes whose CPU data was already freed before this scene uploaded them (it was
+    /// attached too late). Zero in normal use.
+    pub fn unavailable_meshes(&self) -> usize {
+        self.unavailable
+    }
+
     /// Uploads what changed since the last call, up to `budget` bytes (at least one
-    /// mesh, so progress is always made). Returns the meshes it uploaded, so the caller
-    /// can release their CPU data, and whether anything visible changed.
-    pub(crate) fn sync(&mut self, device: &wgpu::Device, budget: u64) -> (Vec<MeshId>, bool) {
+    /// mesh, so progress is always made).
+    pub(crate) fn sync(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, budget: u64) -> Synced {
+        let mut out = Synced { uploaded: 0, done: Vec::new(), changed: false };
         if !self.needs_sync() {
-            return (Vec::new(), false);
+            return out;
         }
         let scene = self.scene.clone();
         let read = scene.read();
         let revision = read.revision();
-        let mut uploaded = Vec::new();
+        let limits = device.limits();
         let mut spent = 0u64;
+        let mut fresh = Vec::new();
         self.pending = false;
+        self.unavailable = 0;
         if self.meshes.len() < read.meshes().len() {
             self.meshes.resize_with(read.meshes().len(), || None);
         }
         for (i, entry) in read.meshes().iter().enumerate() {
-            let stale = self.meshes[i].as_ref().is_none_or(|m| m.revision < entry.changed);
-            let Some(data) = entry.data.as_ref().filter(|_| stale) else { continue };
+            let stale = self.meshes[i].as_ref().is_none_or(|m| m.revision < entry.changed)
+                && self.failed.get(&i).is_none_or(|&rev| rev < entry.changed);
+            if !stale {
+                continue;
+            }
+            let Some(data) = entry.data.as_ref() else {
+                self.unavailable += self.meshes[i].is_none() as usize;
+                continue;
+            };
             if spent > 0 && spent + entry.info.bytes > budget {
                 self.pending = true;
                 break;
             }
             spent += entry.info.bytes;
-            self.meshes[i] = upload_mesh(device, data, entry.info.elements as u32, entry.changed);
-            uploaded.push(MeshId(i as u32));
+            let id = MeshId(i as u32);
+            match upload_mesh(device, &limits, data, entry.info.elements, entry.changed) {
+                Ok(mesh) => {
+                    self.meshes[i] = mesh;
+                    out.uploaded += 1;
+                    fresh.push(id);
+                }
+                Err(e) => {
+                    self.failed.insert(i, entry.changed);
+                    self.errors.push((id, e));
+                }
+            }
+            out.done.push(id);
         }
 
         let nodes_changed = read.nodes().iter().any(|n| n.changed > self.seen) || read.materials().iter().any(|m| m.changed > self.seen);
-        let changed = !uploaded.is_empty() || nodes_changed;
-        if changed {
-            self.rebuild_instances(device, &read);
+        // A new mesh only changes the frame if some node places it.
+        let placed_fresh = !fresh.is_empty() && read.nodes().iter().any(|n| n.node.mesh.is_some_and(|m| fresh.contains(&m)));
+        out.changed = nodes_changed || placed_fresh;
+        if out.changed {
+            self.rebuild_instances(device, queue, &limits, &read);
             self.generation += 1;
         }
         self.bounds = read.bounds();
         self.seen = revision;
-        (uploaded, changed)
+        out
     }
 
     /// One instance per placed node whose mesh is on the GPU, grouped by mesh so each
-    /// mesh is one instanced draw.
-    fn rebuild_instances(&mut self, device: &wgpu::Device, read: &SceneRead<'_>) {
+    /// mesh is one instanced draw. The buffer is reused while it is big enough, so a
+    /// model streaming in doesn't allocate a new one every sync.
+    fn rebuild_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, limits: &wgpu::Limits, read: &SceneRead<'_>) {
         let world = read.world_transforms();
         let mut placed: Vec<(MeshId, usize)> = read
             .nodes()
@@ -137,21 +199,30 @@ impl GpuScene {
             .filter(|(m, _)| self.meshes.get(m.index()).is_some_and(Option::is_some))
             .collect();
         placed.sort_by_key(|(m, _)| *m);
+        let max = (limits.max_buffer_size / INSTANCE_BYTES) as usize;
+        // Replace, not append: this runs on every rebuild while a model streams in.
+        self.errors.retain(|(_, e)| !e.starts_with(TOO_MANY_INSTANCES));
+        if placed.len() > max {
+            self.errors.push((placed[max].0, format!("{TOO_MANY_INSTANCES}: {} placed, this device draws at most {max}", placed.len())));
+            placed.truncate(max);
+        }
 
         let mut data: Vec<[f32; INSTANCE_FLOATS]> = Vec::with_capacity(placed.len());
         self.batches.clear();
         for (mesh, node) in placed {
             let m = world[node];
-            let normal = {
-                let m3 = Mat3::from_mat4(m);
-                if m3.determinant().abs() > 1e-20 { m3.inverse().transpose() } else { Mat3::IDENTITY }
-            };
+            let m3 = Mat3::from_mat4(m);
+            let det = m3.determinant();
+            let normal = if det.abs() > 1e-20 { m3.inverse().transpose() } else { Mat3::IDENTITY };
             let color = read.nodes()[node].node.material.and_then(|id| read.material(id)).map_or(CLAY, |e| base_color(&e.material));
             let mut inst = [0f32; INSTANCE_FLOATS];
             inst[..16].copy_from_slice(&m.to_cols_array());
             for (c, col) in [normal.x_axis, normal.y_axis, normal.z_axis].iter().enumerate() {
                 inst[16 + c * 4..19 + c * 4].copy_from_slice(&col.to_array());
             }
+            // A mirrored transform flips triangle winding on screen; the shader uses
+            // this to keep "front" meaning the outside (glTF spec §3.7.4).
+            inst[19] = if det < 0.0 { -1.0 } else { 1.0 };
             inst[28..].copy_from_slice(&color.to_array());
 
             let index = data.len() as u32;
@@ -161,13 +232,25 @@ impl GpuScene {
             }
             data.push(inst);
         }
-        self.instances = (!data.is_empty()).then(|| {
-            device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("rendererx instances"),
-                contents: bytemuck::cast_slice(&data),
-                usage: wgpu::BufferUsages::VERTEX,
-            })
-        });
+        if data.is_empty() {
+            self.instances = None;
+            return;
+        }
+        let bytes: &[u8] = bytemuck::cast_slice(&data);
+        match &self.instances {
+            Some(buffer) if buffer.size() >= bytes.len() as u64 => queue.write_buffer(buffer, 0, bytes),
+            _ => {
+                let size = (bytes.len() as u64).next_power_of_two().min(limits.max_buffer_size);
+                let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+                    label: Some("rendererx instances"),
+                    size,
+                    usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                    mapped_at_creation: false,
+                });
+                queue.write_buffer(&buffer, 0, bytes);
+                self.instances = Some(buffer);
+            }
+        }
     }
 }
 
@@ -180,41 +263,50 @@ fn base_color(material: &rendererx_scene::Material) -> Vec4 {
     }
 }
 
-fn upload_mesh(device: &wgpu::Device, data: &MeshData, elements: u32, revision: u64) -> Option<GpuMesh> {
+/// `Ok(None)` for a mesh with nothing to draw; `Err` when a buffer would exceed what
+/// the device allows (wgpu would otherwise raise a validation error, which panics by
+/// default).
+fn upload_mesh(device: &wgpu::Device, limits: &wgpu::Limits, data: &MeshData, elements: usize, revision: u64) -> Result<Option<GpuMesh>, String> {
     if elements == 0 {
-        return None;
+        return Ok(None);
     }
+    let elements = u32::try_from(elements).map_err(|_| format!("{elements} elements don't fit one draw call"))?;
+    let positions = data.positions.as_slice();
+    // Triangle normals are generated when the mesh enters the scene; lines and points
+    // get zero normals, which the shader lights as facing the camera.
+    let zeros;
+    let normals: &[_] = match &data.normals {
+        Some(n) => n.as_slice(),
+        None => {
+            zeros = vec![rendererx_scene::glam::Vec3::ZERO; positions.len()];
+            &zeros
+        }
+    };
+    let colors = data.colors.as_ref().map(|c| c.as_slice());
+    let (index_bytes, format): (&[u8], _) = match &data.indices {
+        Indices::None => (&[], None),
+        Indices::U16(s) => (bytemuck::cast_slice(s.as_slice()), Some(wgpu::IndexFormat::Uint16)),
+        Indices::U32(s) => (bytemuck::cast_slice(s.as_slice()), Some(wgpu::IndexFormat::Uint32)),
+    };
+    let sizes = [
+        ("positions", size_of_val(positions)),
+        ("normals", size_of_val(normals)),
+        ("colors", colors.map_or(0, size_of_val)),
+        ("indices", index_bytes.len()),
+    ];
+    if let Some((what, size)) = sizes.iter().find(|(_, size)| *size as u64 > limits.max_buffer_size) {
+        return Err(format!("{what} need {size} bytes; this device's buffers hold at most {}", limits.max_buffer_size));
+    }
+
     let buffer = |label: &str, contents: &[u8], usage: wgpu::BufferUsages| {
         device.create_buffer_init(&wgpu::util::BufferInitDescriptor { label: Some(label), contents, usage })
     };
-    // Generated streams live only until the buffers below are created.
-    let generated = data.normals.is_none().then(|| generate_normals(data));
-    let (positions, normals, colors, indices) = match (&generated, &data.normals) {
-        (Some(g), _) => (&g.positions[..], &g.normals[..], g.colors.as_deref(), g.indices.as_deref().map_or(Ix::None, Ix::U32)),
-        (None, Some(n)) => (
-            data.positions.as_slice(),
-            n.as_slice(),
-            data.colors.as_ref().map(|c| c.as_slice()),
-            match &data.indices {
-                Indices::None => Ix::None,
-                Indices::U16(s) => Ix::U16(s.as_slice()),
-                Indices::U32(s) => Ix::U32(s.as_slice()),
-            },
-        ),
-        (None, None) => unreachable!("generated when normals are missing"),
-    };
     let vertex = wgpu::BufferUsages::VERTEX;
-    let index = wgpu::BufferUsages::INDEX;
-    let indices = match indices {
-        Ix::None => None,
-        Ix::U16(s) => Some((buffer("rendererx indices", bytemuck::cast_slice(s), index), wgpu::IndexFormat::Uint16)),
-        Ix::U32(s) => Some((buffer("rendererx indices", bytemuck::cast_slice(s), index), wgpu::IndexFormat::Uint32)),
-    };
     let mesh = GpuMesh {
         positions: buffer("rendererx positions", bytemuck::cast_slice(positions), vertex),
         normals: buffer("rendererx normals", bytemuck::cast_slice(normals), vertex),
         colors: colors.map(|c| buffer("rendererx colors", bytemuck::cast_slice(c), vertex)),
-        indices,
+        indices: format.map(|f| (buffer("rendererx indices", index_bytes, wgpu::BufferUsages::INDEX), f)),
         elements,
         topology: data.topology,
         bytes: 0,
@@ -224,148 +316,5 @@ fn upload_mesh(device: &wgpu::Device, data: &MeshData, elements: u32, revision: 
         + mesh.normals.size()
         + mesh.colors.as_ref().map_or(0, |b| b.size())
         + mesh.indices.as_ref().map_or(0, |(b, _)| b.size());
-    Some(GpuMesh { bytes, ..mesh })
-}
-
-enum Ix<'a> {
-    None,
-    U16(&'a [u16]),
-    U32(&'a [u32]),
-}
-
-struct Generated {
-    positions: Vec<Vec3>,
-    normals: Vec<Vec3>,
-    colors: Option<Vec<Vec4>>,
-    indices: Option<Vec<u32>>,
-}
-
-/// Faces meeting at more than this angle keep a hard edge (Blender's auto smooth).
-const HARD_EDGE_COS: f32 = 0.5; // cos 60°
-
-/// Normals for a mesh that has none. Triangles are smoothed across gentle edges and
-/// kept hard across sharp ones, so a scan looks smooth and a CAD part keeps its
-/// edges; vertices on a hard edge are split. Non-indexed meshes come out flat (no
-/// vertex is shared). Lines and points get zero normals, which the shader lights as
-/// facing the camera.
-fn generate_normals(data: &MeshData) -> Generated {
-    let positions = data.positions.as_slice();
-    let colors = data.colors.as_ref().map(|c| c.as_slice());
-    let indices: Option<Vec<u32>> = match &data.indices {
-        Indices::None => None,
-        Indices::U16(s) => Some(s.as_slice().iter().map(|&i| i as u32).collect()),
-        Indices::U32(s) => Some(s.as_slice().to_vec()),
-    };
-    let unchanged = |normals| Generated { positions: positions.to_vec(), normals, colors: colors.map(<[Vec4]>::to_vec), indices: indices.clone() };
-    if data.topology != Topology::Triangles {
-        return unchanged(vec![Vec3::ZERO; positions.len()]);
-    }
-    let face = |a: u32, b: u32, c: u32| {
-        let (pa, pb, pc) = (positions[a as usize], positions[b as usize], positions[c as usize]);
-        let n = (pb - pa).cross(pc - pa);
-        if n.is_finite() { n } else { Vec3::ZERO }
-    };
-    // Indices were range-checked by rendererx-scene.
-    let Some(indices) = indices.as_deref() else {
-        let mut normals = vec![Vec3::ZERO; positions.len()];
-        for t in 0..positions.len() / 3 {
-            let n = face(t as u32 * 3, t as u32 * 3 + 1, t as u32 * 3 + 2).normalize_or_zero();
-            normals[t * 3..t * 3 + 3].fill(n);
-        }
-        return unchanged(normals);
-    };
-
-    let tris = indices.len() / 3;
-    let faces: Vec<Vec3> = (0..tris).map(|t| face(indices[t * 3], indices[t * 3 + 1], indices[t * 3 + 2])).collect();
-    let units: Vec<Vec3> = faces.iter().map(|n| n.normalize_or_zero()).collect();
-    // Triangles around each vertex, as one flat list (CSR).
-    let mut start = vec![0u32; positions.len() + 1];
-    indices.iter().for_each(|&v| start[v as usize + 1] += 1);
-    (0..positions.len()).for_each(|v| start[v + 1] += start[v]);
-    let mut fill = start.clone();
-    let mut around = vec![0u32; indices.len()];
-    for (corner, &v) in indices.iter().enumerate() {
-        around[fill[v as usize] as usize] = (corner / 3) as u32;
-        fill[v as usize] += 1;
-    }
-
-    let mut out = Generated { positions: Vec::new(), normals: Vec::new(), colors: colors.map(|_| Vec::new()), indices: None };
-    let mut first = vec![u32::MAX; positions.len()];
-    let mut variants: std::collections::HashMap<(u32, [i32; 3]), u32> = Default::default();
-    let mut new_indices = Vec::with_capacity(indices.len());
-    for (corner, &v) in indices.iter().enumerate() {
-        let own = units[corner / 3];
-        let incident = &around[start[v as usize] as usize..start[v as usize + 1] as usize];
-        let n = incident
-            .iter()
-            .filter(|&&t| own == Vec3::ZERO || units[t as usize].dot(own) >= HARD_EDGE_COS)
-            .fold(Vec3::ZERO, |acc, &t| acc + faces[t as usize])
-            .normalize_or_zero();
-        let f = first[v as usize];
-        let reuse = if f != u32::MAX && out.normals[f as usize].dot(n) > 0.9999 {
-            Some(f)
-        } else {
-            variants.get(&(v, quantize(n))).copied()
-        };
-        let index = reuse.unwrap_or_else(|| {
-            let index = out.positions.len() as u32;
-            out.positions.push(positions[v as usize]);
-            out.normals.push(n);
-            if let (Some(out), Some(src)) = (&mut out.colors, colors) {
-                out.push(src[v as usize]);
-            }
-            if f == u32::MAX {
-                first[v as usize] = index;
-            } else {
-                variants.insert((v, quantize(n)), index);
-            }
-            index
-        });
-        new_indices.push(index);
-    }
-    out.indices = Some(new_indices);
-    out
-}
-
-fn quantize(n: Vec3) -> [i32; 3] {
-    (n * 4096.0).round().as_ivec3().to_array()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn indexed(positions: Vec<Vec3>, indices: Vec<u32>) -> MeshData {
-        MeshData::new(positions).with_indices(Indices::U32(indices.into()))
-    }
-
-    #[test]
-    fn hard_edges_split_vertices_and_flat_surfaces_share_them() {
-        // Two coplanar triangles: one smooth surface, nothing to split.
-        let quad = indexed(vec![Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::ONE.with_z(0.0)], vec![0, 1, 2, 2, 1, 3]);
-        let g = generate_normals(&quad);
-        assert_eq!(g.positions.len(), 4);
-        assert!(g.normals.iter().all(|n| (*n - Vec3::Z).length() < 1e-5));
-
-        // A 90° fold: the two shared vertices split, each side stays flat.
-        let fold = indexed(vec![Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::Z], vec![0, 1, 2, 1, 0, 3]);
-        let g = generate_normals(&fold);
-        assert_eq!(g.positions.len(), 6);
-        let idx = g.indices.unwrap();
-        assert!(g.normals[idx[0] as usize].dot(g.normals[idx[3] as usize]).abs() < 1e-5);
-
-        // A gentle bend (under 60°) is smoothed across: shared vertices stay shared.
-        let bend = indexed(vec![Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::new(0.5, -1.0, 0.3)], vec![0, 1, 2, 1, 0, 3]);
-        assert_eq!(generate_normals(&bend).positions.len(), 4);
-    }
-
-    #[test]
-    fn degenerate_triangles_and_lines_dont_produce_nan() {
-        let mut lines = MeshData::new(vec![Vec3::ZERO, Vec3::X]);
-        lines.topology = Topology::Lines;
-        assert_eq!(generate_normals(&lines).normals, vec![Vec3::ZERO; 2]);
-
-        let sliver = indexed(vec![Vec3::ZERO, Vec3::X, Vec3::X * 2.0], vec![0, 1, 2]);
-        assert!(generate_normals(&sliver).normals.iter().all(|n| n.is_finite()));
-    }
+    Ok(Some(GpuMesh { bytes, ..mesh }))
 }

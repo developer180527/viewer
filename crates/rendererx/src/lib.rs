@@ -23,7 +23,7 @@ mod camera;
 mod scene;
 mod view;
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub use camera::Camera;
 #[cfg(feature = "controls")]
@@ -34,7 +34,7 @@ pub use view::{TARGET_FORMAT, View, ViewDesc};
 
 use rendererx_scene::{CpuScene, Topology};
 use scene::INSTANCE_FLOATS;
-use view::{DEPTH_FORMAT, FrameKey, Targets, UNIFORM_BYTES};
+use view::{DEPTH_FORMAT, FrameKey, LINEAR_FORMAT, Targets, UNIFORM_BYTES};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Msaa {
@@ -88,9 +88,19 @@ pub struct Renderer {
     queue: wgpu::Queue,
     desc: RendererDesc,
     view_layout: wgpu::BindGroupLayout,
-    /// Clay pipelines by topology, without and with a vertex colour stream.
-    clay: [[wgpu::RenderPipeline; 2]; 3],
+    clay_layout: wgpu::PipelineLayout,
+    clay_module: wgpu::ShaderModule,
+    /// Clay pipelines by topology, without and with a vertex colour stream. Triangles
+    /// are compiled up front; lines and points on first use.
+    clay: [[OnceLock<wgpu::RenderPipeline>; 2]; 3],
+    /// The sRGB → target copy, when MSAA is on.
+    encode: Option<Encode>,
     trace: Option<Trace>,
+}
+
+struct Encode {
+    layout: wgpu::BindGroupLayout,
+    pipeline: wgpu::RenderPipeline,
 }
 
 impl Renderer {
@@ -118,10 +128,33 @@ impl Renderer {
             label: Some("rendererx clay"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shading/clay.wgsl").into()),
         });
-        let samples = desc.msaa.samples();
-        let pipeline = |topology: Topology, colors: bool| clay_pipeline(device, &layout, &module, samples, topology, colors);
-        let clay = [Topology::Triangles, Topology::Lines, Topology::Points].map(|t| [pipeline(t, false), pipeline(t, true)]);
-        Self { device: device.clone(), queue: queue.clone(), desc, view_layout, clay, trace: None }
+        let encode = (desc.msaa.samples() > 1).then(|| encode_pipeline(device));
+        let r = Self {
+            device: device.clone(),
+            queue: queue.clone(),
+            desc,
+            view_layout,
+            clay_layout: layout,
+            clay_module: module,
+            clay: Default::default(),
+            encode,
+            trace: None,
+        };
+        // The pipelines a typical model needs for its first frame.
+        r.pipeline(Topology::Triangles, false);
+        r.pipeline(Topology::Triangles, true);
+        r
+    }
+
+    fn pipeline(&self, topology: Topology, colors: bool) -> &wgpu::RenderPipeline {
+        let t = match topology {
+            Topology::Triangles => 0,
+            Topology::Lines => 1,
+            Topology::Points => 2,
+        };
+        self.clay[t][colors as usize].get_or_init(|| {
+            clay_pipeline(&self.device, &self.clay_layout, &self.clay_module, self.desc.msaa.samples(), topology, colors)
+        })
     }
 
     /// Receives milestones (`first mesh uploaded`, `first frame`) for startup tracing.
@@ -147,15 +180,15 @@ impl Renderer {
     /// them for editing). Returns true when the next frame would look different.
     /// Call once per tick while [`GpuScene::needs_sync`] is true.
     pub fn sync(&self, scene: &mut GpuScene) -> bool {
-        let (uploaded, changed) = scene.sync(&self.device, self.desc.upload_budget);
-        for id in &uploaded {
+        let synced = scene.sync(&self.device, &self.queue, self.desc.upload_budget);
+        for id in &synced.done {
             scene.scene.release_mesh_data(*id);
         }
-        if !uploaded.is_empty() && !scene.first_mesh_traced {
+        if synced.uploaded > 0 && !scene.first_mesh_traced {
             scene.first_mesh_traced = true;
             self.trace("first mesh uploaded");
         }
-        changed
+        synced.changed
     }
 
     pub fn create_view(&self, desc: ViewDesc) -> View {
@@ -203,10 +236,13 @@ impl Renderer {
 
         let targets = view.targets.as_ref().expect("created above");
         let [r, g, b, a] = options.background.map(|c| c as f64);
-        let (attachment, resolve) = match &targets.msaa {
-            Some(msaa) => (msaa, Some(&targets.color_view)),
-            None => (&targets.color_view, None),
+        // With MSAA the frame is drawn in linear light into an sRGB target, so the
+        // clear colour is decoded; without, the shader writes encoded bytes directly.
+        let (attachment, resolve, clear) = match &targets.msaa {
+            Some(msaa) => (&msaa.samples, Some(&msaa.resolve), [srgb_to_linear(r), srgb_to_linear(g), srgb_to_linear(b), a]),
+            None => (&targets.color_view, None, [r, g, b, a]),
         };
+        let [r, g, b, a] = clear;
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("rendererx frame"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
@@ -232,12 +268,7 @@ impl Renderer {
             pass.set_bind_group(0, &view.bind_group, &[]);
             for batch in &scene.batches {
                 let Some(mesh) = scene.meshes.get(batch.mesh.index()).and_then(Option::as_ref) else { continue };
-                let topology = match mesh.topology {
-                    Topology::Triangles => 0,
-                    Topology::Lines => 1,
-                    Topology::Points => 2,
-                };
-                pass.set_pipeline(&self.clay[topology][mesh.colors.is_some() as usize]);
+                pass.set_pipeline(self.pipeline(mesh.topology, mesh.colors.is_some()));
                 pass.set_vertex_buffer(0, mesh.positions.slice(..));
                 pass.set_vertex_buffer(1, mesh.normals.slice(..));
                 let instance_slot = match &mesh.colors {
@@ -258,6 +289,25 @@ impl Renderer {
             }
         }
         drop(pass);
+        if let (Some(msaa), Some(encode)) = (&targets.msaa, &self.encode) {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("rendererx encode"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &targets.color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    // Every pixel is overwritten.
+                    ops: wgpu::Operations { load: wgpu::LoadOp::Clear(wgpu::Color::TRANSPARENT), store: wgpu::StoreOp::Store },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&encode.pipeline);
+            pass.set_bind_group(0, &msaa.encode, &[]);
+            pass.draw(0..3, 0..1);
+        }
         view.last = Some(frame_key(scene, view, camera, options));
         if !scene.batches.is_empty() && !scene.first_frame_traced.swap(true, std::sync::atomic::Ordering::Relaxed) {
             self.trace("first frame");
@@ -286,16 +336,26 @@ impl Renderer {
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
         );
         let pixels = width as u64 * height as u64;
-        let msaa = (samples > 1).then(|| texture("rendererx msaa", TARGET_FORMAT, samples, wgpu::TextureUsages::RENDER_ATTACHMENT));
+        let msaa = self.encode.as_ref().filter(|_| samples > 1).map(|encode| {
+            let samples_tex = texture("rendererx msaa", LINEAR_FORMAT, samples, wgpu::TextureUsages::RENDER_ATTACHMENT);
+            let resolve_tex = texture(
+                "rendererx resolve",
+                LINEAR_FORMAT,
+                1,
+                wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
+            );
+            let resolve = resolve_tex.create_view(&Default::default());
+            let encode = self.device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("rendererx encode"),
+                layout: &encode.layout,
+                entries: &[wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(&resolve) }],
+            });
+            view::Msaa { samples: samples_tex.create_view(&Default::default()), resolve, encode }
+        });
         let depth = texture("rendererx depth", DEPTH_FORMAT, samples, wgpu::TextureUsages::RENDER_ATTACHMENT);
-        let bytes = pixels * 4 + pixels * 4 * samples as u64 * (msaa.is_some() as u64) + pixels * 4 * samples as u64;
-        Targets {
-            color_view: color.create_view(&Default::default()),
-            color,
-            msaa: msaa.map(|t| t.create_view(&Default::default())),
-            depth: depth.create_view(&Default::default()),
-            bytes,
-        }
+        // Target, depth, and with MSAA the sample and resolve textures.
+        let bytes = pixels * 4 + pixels * 4 * samples as u64 + msaa.as_ref().map_or(0, |_| pixels * 4 * (samples as u64 + 1));
+        Targets { color_view: color.create_view(&Default::default()), color, msaa, depth: depth.create_view(&Default::default()), bytes }
     }
 }
 
@@ -326,6 +386,8 @@ fn clay_pipeline(
         step_mode: wgpu::VertexStepMode::Instance,
         attributes: &INSTANCE,
     });
+    // With MSAA the frame is drawn linear into an sRGB target (resolved in linear light).
+    let (format, fs) = if samples > 1 { (LINEAR_FORMAT, "fs_linear") } else { (TARGET_FORMAT, "fs_main") };
     let buffers = if colors {
         vec![stream(12, &POSITIONS), stream(12, &NORMALS), stream(16, &COLORS), instance]
     } else {
@@ -360,11 +422,57 @@ fn clay_pipeline(
         multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
         fragment: Some(wgpu::FragmentState {
             module,
+            entry_point: Some(fs),
+            compilation_options: Default::default(),
+            targets: &[Some(wgpu::ColorTargetState { format, blend: None, write_mask: wgpu::ColorWrites::ALL })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    })
+}
+
+fn srgb_to_linear(c: f64) -> f64 {
+    if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+}
+
+fn encode_pipeline(device: &wgpu::Device) -> Encode {
+    let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+        label: Some("rendererx encode"),
+        entries: &[wgpu::BindGroupLayoutEntry {
+            binding: 0,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: false },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("rendererx encode"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("rendererx encode"),
+        source: wgpu::ShaderSource::Wgsl(include_str!("shading/encode.wgsl").into()),
+    });
+    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("rendererx encode"),
+        layout: Some(&pipeline_layout),
+        vertex: wgpu::VertexState { module: &module, entry_point: Some("vs_main"), compilation_options: Default::default(), buffers: &[] },
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        fragment: Some(wgpu::FragmentState {
+            module: &module,
             entry_point: Some("fs_main"),
             compilation_options: Default::default(),
             targets: &[Some(wgpu::ColorTargetState { format: TARGET_FORMAT, blend: None, write_mask: wgpu::ColorWrites::ALL })],
         }),
         multiview_mask: None,
         cache: None,
-    })
+    });
+    Encode { layout, pipeline }
 }

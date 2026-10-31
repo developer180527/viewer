@@ -50,11 +50,21 @@ impl Resolver for NoResolver {
     }
 }
 
-/// Resolves relative URIs against the model's folder. Absolute paths, other schemes
-/// and `..` are refused, so a file can't make the viewer read outside its folder.
-pub struct DirResolver(pub PathBuf);
+/// Resolves relative URIs against the model's folder. Absolute paths, other schemes,
+/// `..` and symlinks that lead out of the folder are refused, so a file can't make the
+/// viewer read outside its folder. Only regular files up to `max_bytes` are read (no
+/// FIFOs or devices that would block or never end).
+pub struct DirResolver {
+    pub dir: PathBuf,
+    pub max_bytes: u64,
+}
 
 impl DirResolver {
+    /// The default cap matches [`SceneLimits::max_bytes`](rendererx_scene::SceneLimits).
+    pub fn new(dir: impl Into<PathBuf>) -> Self {
+        Self { dir: dir.into(), max_bytes: rendererx_scene::SceneLimits::default().max_bytes }
+    }
+
     fn path(&self, uri: &str) -> Result<PathBuf, String> {
         if uri.contains(':') {
             return Err(format!("{uri:?}: only relative paths are allowed"));
@@ -63,14 +73,33 @@ impl DirResolver {
         if !rel.components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir)) {
             return Err(format!("{uri:?}: path leaves the model's folder"));
         }
-        Ok(self.0.join(rel))
+        let path = self.dir.join(rel);
+        // Follow symlinks, then check the real file is still inside the real folder.
+        let (real, root) = (path.canonicalize(), self.dir.canonicalize());
+        match (real, root) {
+            (Ok(real), Ok(root)) if real.starts_with(&root) => Ok(real),
+            (Ok(_), Ok(_)) => Err(format!("{uri:?}: path leaves the model's folder")),
+            (Err(e), _) | (_, Err(e)) => Err(format!("{}: {e}", path.display())),
+        }
     }
 }
 
 impl Resolver for DirResolver {
     fn resolve(&self, uri: &str) -> Result<Bytes, String> {
+        use std::io::Read;
         let path = self.path(uri)?;
-        std::fs::read(&path).map(|v| Arc::new(v) as Bytes).map_err(|e| format!("{}: {e}", path.display()))
+        let fail = |e: std::io::Error| format!("{}: {e}", path.display());
+        let meta = std::fs::metadata(&path).map_err(fail)?;
+        if !meta.is_file() {
+            return Err(format!("{}: not a regular file", path.display()));
+        }
+        if meta.len() > self.max_bytes {
+            return Err(format!("{}: {} bytes is over the {}-byte limit", path.display(), meta.len(), self.max_bytes));
+        }
+        // `take` also caps a file that grows after the size check.
+        let mut data = Vec::with_capacity(meta.len() as usize);
+        std::fs::File::open(&path).and_then(|f| f.take(self.max_bytes).read_to_end(&mut data)).map_err(fail)?;
+        Ok(Arc::new(data))
     }
 }
 
@@ -93,7 +122,7 @@ pub struct Loaded {
 const FATAL_EXTENSIONS: &[&str] = &["KHR_draco_mesh_compression", "EXT_meshopt_compression"];
 /// Extensions read here (or harmless to ignore when required).
 const KNOWN_EXTENSIONS: &[&str] =
-    &["KHR_materials_unlit", "KHR_mesh_quantization", "KHR_texture_basisu", "EXT_texture_webp", "EXT_texture_avif", "VRMC_materials_mtoon"];
+    &["KHR_materials_unlit", "KHR_mesh_quantization", "KHR_texture_basisu", "EXT_texture_webp", "EXT_texture_avif", "VRMC_materials_mtoon", "VRM"];
 
 /// Parses `file` into `builder` and finishes its geometry. `file` is kept alive by the
 /// scene for as long as borrowed streams point into it.
@@ -343,7 +372,6 @@ impl<'a> Loader<'a> {
         mesh.uvs = attr("TEXCOORD_0").map(|a| self.reader.vec2(a)).transpose()?;
         mesh.tangents = attr("TANGENT").map(|a| self.reader.vec4(a, 1.0)).transpose()?;
         mesh.colors = attr("COLOR_0").map(|a| self.reader.vec4(a, 1.0)).transpose()?;
-        mesh.bounds = self.reader.min_max(position).map(|(lo, hi)| Aabb::new(lo, hi));
         if let Some(i) = prim.indices {
             mesh.indices = self.reader.indices(i)?;
         }
@@ -378,7 +406,7 @@ impl<'a> Loader<'a> {
         let m = self.root().materials.get(index)?;
         let shading = if m.extensions.contains_key("KHR_materials_unlit") {
             ShadingId::UNLIT
-        } else if m.extensions.contains_key("VRMC_materials_mtoon") {
+        } else if m.extensions.contains_key("VRMC_materials_mtoon") || is_vrm0_mtoon(self.root(), m) {
             ShadingId::MTOON
         } else {
             ShadingId::PBR
@@ -461,6 +489,18 @@ impl<'a> Loader<'a> {
     }
 }
 
+/// VRM 0.x keeps MToon outside the material, in the root `VRM` extension's
+/// `materialProperties`, matched by material name.
+fn is_vrm0_mtoon(root: &json::Root, m: &json::Material) -> bool {
+    let Some(name) = m.name.as_deref() else { return false };
+    let props = root.extensions.get("VRM").and_then(|v| v.get("materialProperties")).and_then(|v| v.as_array());
+    props.is_some_and(|props| {
+        props.iter().any(|p| {
+            p.get("name").and_then(|n| n.as_str()) == Some(name) && p.get("shader").and_then(|s| s.as_str()) == Some("VRM/MToon")
+        })
+    })
+}
+
 fn node_transform(n: &json::Node) -> Mat4 {
     let m = match n.matrix {
         Some(m) => Mat4::from_cols_array(&m),
@@ -502,5 +542,7 @@ fn triangle_fan(v: &[u32]) -> Vec<u32> {
 
 /// The folder a `.gltf`'s relative URIs resolve against.
 pub fn resolver_for(path: &Path) -> DirResolver {
-    DirResolver(path.parent().map(Path::to_path_buf).unwrap_or_default())
+    let dir = path.parent().map(Path::to_path_buf).unwrap_or_default();
+    // `Path::parent` of a bare file name is "", which canonicalize refuses.
+    DirResolver::new(if dir.as_os_str().is_empty() { PathBuf::from(".") } else { dir })
 }

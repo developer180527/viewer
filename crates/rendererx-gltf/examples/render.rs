@@ -50,7 +50,7 @@ fn main() {
         return;
     };
     let mut view = r.create_view(rendererx::ViewDesc { width: size, height: size });
-    let camera = rendererx::Camera::framing(bounds);
+    let camera = rendererx::Camera::framing(bounds, 1.0);
     let mut encoder = device.create_command_encoder(&Default::default());
     r.render(&mut encoder, &gpu_scene, &mut view, &camera, &Default::default());
     queue.submit([encoder.finish()]);

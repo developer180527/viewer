@@ -13,6 +13,7 @@
 mod error;
 mod material;
 mod mesh;
+mod normals;
 mod scene;
 mod stream;
 mod texture;
@@ -22,8 +23,8 @@ pub use glam;
 pub use material::{AlphaMode, Material, ParamBlock, ParamValue, ShadingId, ShadingSource, Slot};
 pub use mesh::{Aabb, Indices, MeshData, MeshInfo, Topology};
 pub use scene::{
-    CpuScene, GeometryState, MaterialEntry, MaterialId, MeshEntry, MeshId, Node, NodeEntry, NodeId, SceneBuilder, SceneRead,
-    TextureEntry, TextureId, TextureSink,
+    CpuScene, GeometryState, MaterialEntry, MaterialId, MeshEntry, MeshId, Node, NodeEntry, NodeId, ReaderGuard, SceneBuilder,
+    SceneRead, TextureEntry, TextureId, TextureSink,
 };
 pub use stream::{Bytes, Stream};
 pub use texture::{ColorSpace, TextureData, TextureFormat, TextureInfo};

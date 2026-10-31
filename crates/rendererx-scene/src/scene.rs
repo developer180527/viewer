@@ -68,6 +68,8 @@ pub struct MeshEntry {
     /// `None` once released after upload (docs/3d-renderer.md §11.1).
     pub data: Option<MeshData>,
     pub changed: u64,
+    /// Readers that have uploaded this data; it is freed once every reader has.
+    pub uploads: u32,
 }
 
 #[derive(Debug)]
@@ -90,6 +92,8 @@ pub struct TextureEntry {
     pub info: Option<TextureInfo>,
     pub data: Option<TextureData>,
     pub changed: u64,
+    /// Readers that have uploaded this data; it is freed once every reader has.
+    pub uploads: u32,
 }
 
 #[derive(Debug)]
@@ -102,6 +106,8 @@ struct State {
     nodes: Vec<NodeEntry>,
     textures: Vec<TextureEntry>,
     keep_cpu_data: bool,
+    /// Live [`ReaderGuard`]s: renderers that upload this scene (one per `GpuScene`).
+    readers: u32,
     // Running totals checked against the limits. They count what arrived, not what is
     // still held, so releasing data can't be used to get past a limit.
     received_bytes: u64,
@@ -141,6 +147,7 @@ impl CpuScene {
             nodes: Vec::new(),
             textures: Vec::new(),
             keep_cpu_data: false,
+            readers: 0,
             received_bytes: 0,
             vertices: 0,
             primitives: 0,
@@ -181,19 +188,34 @@ impl CpuScene {
         self.lock().keep_cpu_data = keep;
     }
 
-    /// Frees a mesh's vertex data (after upload). Its [`MeshInfo`] stays. Returns false
-    /// when the scene keeps CPU data or there was nothing to free.
-    pub fn release_mesh_data(&self, id: MeshId) -> bool {
-        let mut s = self.lock();
-        let keep = s.keep_cpu_data;
-        s.meshes.get_mut(id.index()).is_some_and(|m| !keep && m.data.take().is_some())
+    /// Registers a reader that uploads this scene and then releases what it uploaded
+    /// (each `GpuScene` holds one). CPU data is freed only once every live reader has
+    /// uploaded it, so two windows showing one model both get it. A reader registered
+    /// after data was freed can't get it back: register before the first upload, or
+    /// keep CPU data.
+    pub fn add_reader(&self) -> ReaderGuard {
+        self.lock().readers += 1;
+        ReaderGuard(self.clone())
     }
 
-    /// Frees a texture's pixels (after upload). Its [`TextureInfo`] stays.
+    /// Records that one reader has uploaded a mesh, and frees its vertex data once every
+    /// reader has (its [`MeshInfo`] stays). Returns true when the data was freed.
+    /// Callers without a [`ReaderGuard`] count as the only reader.
+    pub fn release_mesh_data(&self, id: MeshId) -> bool {
+        let mut s = self.lock();
+        let (keep, readers) = (s.keep_cpu_data, s.readers.max(1));
+        let Some(m) = s.meshes.get_mut(id.index()).filter(|m| !keep && m.data.is_some()) else { return false };
+        m.uploads += 1;
+        m.uploads >= readers && m.data.take().is_some()
+    }
+
+    /// Like [`release_mesh_data`](Self::release_mesh_data), for a texture's pixels.
     pub fn release_texture_data(&self, id: TextureId) -> bool {
         let mut s = self.lock();
-        let keep = s.keep_cpu_data;
-        s.textures.get_mut(id.index()).is_some_and(|t| !keep && t.data.take().is_some())
+        let (keep, readers) = (s.keep_cpu_data, s.readers.max(1));
+        let Some(t) = s.textures.get_mut(id.index()).filter(|t| !keep && t.data.is_some()) else { return false };
+        t.uploads += 1;
+        t.uploads >= readers && t.data.take().is_some()
     }
 
     fn lock(&self) -> RwLockWriteGuard<'_, State> {
@@ -277,12 +299,19 @@ impl SceneRead<'_> {
         world
     }
 
-    /// Where the camera should look: the loader's bounds if it set them, otherwise the
-    /// world bounds of the placed meshes. `None` while there is nothing to frame.
+    /// Where the camera should look. While geometry is loading: the loader's early
+    /// bounds if it set them (so the camera doesn't jump as meshes arrive). Once it is
+    /// done: the measured world bounds of the placed meshes, since a file's stored
+    /// min/max can be wrong. `None` while there is nothing to frame.
     pub fn bounds(&self) -> Option<Aabb> {
-        if let Some(b) = self.0.bounds {
-            return Some(b);
+        let hint = self.0.bounds;
+        if self.0.geometry == GeometryState::Loading && hint.is_some() {
+            return hint;
         }
+        self.measured_bounds().or(hint)
+    }
+
+    fn measured_bounds(&self) -> Option<Aabb> {
         let world = self.world_transforms();
         let b = self.0.nodes.iter().zip(&world).fold(Aabb::EMPTY, |acc, (entry, m)| {
             match entry.node.mesh.and_then(|id| self.mesh(id)) {
@@ -317,9 +346,20 @@ impl SceneBuilder {
         })
     }
 
+    /// Validates the mesh and, for triangles without normals, generates them here on
+    /// the caller's (loader's) thread, so the renderer never has to.
     pub fn add_mesh(&mut self, data: MeshData) -> crate::Result<MeshId> {
-        // The index scan is the slow part; do it before taking the lock.
-        let info = data.validate(self.scene.limits())?;
+        // The index scan and normal generation are the slow parts; do them before taking
+        // the lock. Indices are range-checked before normals read through them.
+        let limits = self.scene.limits();
+        let mut info = data.validate(limits)?;
+        let data = if data.normals.is_none() && data.topology == crate::Topology::Triangles {
+            let data = crate::normals::generate(data);
+            info = data.validate(limits)?;
+            data
+        } else {
+            data
+        };
         self.scene.change(|s, limits, rev| {
             geometry_open(s)?;
             check("meshes", s.meshes.len() as u64 + 1, limits.max_meshes as u64)?;
@@ -329,7 +369,7 @@ impl SceneBuilder {
             s.vertices += info.vertices as u64;
             s.primitives += info.primitives;
             s.received_bytes += info.bytes;
-            s.meshes.push(MeshEntry { info, data: Some(data), changed: rev });
+            s.meshes.push(MeshEntry { info, data: Some(data), changed: rev, uploads: 0 });
             Ok(MeshId(s.meshes.len() as u32 - 1))
         })
     }
@@ -381,7 +421,7 @@ impl SceneBuilder {
     pub fn reserve_texture(&mut self) -> crate::Result<TextureId> {
         self.scene.change(|s, limits, rev| {
             check("textures", s.textures.len() as u64 + 1, limits.max_textures as u64)?;
-            s.textures.push(TextureEntry { info: None, data: None, changed: rev });
+            s.textures.push(TextureEntry { info: None, data: None, changed: rev, uploads: 0 });
             Ok(TextureId(s.textures.len() as u32 - 1))
         })
     }
@@ -418,6 +458,33 @@ impl Drop for SceneBuilder {
     }
 }
 
+/// A registered reader of a scene ([`CpuScene::add_reader`]). Dropping it unregisters,
+/// and frees data that every remaining reader has already uploaded.
+pub struct ReaderGuard(CpuScene);
+
+impl Drop for ReaderGuard {
+    fn drop(&mut self) {
+        let mut s = self.0.lock();
+        s.readers = s.readers.saturating_sub(1);
+        let (keep, readers) = (s.keep_cpu_data, s.readers);
+        if keep || readers == 0 {
+            return;
+        }
+        for m in s.meshes.iter_mut().filter(|m| m.uploads >= readers) {
+            m.data = None;
+        }
+        for t in s.textures.iter_mut().filter(|t| t.uploads >= readers) {
+            t.data = None;
+        }
+    }
+}
+
+impl std::fmt::Debug for ReaderGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("ReaderGuard")
+    }
+}
+
 /// Sets decoded textures on a scene, from any thread. Setting a texture again replaces
 /// it (a sharper version arriving after a preview).
 #[derive(Clone)]
@@ -429,7 +496,7 @@ impl TextureSink {
         self.0.change(|s, limits, rev| {
             check("scene bytes", s.received_bytes + info.bytes, limits.max_bytes)?;
             let entry = s.textures.get_mut(id.index()).ok_or(Error::UnknownId { kind: "texture", id: id.0 })?;
-            *entry = TextureEntry { info: Some(info), data: Some(data), changed: rev };
+            *entry = TextureEntry { info: Some(info), data: Some(data), changed: rev, uploads: 0 };
             s.received_bytes += info.bytes;
             Ok(())
         })

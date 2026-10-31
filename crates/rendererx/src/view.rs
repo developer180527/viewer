@@ -7,6 +7,8 @@ use crate::{Camera, RenderOptions};
 /// `Unorm` so the host samples the encoded bytes as-is (libgui's texture contract).
 pub const TARGET_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;
 pub(crate) const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
+/// What frames are drawn into with MSAA: sRGB, so samples are resolved in linear light.
+pub(crate) const LINEAR_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8UnormSrgb;
 pub(crate) const UNIFORM_BYTES: u64 = 24 * 4;
 
 #[derive(Debug, Clone, Copy)]
@@ -15,10 +17,18 @@ pub struct ViewDesc {
     pub height: u32,
 }
 
+pub(crate) struct Msaa {
+    /// Multisampled colour, drawn in linear light.
+    pub samples: wgpu::TextureView,
+    /// Single-sampled sRGB resolve, encoded into the target by a final pass.
+    pub resolve: wgpu::TextureView,
+    pub encode: wgpu::BindGroup,
+}
+
 pub(crate) struct Targets {
     pub color: wgpu::Texture,
     pub color_view: wgpu::TextureView,
-    pub msaa: Option<wgpu::TextureView>,
+    pub msaa: Option<Msaa>,
     pub depth: wgpu::TextureView,
     pub bytes: u64,
 }

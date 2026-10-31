@@ -50,9 +50,8 @@ fn mesh_validation_rejects_what_the_gpu_would_trust() {
     short_normals.normals = Some(vec![Vec3::Z].into());
     assert!(matches!(short_normals.validate(&limits), Err(Error::StreamLength { stream: "normals", .. })));
 
-    // NaN positions don't poison the bounds; bogus file bounds are recomputed.
-    let mut nan = MeshData::new(vec![Vec3::ZERO, Vec3::NAN, Vec3::ONE]);
-    nan.bounds = Some(Aabb::new(Vec3::ONE, Vec3::ZERO));
+    // NaN positions don't poison the bounds.
+    let nan = MeshData::new(vec![Vec3::ZERO, Vec3::NAN, Vec3::ONE]);
     assert_eq!(nan.validate(&limits).unwrap().bounds, Aabb::new(Vec3::ZERO, Vec3::ONE));
 }
 
@@ -125,8 +124,12 @@ fn bounds_come_from_the_loader_or_the_placed_meshes() {
     b.add_node(Node::mesh(m, None, Mat4::from_scale(Vec3::splat(2.0)), Some(parent))).unwrap();
     assert_eq!(scene.read().bounds(), Some(Aabb::new(Vec3::new(10.0, 0.0, 0.0), Vec3::new(12.0, 2.0, 0.0))));
 
+    // The loader's early bounds win while loading, so the camera doesn't jump…
     b.set_bounds(Aabb::new(Vec3::splat(-1.0), Vec3::splat(1.0))).unwrap();
     assert_eq!(scene.read().bounds(), Some(Aabb::new(Vec3::splat(-1.0), Vec3::splat(1.0))));
+    // …but once geometry is done the measured bounds replace a wrong file hint.
+    b.finish();
+    assert_eq!(scene.read().bounds(), Some(Aabb::new(Vec3::new(10.0, 0.0, 0.0), Vec3::new(12.0, 2.0, 0.0))));
 }
 
 #[test]
@@ -164,7 +167,7 @@ fn cpu_data_is_released_after_upload_unless_kept() {
     let (scene, mut b) = CpuScene::new();
     let m = b.add_mesh(quad_indexed()).unwrap();
     let held = scene.read().cpu_bytes();
-    assert_eq!(held, 4 * 12 + 6 * 2);
+    assert_eq!(held, 4 * 12 + 4 * 12 + 6 * 2, "positions, generated normals, u16 indices");
 
     scene.set_keep_cpu_data(true);
     assert!(!scene.release_mesh_data(m));
@@ -178,6 +181,35 @@ fn cpu_data_is_released_after_upload_unless_kept() {
 }
 
 #[test]
+fn shared_scenes_free_data_only_after_every_reader_uploaded() {
+    let (scene, mut b) = CpuScene::new();
+    let m = b.add_mesh(quad_indexed()).unwrap();
+    let (first, second) = (scene.add_reader(), scene.add_reader());
+    assert!(!scene.release_mesh_data(m), "one of two readers uploaded: keep it");
+    assert!(scene.read().mesh(m).unwrap().data.is_some());
+    assert!(scene.release_mesh_data(m), "both uploaded: free it");
+    drop((first, second));
+
+    // A reader that goes away without uploading doesn't keep the data alive forever.
+    let m = b.add_mesh(quad_indexed()).unwrap();
+    let (first, second) = (scene.add_reader(), scene.add_reader());
+    assert!(!scene.release_mesh_data(m));
+    drop(second);
+    assert!(scene.read().mesh(m).unwrap().data.is_none());
+    drop(first);
+}
+
+#[test]
+fn normals_are_generated_when_a_mesh_is_added() {
+    let (scene, mut b) = CpuScene::new();
+    let m = b.add_mesh(quad_indexed()).unwrap();
+    let read = scene.read();
+    let data = read.mesh(m).unwrap().data.as_ref().unwrap();
+    assert_eq!(data.normals.as_ref().unwrap().len(), 4);
+    assert!(matches!(data.indices, Indices::U16(_)), "index width kept");
+}
+
+#[test]
 fn texture_levels_and_compressed_sizes_are_checked() {
     let limits = SceneLimits::default();
     let mut t = TextureData::rgba8(4, 2, ColorSpace::Linear, vec![0u8; 32]);
@@ -187,9 +219,16 @@ fn texture_levels_and_compressed_sizes_are_checked() {
     t.levels.push(vec![0u8; 4].into());
     assert_eq!(t.validate(&limits), Err(Error::BadTexture("level count")));
 
-    // BC1: 4×4 blocks of 8 bytes; a 5×5 image needs 2×2 blocks.
-    let bc1 = TextureData { width: 5, height: 5, format: TextureFormat::Bc1, color_space: ColorSpace::Srgb, levels: vec![vec![0u8; 32].into()] };
-    assert!(bc1.validate(&limits).is_ok());
+    // BC1: 4×4 blocks of 8 bytes. Level 0 must be whole blocks; smaller mips round up.
+    let bc1 = |w, h, levels: Vec<usize>| TextureData {
+        width: w,
+        height: h,
+        format: TextureFormat::Bc1,
+        color_space: ColorSpace::Srgb,
+        levels: levels.into_iter().map(|n| vec![0u8; n].into()).collect(),
+    };
+    assert!(bc1(8, 4, vec![16, 8, 8, 8]).validate(&limits).is_ok());
+    assert!(matches!(bc1(5, 5, vec![32]).validate(&limits), Err(Error::BadTexture(_))), "wgpu would reject 5×5 BC1");
 
     let huge = TextureData::rgba8(1 << 15, 1, ColorSpace::Srgb, Vec::<u8>::new());
     assert!(matches!(huge.validate(&limits), Err(Error::LimitExceeded { what: "texture side", .. })));

@@ -62,7 +62,7 @@ fn clay_cube_renders_shaded_on_the_background() {
     let mut gpu_scene = r.attach(&scene);
     assert!(r.sync(&mut gpu_scene));
     let mut view = r.create_view(ViewDesc { width: 64, height: 64 });
-    let camera = Camera::framing(gpu_scene.bounds().unwrap());
+    let camera = Camera::framing(gpu_scene.bounds().unwrap(), 1.0);
 
     let pixels = render_once(&r, &device, &queue, &gpu_scene, &mut view, &camera);
     let bg = px(&pixels, 64, 0, 0);
@@ -92,7 +92,7 @@ fn an_idle_view_renders_nothing_until_something_changes() {
     let mut gpu_scene = r.attach(&scene);
     r.sync(&mut gpu_scene);
     let mut view = r.create_view(ViewDesc { width: 32, height: 32 });
-    let camera = Camera::framing(gpu_scene.bounds().unwrap());
+    let camera = Camera::framing(gpu_scene.bounds().unwrap(), 1.0);
     let opts = RenderOptions::default();
 
     assert!(r.needs_redraw(&gpu_scene, &view, &camera, &opts));
@@ -131,10 +131,10 @@ fn memory_follows_the_rules() {
     // A view holds window-sized targets only while it has them.
     let mut view = r.create_view(ViewDesc { width: 100, height: 50 });
     let empty = view.gpu_bytes();
-    render_once(&r, &device, &queue, &gpu_scene, &mut view, &Camera::framing(gpu_scene.bounds().unwrap()));
+    render_once(&r, &device, &queue, &gpu_scene, &mut view, &Camera::framing(gpu_scene.bounds().unwrap(), 2.0));
     let full = view.gpu_bytes();
-    // Colour + 4× MSAA colour + 4× depth, 4 bytes each.
-    assert_eq!(full - empty, 100 * 50 * 4 * 9);
+    // Target + 4× depth + 4× MSAA colour + its resolve, 4 bytes each.
+    assert_eq!(full - empty, 100 * 50 * 4 * 10);
     view.release_targets();
     assert_eq!(view.gpu_bytes(), empty);
     assert!(view.target().is_none());
@@ -145,6 +145,89 @@ fn memory_follows_the_rules() {
     let mut kept = r.attach(&scene);
     r.sync(&mut kept);
     assert!(scene.read().cpu_bytes() > 0);
+}
+
+fn quad(transform: Mat4) -> CpuScene {
+    let (scene, mut b) = CpuScene::new();
+    let mut m = MeshData::new(vec![Vec3::new(-1.0, -1.0, 0.0), Vec3::new(1.0, -1.0, 0.0), Vec3::new(1.0, 1.0, 0.0), Vec3::new(-1.0, 1.0, 0.0)])
+        .with_indices(Indices::U16(vec![0, 1, 2, 0, 2, 3].into()));
+    m.normals = Some(vec![Vec3::Z; 4].into());
+    let mesh = b.add_mesh(m).unwrap();
+    b.add_node(Node::mesh(mesh, None, transform, None)).unwrap();
+    b.finish();
+    scene
+}
+
+fn centre_of(r: &Renderer, device: &wgpu::Device, queue: &wgpu::Queue, scene: &GpuScene) -> [u8; 4] {
+    let mut view = r.create_view(ViewDesc { width: 32, height: 32 });
+    let camera = Camera { eye: Vec3::new(0.0, 0.0, 4.0), ..Default::default() };
+    px(&render_once(r, device, queue, scene, &mut view, &camera), 32, 16, 16)
+}
+
+#[test]
+fn mirrored_nodes_are_lit_like_the_original() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let shade = |m: Mat4| {
+        let mut g = r.attach(&quad(m));
+        r.sync(&mut g);
+        centre_of(&r, &device, &queue, &g)
+    };
+    let plain = shade(Mat4::IDENTITY);
+    assert_eq!(shade(Mat4::from_scale(Vec3::new(-1.0, 1.0, 1.0))), plain, "a mirrored copy isn't shaded inside-out");
+}
+
+#[test]
+fn two_gpu_scenes_of_one_model_both_draw_it() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let scene = quad(Mat4::IDENTITY);
+    let (mut first, mut second) = (r.attach(&scene), r.attach(&scene));
+    r.sync(&mut first);
+    assert!(scene.read().cpu_bytes() > 0, "kept until the second scene uploads too");
+    r.sync(&mut second);
+    assert_eq!(scene.read().cpu_bytes(), 0);
+    assert_eq!(centre_of(&r, &device, &queue, &first), centre_of(&r, &device, &queue, &second));
+    assert_eq!(second.unavailable_meshes(), 0);
+}
+
+#[test]
+fn meshes_over_the_device_buffer_limit_are_refused_not_a_panic() {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else { return };
+    let desc = wgpu::DeviceDescriptor {
+        required_limits: wgpu::Limits { max_buffer_size: 1024, ..wgpu::Limits::downlevel_defaults() },
+        ..Default::default()
+    };
+    let (device, queue) = pollster::block_on(adapter.request_device(&desc)).unwrap();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let (scene, mut b) = CpuScene::new();
+    let big = b.add_mesh(MeshData::new(vec![Vec3::ZERO; 300])).unwrap(); // 3600-byte positions
+    b.add_node(Node::mesh(big, None, Mat4::IDENTITY, None)).unwrap();
+    let small = b.add_mesh(cube()).unwrap();
+    b.add_node(Node::mesh(small, None, Mat4::IDENTITY, None)).unwrap();
+    b.finish();
+    let mut g = r.attach(&scene);
+    while g.needs_sync() {
+        r.sync(&mut g);
+    }
+    assert_eq!(g.upload_errors().len(), 1);
+    assert_eq!(g.upload_errors()[0].0, big);
+    assert!(g.gpu_bytes() > 0, "the rest of the model still uploads");
+}
+
+#[test]
+fn framing_fits_portrait_views() {
+    let bounds = Aabb::new(Vec3::splat(-1.0), Vec3::splat(1.0));
+    for aspect in [9.0 / 19.5, 1.0, 2.0] {
+        let cam = Camera::framing(bounds, aspect);
+        let vp = cam.view_proj(aspect);
+        for i in 0..8 {
+            let p = Vec3::new((i & 1) as f32, ((i >> 1) & 1) as f32, ((i >> 2) & 1) as f32) * 2.0 - 1.0;
+            let c = vp * p.extend(1.0);
+            assert!((c.x / c.w).abs() <= 1.0 && (c.y / c.w).abs() <= 1.0, "aspect {aspect}: corner {p} is cut off");
+        }
+    }
 }
 
 #[test]
@@ -194,7 +277,7 @@ fn one_scene_many_views_and_every_topology() {
 
     let mut gpu_scene = r.attach(&scene);
     r.sync(&mut gpu_scene);
-    let camera = Camera::framing(gpu_scene.bounds().unwrap());
+    let camera = Camera::framing(gpu_scene.bounds().unwrap(), 1.0);
     let mut a = r.create_view(ViewDesc { width: 48, height: 48 });
     let mut c = r.create_view(ViewDesc { width: 80, height: 40 });
     let pa = render_once(&r, &device, &queue, &gpu_scene, &mut a, &camera);
@@ -212,9 +295,9 @@ fn one_scene_many_views_and_every_topology() {
 #[test]
 fn orbit_controls_keep_the_model_in_view() {
     let bounds = Aabb::new(Vec3::splat(-1.0), Vec3::splat(1.0));
-    let mut c = OrbitControls::framing(bounds);
+    let mut c = OrbitControls::framing(bounds, 1.0);
     let start = c.camera();
-    assert!((start.eye - Camera::framing(bounds).eye).length() < 1e-4);
+    assert!((start.eye - Camera::framing(bounds, 1.0).eye).length() < 1e-4);
 
     c.orbit(10_000.0, 10_000.0, 100.0);
     assert!(c.pitch <= 1.55, "pitch is clamped short of the pole");

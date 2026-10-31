@@ -21,6 +21,7 @@ pub struct Root {
     pub textures: Vec<Texture>,
     pub images: Vec<Image>,
     pub extensions_required: Vec<String>,
+    pub extensions: Map<String, Value>,
 }
 
 #[derive(Deserialize, Default)]

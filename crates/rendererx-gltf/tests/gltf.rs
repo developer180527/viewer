@@ -48,23 +48,29 @@ const CUBE_INDICES: [u16; 36] = [
 fn cube_glb(nodes: serde_json::Value, scene_nodes: serde_json::Value, material: serde_json::Value) -> Bytes {
     let mut bin = bytemuck::cast_slice::<_, u8>(&CUBE_POSITIONS).to_vec();
     bin.extend_from_slice(bytemuck::cast_slice(&CUBE_INDICES));
+    // Corner normals, so the streams stay borrowed (a mesh without normals gets them
+    // generated, which splits the cube's hard edges into copied streams).
+    let normals: Vec<[f32; 3]> = CUBE_POSITIONS.iter().map(|p| Vec3::from(*p).normalize().to_array()).collect();
+    bin.extend_from_slice(bytemuck::cast_slice(&normals));
     glb(
         json!({
             "asset": {"version": "2.0"},
             "scene": 0,
             "scenes": [{"nodes": scene_nodes}],
             "nodes": nodes,
-            "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "indices": 1, "material": 0}]}],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "NORMAL": 2}, "indices": 1, "material": 0}]}],
             "materials": [material],
             "accessors": [
                 {"bufferView": 0, "componentType": 5126, "count": 8, "type": "VEC3", "min": [-0.5, -0.5, -0.5], "max": [0.5, 0.5, 0.5]},
-                {"bufferView": 1, "componentType": 5123, "count": 36, "type": "SCALAR"}
+                {"bufferView": 1, "componentType": 5123, "count": 36, "type": "SCALAR"},
+                {"bufferView": 2, "componentType": 5126, "count": 8, "type": "VEC3"}
             ],
             "bufferViews": [
                 {"buffer": 0, "byteOffset": 0, "byteLength": 96},
-                {"buffer": 0, "byteOffset": 96, "byteLength": 72}
+                {"buffer": 0, "byteOffset": 96, "byteLength": 72},
+                {"buffer": 0, "byteOffset": 168, "byteLength": 96}
             ],
-            "buffers": [{"byteLength": 168}]
+            "buffers": [{"byteLength": 264}]
         }),
         &bin,
     )
@@ -85,6 +91,7 @@ fn glb_streams_are_borrowed_from_the_file_and_bounds_come_first() {
     assert_eq!(read.geometry(), GeometryState::Done);
     let mesh = read.mesh(MeshId(0)).unwrap().data.as_ref().unwrap();
     assert!(mesh.positions.is_borrowed(), "positions point into the GLB");
+    assert!(mesh.normals.as_ref().is_some_and(|n| n.is_borrowed()));
     assert!(matches!(&mesh.indices, Indices::U16(s) if s.is_borrowed()));
     assert_eq!(read.bounds(), Some(Aabb::new(Vec3::new(9.0, -1.0, -1.0), Vec3::new(11.0, 1.0, 1.0))));
 
@@ -183,6 +190,24 @@ fn hostile_files_fail_cleanly_or_load_what_they_can() {
     let loaded = load(file, &NoResolver, &mut b).unwrap();
     assert!(loaded.warnings.iter().any(|w| w.contains("runs past")), "{:?}", loaded.warnings);
 
+    // Sparse indices of a signed type (spec: unsigned only), right at the end of the
+    // buffer: a warning, not an out-of-bounds read.
+    let mut buf: Vec<u8> = bytemuck::cast_slice(&[0f32, 0., 0., 1., 0., 0., 0., 1., 0., 5., 5., 5.]).to_vec();
+    buf.push(0);
+    let uri = format!("data:application/octet-stream;base64,{}", base64::engine::general_purpose::STANDARD.encode(&buf));
+    let file = text(json!({
+        "asset": {"version": "2.0"},
+        "nodes": [{"mesh": 0}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}}]}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3",
+            "sparse": {"count": 1, "indices": {"bufferView": 2, "componentType": 5120}, "values": {"bufferView": 1}}}],
+        "bufferViews": [{"buffer": 0, "byteLength": 36}, {"buffer": 0, "byteOffset": 36, "byteLength": 12}, {"buffer": 0, "byteOffset": 48, "byteLength": 1}],
+        "buffers": [{"byteLength": 49, "uri": uri}]
+    }));
+    let (_s, mut b) = CpuScene::new();
+    let loaded = load(file, &NoResolver, &mut b).unwrap();
+    assert!(loaded.warnings.iter().any(|w| w.contains("sparse indices")), "{:?}", loaded.warnings);
+
     // Compressed geometry can't be read: refused up front.
     let draco = text(json!({"asset": {"version": "2.0"}, "extensionsRequired": ["KHR_draco_mesh_compression"]}));
     let (_s, mut b) = CpuScene::new();
@@ -198,6 +223,24 @@ fn hostile_files_fail_cleanly_or_load_what_they_can() {
 }
 
 #[test]
+fn vrm0_mtoon_materials_are_toon() {
+    let file = cube_glb(json!([{"mesh": 0}]), json!([0]), json!({"name": "Skin"}));
+    // Re-wrap with the root VRM 0.x extension naming the material's shader.
+    let mut bytes = (*file).as_ref().to_vec();
+    let len = u32::from_le_bytes(bytes[12..16].try_into().unwrap()) as usize;
+    let mut root: serde_json::Value = serde_json::from_slice(&bytes[20..20 + len]).unwrap();
+    root["extensions"] = json!({"VRM": {"materialProperties": [{"name": "Skin", "shader": "VRM/MToon"}]}});
+    let bin_at = 20 + len;
+    let bin_len = u32::from_le_bytes(bytes[bin_at..bin_at + 4].try_into().unwrap()) as usize;
+    let bin = bytes.split_off(bin_at + 8);
+    let file = glb(root, &bin[..bin_len]);
+
+    let (scene, mut b) = CpuScene::new();
+    load(file, &NoResolver, &mut b).unwrap();
+    assert_eq!(scene.read().materials()[0].material.shading, ShadingId::MTOON);
+}
+
+#[test]
 fn external_files_stay_inside_the_models_folder() {
     let dir = std::env::temp_dir().join(format!("rendererx-gltf-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -207,6 +250,18 @@ fn external_files_stay_inside_the_models_folder() {
     for uri in ["../secret.bin", "/etc/passwd", "file:///etc/passwd", "https://example.com/x.bin", "sub/../../x"] {
         assert!(r.resolve(uri).is_err(), "{uri} should be refused");
     }
+    #[cfg(unix)]
+    {
+        // A symlink inside the folder that points out of it.
+        std::os::unix::fs::symlink("/etc/hosts", dir.join("link.bin")).unwrap();
+        assert!(r.resolve("link.bin").err().unwrap().contains("leaves"), "symlinks can't escape");
+        // Not a regular file: refused instead of blocking on read.
+        std::fs::create_dir(dir.join("sub")).unwrap();
+        assert!(r.resolve("sub").err().unwrap().contains("not a regular file"));
+    }
+    let mut capped = resolver_for(&dir.join("model.gltf"));
+    capped.max_bytes = 2;
+    assert!(capped.resolve("a%20b.bin").err().unwrap().contains("limit"));
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -227,7 +282,7 @@ fn loaded_model_renders_in_its_material_colour() {
     let mut gpu_scene = r.attach(&scene);
     r.sync(&mut gpu_scene);
     let mut view = r.create_view(rendererx::ViewDesc { width: 64, height: 64 });
-    let camera = rendererx::Camera::framing(gpu_scene.bounds().unwrap());
+    let camera = rendererx::Camera::framing(gpu_scene.bounds().unwrap(), 1.0);
     let mut encoder = device.create_command_encoder(&Default::default());
     r.render(&mut encoder, &gpu_scene, &mut view, &camera, &Default::default());
     queue.submit([encoder.finish()]);

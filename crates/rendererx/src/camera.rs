@@ -23,21 +23,30 @@ impl Default for Camera {
 
 impl Camera {
     /// Looks at `bounds` from the front, a little above and to the right, at a distance
-    /// where the whole box fits for any aspect ratio.
-    pub fn framing(bounds: Aabb) -> Self {
+    /// where the whole box fits a view of `aspect` (width / height). Portrait views
+    /// (phones) fit the narrower horizontal field of view. Reframe after a big resize.
+    pub fn framing(bounds: Aabb, aspect: f32) -> Self {
         let dir = Vec3::new(0.45, 0.35, 1.0).normalize();
-        Self::default().framed(bounds, dir)
+        Self::default().framed(bounds, dir, aspect)
     }
 
-    /// The same camera moved along `dir` (from target to eye) to fit `bounds`.
-    pub fn framed(self, bounds: Aabb, dir: Vec3) -> Self {
+    /// The same camera moved along `dir` (from target to eye) to fit `bounds` in a view
+    /// of `aspect` (width / height).
+    pub fn framed(self, bounds: Aabb, dir: Vec3, aspect: f32) -> Self {
         if !bounds.is_valid() {
             return self;
         }
         let radius = (bounds.size().length() * 0.5).max(1e-4);
-        let distance = radius / (self.fov_y * 0.5).sin().min(1.0);
+        let distance = radius / (self.narrowest_fov(aspect) * 0.5).sin().min(1.0);
         let target = bounds.center();
         Self { eye: target + dir.normalize_or(Vec3::Z) * distance, target, near: distance * 0.01, far: distance + radius * 2.0, ..self }
+    }
+
+    /// The smaller of the vertical and horizontal fields of view, radians.
+    pub fn narrowest_fov(&self, aspect: f32) -> f32 {
+        let fov_y = self.fov_y.clamp(1e-3, std::f32::consts::PI - 1e-3);
+        let fov_x = 2.0 * ((fov_y * 0.5).tan() * aspect.max(1e-4)).atan();
+        fov_y.min(fov_x)
     }
 
     pub fn view_proj(&self, aspect: f32) -> Mat4 {
@@ -78,8 +87,9 @@ pub struct OrbitControls {
 impl OrbitControls {
     const MAX_PITCH: f32 = 1.55;
 
-    pub fn framing(bounds: Aabb) -> Self {
-        let cam = Camera::framing(bounds);
+    /// See [`Camera::framing`].
+    pub fn framing(bounds: Aabb, aspect: f32) -> Self {
+        let cam = Camera::framing(bounds, aspect);
         let offset = cam.eye - cam.target;
         let radius = if bounds.is_valid() { (bounds.size().length() * 0.5).max(1e-4) } else { 1.0 };
         Self {

@@ -77,6 +77,11 @@ impl TextureData {
             return Err(Error::BadTexture("zero size"));
         }
         check("texture side", self.width.max(self.height) as u64, limits.max_texture_side as u64)?;
+        // GPUs (and wgpu's validation) require block-compressed level 0 to be whole blocks.
+        let side = self.format.block().0;
+        if !self.width.is_multiple_of(side) || !self.height.is_multiple_of(side) {
+            return Err(Error::BadTexture("block-compressed size isn't a multiple of the block size"));
+        }
         let full_chain = 32 - self.width.max(self.height).leading_zeros();
         if self.levels.is_empty() || self.levels.len() > full_chain as usize {
             return Err(Error::BadTexture("level count"));

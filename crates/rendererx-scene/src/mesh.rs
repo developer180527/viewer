@@ -89,8 +89,8 @@ impl Aabb {
     }
 }
 
-/// One mesh's vertex streams. Optional streams the renderer needs (normals, tangents)
-/// are generated on upload when missing.
+/// One mesh's vertex streams. Missing triangle normals are generated when the mesh is
+/// added to a scene (on the loader's thread); tangents will be generated on upload.
 #[derive(Debug, Clone)]
 pub struct MeshData {
     pub positions: Stream<Vec3>,
@@ -100,8 +100,6 @@ pub struct MeshData {
     pub colors: Option<Stream<Vec4>>,
     pub indices: Indices,
     pub topology: Topology,
-    /// From the file (glTF accessors carry min/max). Recomputed when missing or invalid.
-    pub bounds: Option<Aabb>,
 }
 
 impl MeshData {
@@ -115,7 +113,6 @@ impl MeshData {
             colors: None,
             indices: Indices::None,
             topology: Topology::Triangles,
-            bounds: None,
         }
     }
 
@@ -187,10 +184,10 @@ impl MeshData {
         let primitives = (elements / self.topology.vertices_per_primitive()) as u64;
         check("triangles", primitives, limits.max_triangles)?;
 
-        let bounds = match self.bounds {
-            Some(b) if b.is_valid() => b,
-            _ => Aabb::from_points(self.positions.as_slice()),
-        };
+        // Always measured, never taken from the file: stored min/max can be wrong, and
+        // these bounds decide framing (loaders pass the file's for early framing through
+        // `SceneBuilder::set_bounds` instead).
+        let bounds = Aabb::from_points(self.positions.as_slice());
         Ok(MeshInfo { vertices, elements, primitives, topology: self.topology, bounds, bytes: self.byte_len() })
     }
 }

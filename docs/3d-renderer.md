@@ -110,7 +110,10 @@ let tex = view.target();              // host shows it (libgui: a registered tex
 Rules:
 - **All `&self` work that can be threaded is `Send + Sync`.** Pipeline compilation and uploads may run on host-provided threads (`r.compile_pending(&pool)`).
 - **No hidden threads, no globals.** Background work is returned as jobs the host runs (`r.take_jobs()`), so the host keeps control of its thread pool.
-- **One `Renderer` per device, many views.** Every window shares the renderer, its pipeline cache and its uploaded scenes. A model open in two windows is uploaded once; each window has its own `View` (camera, render target, MSAA buffers, options).
+- **One `Renderer` per device, many views.** Every window shares the renderer, its pipeline cache and its uploaded scenes. A model open in two windows is uploaded once (one `GpuScene`); each window has its own `View` (camera, render target, MSAA buffers, options). If several `GpuScene`s do follow one `CpuScene`, each registers as a reader and CPU data is freed only after all of them uploaded it; attach them before the first sync.
+- **Device limits are respected.** A mesh whose buffers exceed `max_buffer_size` is skipped and reported (`GpuScene::upload_errors`) instead of raising a wgpu validation error (which panics by default); the rest of the model draws.
+- **Mirrored nodes keep their outside.** A negative-determinant transform flips winding on screen; each instance carries its mirror sign so double-sided shading still treats the outside as the front (glTF spec §3.7.4).
+- **Framing knows the aspect ratio.** `Camera::framing(bounds, aspect)` fits the narrower field of view, so portrait phone views don't cut the model off.
 - **Output contract (for libgui):** the view target is RGBA8, **sRGB-encoded, straight alpha**. The background is opaque by default; with a transparent background (thumbnails), alpha is straight and colour is not premultiplied.
 - **`render()` never blocks** on a texture or pipeline that isn't ready; it draws with what exists (§7.3).
 - Errors are values (`thiserror`), never panics, including for bad shaders and limit violations.
@@ -124,13 +127,12 @@ Kept small and close to glTF, because glTF already maps the formats we care abou
 ```rust
 pub struct MeshData {
     pub positions: Stream<Vec3>,           // owned, or a view into shared bytes (mmap / shared memory)
-    pub normals:   Option<Stream<Vec3>>,   // generated (flat or smooth) when missing
+    pub normals:   Option<Stream<Vec3>>,   // generated in `add_mesh` (loader thread) when missing; hard edges split
     pub uvs:       Option<Stream<Vec2>>,
     pub tangents:  Option<Stream<Vec4>>,   // generated (MikkTSpace) only if a normal map needs them
     pub colors:    Option<Stream<Vec4>>,
     pub indices:   Indices,                // None (non-indexed) | U16 | U32
     pub topology:  Topology,               // Triangles | Lines | Points
-    pub bounds:    Option<Aabb>,
 }
 
 pub struct Material {
@@ -163,13 +165,13 @@ The renderer doesn't parse files, but its input types are shaped so loaders can 
 
 - `Cow` streams let a GLB loader **borrow vertex data straight from the mmap** when it runs in-process. The upload copies it once, into the GPU staging buffer. A loader in a worker process writes streams into a shared-memory buffer instead, which the app maps without copying.
 - Streams that need conversion (FBX via `ufbx`, OBJ, STL) are converted on the loader's threads and handed over as owned data.
-- Loaders should call `set_bounds` early (glTF accessors carry min/max), so the camera frames the model before the meshes arrive.
+- Loaders should call `set_bounds` early (glTF accessors carry min/max), so the camera frames the model before the meshes arrive. It is only a hint: mesh bounds are always measured from the positions, and once geometry is done the measured scene bounds replace it (stored min/max can be wrong).
 - Texture decoding happens in the loader (it owns the image decoders). The renderer accepts RGBA8, RGBA16F and **GPU-compressed blocks** (BC1–7, ETC2, ASTC) when the device supports them.
 
 `rendererx-gltf` (implemented) follows these rules:
 - Its own reader for the glTF subset we use (serde_json), not the `gltf` crate, which copies the GLB binary chunk. Every offset, stride and count is checked against its buffer view and buffer.
 - Images aren't decoded by the adapter: it reserves a `TextureId` per (image, colour space) and returns the encoded bytes (`PendingImage`) for the host's decoders and threads.
-- External files go through a `Resolver`. `DirResolver` refuses absolute paths, URI schemes and `..`, so a model can't make the app read outside its folder.
+- External files go through a `Resolver`. `DirResolver` refuses absolute paths, URI schemes, `..` and symlinks leading out of the folder, so a model can't make the app read outside its folder; it reads only regular files, up to `max_bytes`.
 - Draco and meshopt compression are refused up front (`Error::Unsupported`). Any other unknown required extension, a broken primitive or a missing file becomes a warning, and the rest of the model still loads.
 
 Shading as authored, per format (the adapters fill `Material::shading`):
@@ -285,7 +287,7 @@ Passes, each skipped when it has nothing to do:
 3. **Outline**: models with an `Outline` pass (mtoon).
 4. **Blend**: sorted back-to-front per node.
 5. **Overlays**: wireframe, bounds, selection highlight, grid (optional).
-6. **Resolve + output**: MSAA resolve, then tonemap. Tonemapping applies to `Pbr`-style materials only; `Artistic` ones (unlit, toon) keep their exact colours.
+6. **Resolve + output**: with MSAA, frames are drawn in linear light into an sRGB target so samples resolve correctly, then a small pass encodes into the host's `Rgba8Unorm` target (works on GL/GLES, no view formats). Without MSAA the shader encodes directly. Then tonemap. Tonemapping applies to `Pbr`-style materials only; `Artistic` ones (unlit, toon) keep their exact colours.
 
 Rendering is **on demand**: `needs_redraw()` is true only after camera input, a finished upload or compile, or an option change. An idle viewer costs zero GPU time.
 

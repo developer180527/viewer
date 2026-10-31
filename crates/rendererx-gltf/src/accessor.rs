@@ -81,11 +81,13 @@ fn component(bytes: &[u8], ty: u32, normalized: bool) -> f32 {
     }
 }
 
+/// An unsigned index; callers check `ty` is one of the three unsigned types first.
 fn integer(bytes: &[u8], ty: u32) -> u32 {
     match ty {
         UNSIGNED_BYTE => bytes[0] as u32,
         UNSIGNED_SHORT => u16::from_le_bytes([bytes[0], bytes[1]]) as u32,
-        _ => u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        UNSIGNED_INT => u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]),
+        _ => unreachable!("component type {ty} checked by the caller"),
     }
 }
 
@@ -161,6 +163,10 @@ impl<'a> Reader<'a> {
             }
         };
         if let Some(s) = &a.sparse {
+            // The spec allows only unsigned indices; `integer` reads exactly these widths.
+            if !matches!(s.indices.component_type, UNSIGNED_BYTE | UNSIGNED_SHORT | UNSIGNED_INT) {
+                return Err(Error::Format(format!("accessor {index}: sparse indices of component type {}", s.indices.component_type)));
+            }
             let isize = component_size(s.indices.component_type)?;
             let idx = self.locate(s.indices.buffer_view, s.indices.byte_offset, s.count, isize)?;
             let val = self.locate(s.values.buffer_view, s.values.byte_offset, s.count, comps * csize)?;
