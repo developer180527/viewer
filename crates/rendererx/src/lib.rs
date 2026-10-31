@@ -182,7 +182,7 @@ impl Renderer {
     pub fn sync(&self, scene: &mut GpuScene) -> bool {
         let synced = scene.sync(&self.device, &self.queue, self.desc.upload_budget);
         for id in &synced.done {
-            scene.scene.release_mesh_data(*id);
+            scene.reader.release_mesh_data(*id);
         }
         if synced.uploaded > 0 && !scene.first_mesh_traced {
             scene.first_mesh_traced = true;
@@ -238,8 +238,12 @@ impl Renderer {
         let [r, g, b, a] = options.background.map(|c| c as f64);
         // With MSAA the frame is drawn in linear light into an sRGB target, so the
         // clear colour is decoded; without, the shader writes encoded bytes directly.
+        // The MSAA clear is also premultiplied: resolving averages edge samples with
+        // it, which gives premultiplied colour, and the encode pass divides alpha back
+        // out so the target stays straight alpha (no fringes on transparent
+        // backgrounds). Opaque backgrounds are unchanged (a = 1).
         let (attachment, resolve, clear) = match &targets.msaa {
-            Some(msaa) => (&msaa.samples, Some(&msaa.resolve), [srgb_to_linear(r), srgb_to_linear(g), srgb_to_linear(b), a]),
+            Some(msaa) => (&msaa.samples, Some(&msaa.resolve), [srgb_to_linear(r) * a, srgb_to_linear(g) * a, srgb_to_linear(b) * a, a]),
             None => (&targets.color_view, None, [r, g, b, a]),
         };
         let [r, g, b, a] = clear;

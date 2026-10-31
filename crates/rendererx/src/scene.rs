@@ -46,7 +46,7 @@ pub(crate) struct Batch {
 pub struct GpuScene {
     pub(crate) id: u64,
     pub(crate) scene: CpuScene,
-    _reader: ReaderGuard,
+    pub(crate) reader: ReaderGuard,
     pub(crate) meshes: Vec<Option<GpuMesh>>,
     /// Meshes that can't be uploaded (over a device limit), by the revision that failed.
     failed: HashMap<usize, u64>,
@@ -77,7 +77,7 @@ impl GpuScene {
         Self {
             id: NEXT_ID.fetch_add(1, Ordering::Relaxed),
             scene: scene.clone(),
-            _reader: scene.add_reader(),
+            reader: scene.add_reader(),
             meshes: Vec::new(),
             failed: HashMap::new(),
             errors: Vec::new(),

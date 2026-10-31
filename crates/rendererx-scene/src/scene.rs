@@ -68,8 +68,9 @@ pub struct MeshEntry {
     /// `None` once released after upload (docs/3d-renderer.md §11.1).
     pub data: Option<MeshData>,
     pub changed: u64,
-    /// Readers that have uploaded this data; it is freed once every reader has.
-    pub uploads: u32,
+    /// Ids of the readers that have uploaded this data; it is freed once every live
+    /// reader is in here.
+    pub uploaded_by: Vec<u32>,
 }
 
 #[derive(Debug)]
@@ -92,8 +93,9 @@ pub struct TextureEntry {
     pub info: Option<TextureInfo>,
     pub data: Option<TextureData>,
     pub changed: u64,
-    /// Readers that have uploaded this data; it is freed once every reader has.
-    pub uploads: u32,
+    /// Ids of the readers that have uploaded this data; it is freed once every live
+    /// reader is in here.
+    pub uploaded_by: Vec<u32>,
 }
 
 #[derive(Debug)]
@@ -106,8 +108,10 @@ struct State {
     nodes: Vec<NodeEntry>,
     textures: Vec<TextureEntry>,
     keep_cpu_data: bool,
-    /// Live [`ReaderGuard`]s: renderers that upload this scene (one per `GpuScene`).
-    readers: u32,
+    /// Ids of live [`ReaderGuard`]s: renderers that upload this scene (one per
+    /// `GpuScene`).
+    readers: Vec<u32>,
+    next_reader: u32,
     // Running totals checked against the limits. They count what arrived, not what is
     // still held, so releasing data can't be used to get past a limit.
     received_bytes: u64,
@@ -147,7 +151,8 @@ impl CpuScene {
             nodes: Vec::new(),
             textures: Vec::new(),
             keep_cpu_data: false,
-            readers: 0,
+            readers: Vec::new(),
+            next_reader: 0,
             received_bytes: 0,
             vertices: 0,
             primitives: 0,
@@ -189,33 +194,36 @@ impl CpuScene {
     }
 
     /// Registers a reader that uploads this scene and then releases what it uploaded
-    /// (each `GpuScene` holds one). CPU data is freed only once every live reader has
-    /// uploaded it, so two windows showing one model both get it. A reader registered
-    /// after data was freed can't get it back: register before the first upload, or
-    /// keep CPU data.
+    /// through the guard (each `GpuScene` holds one). CPU data is freed only once every
+    /// live reader has uploaded it, so two windows showing one model both get it. A
+    /// reader registered after data was freed can't get it back: register before the
+    /// first upload, or keep CPU data.
     pub fn add_reader(&self) -> ReaderGuard {
-        self.lock().readers += 1;
-        ReaderGuard(self.clone())
+        let mut s = self.lock();
+        let id = s.next_reader;
+        s.next_reader = s.next_reader.wrapping_add(1);
+        s.readers.push(id);
+        ReaderGuard { scene: self.clone(), id }
     }
 
-    /// Records that one reader has uploaded a mesh, and frees its vertex data once every
-    /// reader has (its [`MeshInfo`] stays). Returns true when the data was freed.
-    /// Callers without a [`ReaderGuard`] count as the only reader.
+    /// Frees a mesh's vertex data (its [`MeshInfo`] stays), for hosts that upload
+    /// without registering a reader. Does nothing while readers are registered: they
+    /// release through their [`ReaderGuard`]. Returns true when the data was freed.
     pub fn release_mesh_data(&self, id: MeshId) -> bool {
         let mut s = self.lock();
-        let (keep, readers) = (s.keep_cpu_data, s.readers.max(1));
-        let Some(m) = s.meshes.get_mut(id.index()).filter(|m| !keep && m.data.is_some()) else { return false };
-        m.uploads += 1;
-        m.uploads >= readers && m.data.take().is_some()
+        if s.keep_cpu_data || !s.readers.is_empty() {
+            return false;
+        }
+        s.meshes.get_mut(id.index()).is_some_and(|m| m.data.take().is_some())
     }
 
     /// Like [`release_mesh_data`](Self::release_mesh_data), for a texture's pixels.
     pub fn release_texture_data(&self, id: TextureId) -> bool {
         let mut s = self.lock();
-        let (keep, readers) = (s.keep_cpu_data, s.readers.max(1));
-        let Some(t) = s.textures.get_mut(id.index()).filter(|t| !keep && t.data.is_some()) else { return false };
-        t.uploads += 1;
-        t.uploads >= readers && t.data.take().is_some()
+        if s.keep_cpu_data || !s.readers.is_empty() {
+            return false;
+        }
+        s.textures.get_mut(id.index()).is_some_and(|t| t.data.take().is_some())
     }
 
     fn lock(&self) -> RwLockWriteGuard<'_, State> {
@@ -369,7 +377,7 @@ impl SceneBuilder {
             s.vertices += info.vertices as u64;
             s.primitives += info.primitives;
             s.received_bytes += info.bytes;
-            s.meshes.push(MeshEntry { info, data: Some(data), changed: rev, uploads: 0 });
+            s.meshes.push(MeshEntry { info, data: Some(data), changed: rev, uploaded_by: Vec::new() });
             Ok(MeshId(s.meshes.len() as u32 - 1))
         })
     }
@@ -421,7 +429,7 @@ impl SceneBuilder {
     pub fn reserve_texture(&mut self) -> crate::Result<TextureId> {
         self.scene.change(|s, limits, rev| {
             check("textures", s.textures.len() as u64 + 1, limits.max_textures as u64)?;
-            s.textures.push(TextureEntry { info: None, data: None, changed: rev, uploads: 0 });
+            s.textures.push(TextureEntry { info: None, data: None, changed: rev, uploaded_by: Vec::new() });
             Ok(TextureId(s.textures.len() as u32 - 1))
         })
     }
@@ -458,22 +466,60 @@ impl Drop for SceneBuilder {
     }
 }
 
-/// A registered reader of a scene ([`CpuScene::add_reader`]). Dropping it unregisters,
-/// and frees data that every remaining reader has already uploaded.
-pub struct ReaderGuard(CpuScene);
+/// A registered reader of a scene ([`CpuScene::add_reader`]). It records what this
+/// reader has uploaded; data is freed once every live reader has. Dropping it
+/// unregisters, and frees data that every remaining reader has already uploaded.
+pub struct ReaderGuard {
+    scene: CpuScene,
+    id: u32,
+}
+
+impl ReaderGuard {
+    /// Records that this reader has uploaded a mesh, and frees its vertex data once
+    /// every live reader has (its [`MeshInfo`] stays). Returns true when it was freed.
+    pub fn release_mesh_data(&self, mesh: MeshId) -> bool {
+        let mut s = self.scene.lock();
+        let s = &mut *s;
+        let Some(m) = s.meshes.get_mut(mesh.index()).filter(|m| m.data.is_some()) else { return false };
+        release(&mut m.uploaded_by, &mut m.data, self.id, &s.readers, s.keep_cpu_data)
+    }
+
+    /// Like [`release_mesh_data`](Self::release_mesh_data), for a texture's pixels.
+    pub fn release_texture_data(&self, texture: TextureId) -> bool {
+        let mut s = self.scene.lock();
+        let s = &mut *s;
+        let Some(t) = s.textures.get_mut(texture.index()).filter(|t| t.data.is_some()) else { return false };
+        release(&mut t.uploaded_by, &mut t.data, self.id, &s.readers, s.keep_cpu_data)
+    }
+}
+
+/// Marks `reader` as done with an entry and drops `data` once every live reader is.
+fn release<T>(uploaded_by: &mut Vec<u32>, data: &mut Option<T>, reader: u32, readers: &[u32], keep: bool) -> bool {
+    if !uploaded_by.contains(&reader) {
+        uploaded_by.push(reader);
+    }
+    let all = readers.iter().all(|r| uploaded_by.contains(r));
+    !keep && all && data.take().is_some()
+}
 
 impl Drop for ReaderGuard {
     fn drop(&mut self) {
-        let mut s = self.0.lock();
-        s.readers = s.readers.saturating_sub(1);
-        let (keep, readers) = (s.keep_cpu_data, s.readers);
-        if keep || readers == 0 {
+        let mut s = self.scene.lock();
+        let s = &mut *s;
+        s.readers.retain(|&r| r != self.id);
+        let readers = &s.readers;
+        // Forget this reader's uploads (so a stale id can't stand in for a live one),
+        // then free what every remaining reader already has. With no reader left the
+        // data stays: a reader attached later may still need it.
+        s.meshes.iter_mut().for_each(|m| m.uploaded_by.retain(|r| readers.contains(r)));
+        s.textures.iter_mut().for_each(|t| t.uploaded_by.retain(|r| readers.contains(r)));
+        if s.keep_cpu_data || readers.is_empty() {
             return;
         }
-        for m in s.meshes.iter_mut().filter(|m| m.uploads >= readers) {
+        for m in s.meshes.iter_mut().filter(|m| readers.iter().all(|r| m.uploaded_by.contains(r))) {
             m.data = None;
         }
-        for t in s.textures.iter_mut().filter(|t| t.uploads >= readers) {
+        for t in s.textures.iter_mut().filter(|t| readers.iter().all(|r| t.uploaded_by.contains(r))) {
             t.data = None;
         }
     }
@@ -496,7 +542,7 @@ impl TextureSink {
         self.0.change(|s, limits, rev| {
             check("scene bytes", s.received_bytes + info.bytes, limits.max_bytes)?;
             let entry = s.textures.get_mut(id.index()).ok_or(Error::UnknownId { kind: "texture", id: id.0 })?;
-            *entry = TextureEntry { info: Some(info), data: Some(data), changed: rev, uploads: 0 };
+            *entry = TextureEntry { info: Some(info), data: Some(data), changed: rev, uploaded_by: Vec::new() };
             s.received_bytes += info.bytes;
             Ok(())
         })

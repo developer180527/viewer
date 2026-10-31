@@ -185,18 +185,42 @@ fn shared_scenes_free_data_only_after_every_reader_uploaded() {
     let (scene, mut b) = CpuScene::new();
     let m = b.add_mesh(quad_indexed()).unwrap();
     let (first, second) = (scene.add_reader(), scene.add_reader());
-    assert!(!scene.release_mesh_data(m), "one of two readers uploaded: keep it");
+    assert!(!scene.release_mesh_data(m), "readers release through their guards");
+    assert!(!first.release_mesh_data(m), "one of two readers uploaded: keep it");
+    assert!(!first.release_mesh_data(m), "the same reader again doesn't count twice");
     assert!(scene.read().mesh(m).unwrap().data.is_some());
-    assert!(scene.release_mesh_data(m), "both uploaded: free it");
+    assert!(second.release_mesh_data(m), "both uploaded: free it");
     drop((first, second));
 
     // A reader that goes away without uploading doesn't keep the data alive forever.
     let m = b.add_mesh(quad_indexed()).unwrap();
     let (first, second) = (scene.add_reader(), scene.add_reader());
-    assert!(!scene.release_mesh_data(m));
+    assert!(!first.release_mesh_data(m));
     drop(second);
     assert!(scene.read().mesh(m).unwrap().data.is_none());
     drop(first);
+}
+
+#[test]
+fn a_reader_that_leaves_after_uploading_doesnt_free_data_others_need() {
+    let (scene, mut b) = CpuScene::new();
+    let m = b.add_mesh(quad_indexed()).unwrap();
+    let (first, second) = (scene.add_reader(), scene.add_reader());
+    assert!(!first.release_mesh_data(m));
+    // The window that uploaded closes before the other one synced.
+    drop(first);
+    assert!(scene.read().mesh(m).unwrap().data.is_some(), "the second reader hasn't uploaded it yet");
+    assert!(second.release_mesh_data(m));
+    drop(second);
+
+    // A dropped reader's upload can't stand in for a reader that joins later.
+    let m = b.add_mesh(quad_indexed()).unwrap();
+    let (a, b_) = (scene.add_reader(), scene.add_reader());
+    a.release_mesh_data(m);
+    drop(a);
+    let c = scene.add_reader();
+    assert!(!b_.release_mesh_data(m), "c still needs it");
+    assert!(c.release_mesh_data(m));
 }
 
 #[test]

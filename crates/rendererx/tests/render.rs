@@ -312,3 +312,49 @@ fn orbit_controls_keep_the_model_in_view() {
     assert_ne!(c.target, Vec3::ZERO);
     assert!(c.camera().view_proj(1.5).is_finite());
 }
+
+#[test]
+fn a_window_closing_before_the_other_synced_doesnt_take_the_model_with_it() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let scene = quad(Mat4::IDENTITY);
+    let (mut first, mut second) = (r.attach(&scene), r.attach(&scene));
+    r.sync(&mut first);
+    drop(first);
+    r.sync(&mut second);
+    assert_eq!(second.unavailable_meshes(), 0);
+    assert!(second.gpu_bytes() > 0);
+    assert_eq!(scene.read().cpu_bytes(), 0, "freed once the remaining reader has it");
+}
+
+#[test]
+fn transparent_backgrounds_stay_straight_alpha_at_antialiased_edges() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let (scene, mut b) = CpuScene::new();
+    let tri = MeshData::new(vec![Vec3::new(-1.0, -1.0, 0.0), Vec3::new(1.0, -0.7, 0.0), Vec3::new(-0.6, 1.0, 0.0)]);
+    let m = b.add_mesh(tri).unwrap();
+    b.add_node(Node::mesh(m, None, Mat4::IDENTITY, None)).unwrap();
+    let mut g = r.attach(&scene);
+    r.sync(&mut g);
+    let mut view = r.create_view(ViewDesc { width: 64, height: 64 });
+    let camera = Camera { eye: Vec3::new(0.0, 0.0, 3.0), ..Default::default() };
+    // Magenta at alpha 0: any of it leaking into edge colours is easy to spot.
+    let opts = RenderOptions { background: [1.0, 0.0, 1.0, 0.0] };
+    let mut encoder = device.create_command_encoder(&Default::default());
+    r.render(&mut encoder, &g, &mut view, &camera, &opts);
+    queue.submit([encoder.finish()]);
+    let pixels = view.read_pixels(&device, &queue).unwrap();
+    let all = pixels.as_chunks::<4>().0;
+
+    assert_eq!(px(&pixels, 64, 63, 63)[3], 0, "the background is transparent");
+    let interior = *all.iter().find(|p| p[3] == 255).unwrap();
+    let edges: Vec<[u8; 4]> = all.iter().filter(|p| p[3] > 20 && p[3] < 235).copied().collect();
+    assert!(!edges.is_empty(), "MSAA produced partially covered edge pixels");
+    for e in &edges {
+        // Straight alpha: an edge pixel has the surface's colour, neither tinted by the
+        // clear colour nor darkened by its coverage.
+        let close = (0..3).all(|c| (e[c] as i32 - interior[c] as i32).abs() < 40);
+        assert!(close, "edge {e:?} vs interior {interior:?}");
+    }
+}

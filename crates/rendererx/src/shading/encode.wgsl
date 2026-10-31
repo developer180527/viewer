@@ -21,7 +21,10 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
 
 @fragment
 fn fs_main(@builtin(position) p: vec4<f32>) -> @location(0) vec4<f32> {
-    // textureLoad of an sRGB texture returns linear values.
+    // textureLoad of an sRGB texture returns linear values. They are premultiplied
+    // (the clear colour is, and resolving averages coverage into alpha); the target is
+    // straight alpha, so divide it back out. Fully transparent pixels have no colour.
     let c = textureLoad(frame, vec2<i32>(p.xy), 0);
-    return vec4<f32>(linear_to_srgb(c.rgb), c.a);
+    let straight = select(vec3<f32>(0.0), c.rgb / max(c.a, 1e-6), c.a > 0.0);
+    return vec4<f32>(linear_to_srgb(straight), c.a);
 }
