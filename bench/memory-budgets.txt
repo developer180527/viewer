@@ -8,7 +8,8 @@ data.json                          48    115
 table.csv                          50    115
 bundle.zip                         48    115
 big.log                            70    135
-big.png                           430    335
+big.png                           255    335
+big.jpg                           400    330
 long_life_food_4k.fbx             490    240
 portable_generator_4k.usdc        495    245
 namaqualand_boulder_02_4k.usdc    500    290

@@ -44,6 +44,10 @@ pub trait Textures {
     fn settles(&self) -> bool {
         false
     }
+    /// A view finished uploading something big: after this frame's submit, wait for
+    /// the GPU once, so wgpu frees the upload staging now (it frees it only when a
+    /// later submit finds the GPU done, and an idle window makes none).
+    fn uploads_done(&mut self) {}
 
     /// Draws a 3D scene from `camera` into a `size`-pixel frame (RendererX on the
     /// shared device) and returns the texture to show.
@@ -235,6 +239,8 @@ struct Gpu<'a> {
     /// startup never pays for its pipelines.
     rx: &'a mut Option<rendererx::Renderer>,
     scale: f32,
+    /// Set by `uploads_done`.
+    settle: &'a mut bool,
 }
 
 impl Textures for Gpu<'_> {
@@ -266,6 +272,10 @@ impl Textures for Gpu<'_> {
 
     fn pixels_per_point(&self) -> f32 {
         self.scale
+    }
+
+    fn uploads_done(&mut self) {
+        *self.settle = true;
     }
 
     fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
@@ -400,11 +410,12 @@ impl Host {
             w.ui.request_repaint();
         }
         let mut platform = PlatformOutput::default();
+        let mut settle = false;
         if w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle };
             app.ui(&mut w.ui, &mut gpu);
             let out = w.ui.end_frame();
             if self.content_frames == 0 { startup::mark(&format!("  frame built in {:.2} ms", t.elapsed().as_secs_f64() * 1000.0)); }
@@ -459,6 +470,9 @@ impl Host {
         w.window.pre_present_notify();
         w.queue.present(frame);
         w.platform.apply(&w.window, &platform);
+        if settle {
+            let _ = w.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(Duration::from_millis(500)) });
+        }
 
         if !self.first_frame_done {
             self.first_frame_done = true;

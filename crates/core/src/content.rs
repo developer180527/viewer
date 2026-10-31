@@ -65,11 +65,137 @@ pub struct SceneDoc {
     pub textures_pending: Arc<std::sync::atomic::AtomicUsize>,
 }
 
-/// A decoded image in straight (non-premultiplied) RGBA8.
+/// An image in straight (non-premultiplied) RGBA8: whole, or arriving in bands of
+/// rows from a decoder thread (big images, so the whole never sits in memory).
 pub struct Raster {
     pub width: u32,
     pub height: u32,
+    pub pixels: Pixels,
+}
+
+pub enum Pixels {
+    /// Every row, `width * height * 4` bytes.
+    Full(Vec<u8>),
+    /// Rows still coming, top to bottom.
+    Bands(BandStream),
+    /// The view has what it needs (e.g. on the GPU) and dropped the CPU copy.
+    Released,
+}
+
+impl Raster {
+    pub fn full(width: u32, height: u32, rgba: Vec<u8>) -> Self {
+        Self { width, height, pixels: Pixels::Full(rgba) }
+    }
+
+    /// The pixels when they are all here.
+    pub fn rgba(&self) -> Option<&[u8]> {
+        match &self.pixels {
+            Pixels::Full(p) => Some(p),
+            _ => None,
+        }
+    }
+
+    /// Waits for a streamed image's remaining bands and assembles the whole (for
+    /// views that need every pixel at once).
+    pub fn make_full(&mut self) -> std::result::Result<(), String> {
+        let Pixels::Bands(stream) = &self.pixels else { return Ok(()) };
+        let mut rgba = vec![0u8; self.width as usize * self.height as usize * 4];
+        let row = self.width as usize * 4;
+        loop {
+            match stream.wait_next() {
+                Next::Band(b) => {
+                    let start = b.y as usize * row;
+                    let end = (start + b.rgba.len()).min(rgba.len());
+                    rgba[start..end].copy_from_slice(&b.rgba[..end - start]);
+                }
+                Next::Done | Next::Pending => break,
+                Next::Failed(e) => return Err(e),
+            }
+        }
+        self.pixels = Pixels::Full(rgba);
+        Ok(())
+    }
+}
+
+/// Rows `y..y + rgba.len() / (width * 4)` of an image.
+pub struct Band {
+    pub y: u32,
     pub rgba: Vec<u8>,
+}
+
+pub enum Next {
+    Band(Band),
+    /// More is coming; not decoded yet.
+    Pending,
+    /// Every band has been delivered.
+    Done,
+    /// The decoder stopped: what came before is all there is.
+    Failed(String),
+}
+
+type Wake = Arc<std::sync::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
+
+/// Bands from a decoder thread. At most two wait at a time: a view that isn't
+/// consuming them (hidden window) makes the decoder wait, so memory stays bounded,
+/// and dropping the stream (closing the page) stops the decoder.
+pub struct BandStream {
+    rx: std::sync::Mutex<std::sync::mpsc::Receiver<std::result::Result<Band, String>>>,
+    wake: Wake,
+}
+
+impl BandStream {
+    /// Runs `produce` on a new thread. It hands each band to `emit`, which returns
+    /// false once nobody is listening (stop then); an error ends the stream.
+    pub fn spawn(produce: impl FnOnce(&mut dyn FnMut(Band) -> bool) -> std::result::Result<(), String> + Send + 'static) -> Self {
+        let (tx, rx) = std::sync::mpsc::sync_channel(2);
+        let wake: Wake = Arc::default();
+        let notify = wake.clone();
+        let ping = move || {
+            let f = notify.lock().unwrap_or_else(|e| e.into_inner()).clone();
+            if let Some(f) = f {
+                f();
+            }
+        };
+        std::thread::Builder::new()
+            .name("image decode".into())
+            .spawn(move || {
+                let mut emit = |band: Band| {
+                    let ok = tx.send(Ok(band)).is_ok();
+                    ping();
+                    ok
+                };
+                if let Err(e) = produce(&mut emit) {
+                    let _ = tx.send(Err(e));
+                }
+                drop(tx);
+                ping();
+            })
+            .expect("spawning the image decoder");
+        Self { rx: std::sync::Mutex::new(rx), wake }
+    }
+
+    /// Called (from the decoder thread) whenever a band arrives or the stream ends.
+    pub fn set_wake(&self, f: impl Fn() + Send + Sync + 'static) {
+        *self.wake.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
+    }
+
+    pub fn try_next(&self) -> Next {
+        use std::sync::mpsc::TryRecvError;
+        match self.rx.lock().unwrap_or_else(|e| e.into_inner()).try_recv() {
+            Ok(Ok(b)) => Next::Band(b),
+            Ok(Err(e)) => Next::Failed(e),
+            Err(TryRecvError::Empty) => Next::Pending,
+            Err(TryRecvError::Disconnected) => Next::Done,
+        }
+    }
+
+    pub fn wait_next(&self) -> Next {
+        match self.rx.lock().unwrap_or_else(|e| e.into_inner()).recv() {
+            Ok(Ok(b)) => Next::Band(b),
+            Ok(Err(e)) => Next::Failed(e),
+            Err(_) => Next::Done,
+        }
+    }
 }
 
 /// A text file indexed by line. The bytes stay in the (usually memory-mapped)

@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use libgui::*;
-use viewer_core::{Container, Content, Raster, SceneDoc, Table, TextDoc, TreeNode};
+use viewer_core::{Band, Container, Content, Next, Pixels, Raster, SceneDoc, Table, TextDoc, TreeNode};
 
 use super::{SceneGpu, Textures};
 use super::app::Page;
@@ -294,27 +294,33 @@ const UPLOAD_BUDGET: usize = 48 << 20;
 #[derive(Default)]
 pub struct RasterState {
     tiles: Vec<(TextureId, Rect)>,
-    /// Tiles uploaded so far, in row-major order.
+    /// Tiles uploaded so far, in row-major order (whole images).
     uploaded: usize,
+    /// Rows on the GPU so far (streamed images), and why the stream stopped early.
+    rows: u32,
+    error: Option<String>,
+    /// The stream wakes the window when a band arrives.
+    wakes: bool,
     /// `None` means "fit to window".
     zoom: Option<f32>,
     offset: Vec2,
 }
 
-/// Uploads the next tiles within the budget. Returns true when all are on the GPU.
-fn upload(tex: &mut dyn Textures, r: &Raster, st: &mut RasterState) -> bool {
+/// Uploads the next tiles of a whole image within the budget. Returns true when all
+/// are on the GPU.
+fn upload(tex: &mut dyn Textures, width: u32, height: u32, rgba: &[u8], st: &mut RasterState) -> bool {
     let tile = TILE.min(tex.max_side().max(256));
-    let (cols, rows) = (r.width.div_ceil(tile), r.height.div_ceil(tile));
+    let (cols, rows) = (width.div_ceil(tile), height.div_ceil(tile));
     let total = (cols * rows) as usize;
     let mut spent = 0;
     while st.uploaded < total && (spent == 0 || spent < UPLOAD_BUDGET) {
         let i = st.uploaded as u32;
         let (tx, ty) = ((i % cols) * tile, (i / cols) * tile);
-        let (w, h) = (tile.min(r.width - tx), tile.min(r.height - ty));
+        let (w, h) = (tile.min(width - tx), tile.min(height - ty));
         let mut buf = Vec::with_capacity((w * h * 4) as usize);
         for y in ty..ty + h {
-            let row = ((y * r.width + tx) * 4) as usize;
-            buf.extend_from_slice(&r.rgba[row..row + (w * 4) as usize]);
+            let row = ((y * width + tx) * 4) as usize;
+            buf.extend_from_slice(&rgba[row..row + (w * 4) as usize]);
         }
         let id = tex.upload(w, h, &buf);
         st.tiles.push((id, Rect::new(tx as f32, ty as f32, w as f32, h as f32)));
@@ -324,15 +330,83 @@ fn upload(tex: &mut dyn Textures, r: &Raster, st: &mut RasterState) -> bool {
     st.uploaded == total
 }
 
-fn raster(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Textures) {
-    if !r.rgba.is_empty() && r.width > 0 && r.height > 0 {
-        if upload(tex, r, st) {
-            // Everything is on the GPU: the decoded copy isn't needed any more.
-            r.rgba = Vec::new();
-        } else {
-            ui.request_repaint();
+/// Uploads one streamed band as a row of tiles, `TILE` wide and the band's height.
+fn upload_band(tex: &mut dyn Textures, width: u32, band: &Band, st: &mut RasterState) {
+    let tile = TILE.min(tex.max_side().max(256));
+    let rows = (band.rgba.len() / (width as usize * 4).max(1)) as u32;
+    for tx in (0..width).step_by(tile as usize) {
+        let w = tile.min(width - tx);
+        let mut buf = Vec::with_capacity((w * rows * 4) as usize);
+        for y in 0..rows {
+            let row = ((y * width + tx) * 4) as usize;
+            buf.extend_from_slice(&band.rgba[row..row + (w * 4) as usize]);
         }
+        let id = tex.upload(w, rows, &buf);
+        st.tiles.push((id, Rect::new(tx as f32, band.y as f32, w as f32, rows as f32)));
     }
+    st.rows = st.rows.max(band.y + rows);
+}
+
+/// Moves pixels to the GPU: a whole image a budget's worth of tiles per frame, a
+/// streamed one band by band as the decoder delivers them. Either way the CPU copy
+/// is dropped once everything is uploaded.
+fn feed(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Textures) {
+    let (width, height) = (r.width, r.height);
+    let release = match &r.pixels {
+        Pixels::Full(rgba) if width > 0 && height > 0 => {
+            let done = upload(tex, width, height, rgba, st);
+            if !done {
+                ui.request_repaint();
+            }
+            done
+        }
+        Pixels::Bands(stream) => {
+            if !std::mem::replace(&mut st.wakes, true) {
+                stream.set_wake(|| {
+                    if let Some(wake) = crate::loading::WAKE.get() {
+                        wake();
+                    }
+                });
+            }
+            // Screenshots wait for the whole image; windows take what has arrived.
+            let block = tex.settles();
+            let mut spent = 0;
+            loop {
+                match if block { stream.wait_next() } else { stream.try_next() } {
+                    Next::Band(band) => {
+                        upload_band(tex, width, &band, st);
+                        spent += band.rgba.len();
+                        if !block && spent >= UPLOAD_BUDGET {
+                            ui.request_repaint();
+                            break false;
+                        }
+                    }
+                    // The next band wakes the window.
+                    Next::Pending => break false,
+                    Next::Done => break true,
+                    Next::Failed(e) => {
+                        st.error = Some(e);
+                        break true;
+                    }
+                }
+            }
+        }
+        _ => false,
+    };
+    if release {
+        // Everything is on the GPU (or the stream ended): no CPU copy is kept.
+        r.pixels = Pixels::Released;
+        tex.uploads_done();
+    }
+}
+
+fn raster(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Textures) {
+    feed(ui, r, st, tex);
+    let progress = match (&r.pixels, &st.error) {
+        (_, Some(e)) => Some(format!("  ·  stopped at row {} of {}: {e}", st.rows, r.height)),
+        (Pixels::Bands(_), None) => Some(format!("  ·  decoding {}%", st.rows as u64 * 100 / r.height.max(1) as u64)),
+        _ => None,
+    };
     let id = ui.make_id("raster");
     let resp = ui.interact_drag(id);
     let rect = resp.rect; // last frame's: one frame of latency, as libgui documents
@@ -393,7 +467,7 @@ fn raster(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Textu
                     p.image_with_alpha(screen, *t, [0.0, 0.0, 1.0, 1.0], 0.0, Color::WHITE, ImageAlpha::Straight);
                 }
             }
-            let label = format!("{:.0}%  ·  {w} × {h}", zoom * 100.0);
+            let label = format!("{:.0}%  ·  {w} × {h}{}", zoom * 100.0, progress.as_deref().unwrap_or(""));
             p.text(Vec2::new(rect.x + 8.0, rect.y + rect.h - 22.0), 12.0, faint, label);
         });
     });
@@ -411,6 +485,8 @@ pub struct SceneView {
     framed_final: bool,
     /// The scene wakes the window when it changes (textures arriving).
     wakes: bool,
+    /// Everything, textures included, reached the GPU.
+    settled: bool,
 }
 
 /// A 3D model drawn by RendererX into a texture. Drag to orbit, Shift-drag (or
@@ -485,6 +561,10 @@ fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, tex: &mut dyn Textures
         // The first frame has no rect yet; the next one will.
         super::Frame3d { busy: true, ..Default::default() }
     };
+    if !frame.busy && pending() == 0 && frame.texture.is_some() && !std::mem::replace(&mut st.settled, true) {
+        // All uploaded: let the host free the upload staging.
+        tex.uploads_done();
+    }
     if frame.busy {
         ui.request_repaint();
     } else if pending() > 0 {

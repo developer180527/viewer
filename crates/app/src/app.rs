@@ -90,8 +90,14 @@ impl ViewerApp {
         let target = job.target;
         self.job = None;
         match result {
-            Ok(Loaded { src, doc, loader, attempts, load_time }) => {
+            Ok(Loaded { src, mut doc, loader, attempts, load_time }) => {
                 self.error = None;
+                // This frontend shows images whole: wait for a streamed one's bands.
+                if let viewer_core::Content::Raster(r) = &mut doc.content
+                    && let Err(e) = r.make_full()
+                {
+                    self.error = Some(e);
+                }
                 let view = ViewState::new(&doc.content);
                 let page = Page { id: self.next_page_id, src, doc, loader, attempts, load_time, view };
                 self.next_page_id += 1;

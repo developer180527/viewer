@@ -21,6 +21,8 @@ const OPTIONS: TextureOptions = TextureOptions {
 };
 
 fn upload(ctx: &egui::Context, r: &Raster) -> Vec<(egui::TextureHandle, Rect)> {
+    // The egui frontend assembles streamed images before showing them (app.rs).
+    let Some(rgba) = r.rgba() else { return Vec::new() };
     let tile = ctx.input(|i| i.max_texture_side).max(256) as u32;
     let mut tiles = Vec::new();
     for ty in (0..r.height).step_by(tile as usize) {
@@ -29,7 +31,7 @@ fn upload(ctx: &egui::Context, r: &Raster) -> Vec<(egui::TextureHandle, Rect)> {
             let mut buf = Vec::with_capacity((w * h * 4) as usize);
             for y in ty..ty + h {
                 let row = ((y * r.width + tx) * 4) as usize;
-                buf.extend_from_slice(&r.rgba[row..row + (w * 4) as usize]);
+                buf.extend_from_slice(&rgba[row..row + (w * 4) as usize]);
             }
             let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &buf);
             let tex = ctx.load_texture(format!("tile{tx}x{ty}"), img, OPTIONS);

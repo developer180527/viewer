@@ -12,4 +12,6 @@ anyhow.workspace = true
 image = { version = "0.25", default-features = false, features = [
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "tga", "qoi", "pnm", "hdr", "exr", "dds", "ff", "rayon",
 ] }
+# Row-by-row PNG decoding for big images (the version `image` uses).
+png = "0.18"
 resvg = { version = "0.49", default-features = false, features = ["text", "system-fonts", "memmap-fonts", "svgz", "raster-images"] }

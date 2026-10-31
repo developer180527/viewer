@@ -233,12 +233,12 @@ Measured by `bench/memory.sh` (footprint on macOS, which is what Activity Monito
 
 Rules, and what the first memory pass found (2026-11-01):
 - **Big frees go back to the OS.** macOS's allocator keeps freed large blocks and returns them only under memory pressure (`malloc_zone_pressure_relief` returns nothing), so the footprint stayed at every load's peak. The app's global allocator (`crates/app/src/alloc.rs`) maps blocks of 1 MB and up directly and unmaps them on free. Settled footprint for a 45 MP image: 799 → 290 MB; for a textured 3D model: 408 → 205 MB.
-- **No duplicate copies.** Images upload in 2048 px tiles within a per-frame budget (small staging, first tiles sooner), then the decoded copy is dropped. 3D meshes and textures drop their CPU copies after upload; instances share them.
+- **No duplicate copies.** Images upload in 2048 px tiles within a per-frame budget (small staging, first tiles sooner), then the decoded copy is dropped. Images over 16 MP stream: decoded on a thread in ~16 MB bands of rows (PNG row by row; other formats decode in their own layout and convert per band), through a two-band queue (a window that isn't drawing makes the decoder wait; closing the page stops it), uploaded as they arrive and shown top to bottom. A 45 MP PNG's headless peak went 376 → 221 MB. After the last upload the view draws once more so wgpu frees the upload staging (it does so on a later submit, which an idle window never makes). 3D meshes and textures drop their CPU copies after upload; instances share them.
 - **Window-sized GPU buffers cost nothing where possible.** 3D MSAA and depth targets are transient attachments: memoryless on Apple and mobile GPUs (−95 MB for a full-window 3D view).
 - **Decode small.** Textures are capped at 2048 px; JPEGs decode at 1/2–1/8 scale in the IDCT; EXRs stream into the reduced size; mips are generated from the reduced image.
 - **Not the app's:** a process's first render pass makes the Apple GPU driver take ~180 MB that it marks reclaimable straight after (a bare wgpu clear pass shows it). It inflates windowed peaks, not settled memory.
 - **Empty app** (headless): 42 MB. **Settled window** on a small file: ~100–110 MB (including ~40 MB of window surfaces).
-- Next: decode very large images straight into GPU tiles (rows streamed, never the whole image in RAM), lazy glyph rasterisation, and a resident-agent cap if one ships.
+- Next: JPEGs decoded in bands too (a progressive/scanline JPEG decoder; today they decode whole in RGB, then convert per band), lazy glyph rasterisation, and a resident-agent cap if one ships.
 
 ### Measurement
 - A `--trace-startup` flag records timestamps for process start → window → **app ready** → **file ready** → full quality.

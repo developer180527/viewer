@@ -35,7 +35,13 @@ peak_mb() { # command... → peak footprint (macOS) or RSS, in MB
 
 cases=("empty:")
 for f in samples/gradient.png samples/main.rs samples/data.json samples/table.csv samples/bundle.zip; do cases+=("$(basename "$f"):$f"); done
-for f in bench/out/big.log bench/out/big.png; do [[ -f $f ]] && cases+=("$(basename "$f"):$f"); done
+# A big JPEG (the generic, non-PNG path), made from big.png when a converter exists.
+if [[ -f bench/out/big.png && ! -f bench/out/big.jpg ]]; then
+    if command -v sips >/dev/null; then sips -s format jpeg bench/out/big.png --out bench/out/big.jpg >/dev/null 2>&1 || true
+    elif command -v convert >/dev/null; then convert bench/out/big.png bench/out/big.jpg || true
+    fi
+fi
+for f in bench/out/big.log bench/out/big.png bench/out/big.jpg; do [[ -f $f ]] && cases+=("$(basename "$f"):$f"); done
 # 3D models are not in git; measured when present.
 for f in test_3d_files/long_life_food_4k.fbx/long_life_food_4k.fbx \
          test_3d_files/portable_generator_4k.usdc/portable_generator_4k.usdc \

@@ -113,7 +113,7 @@ fn thumbnail(b: &[u8], h: &Header) -> Result<Raster> {
     let src = b.get(data + 8..data + 8 + pixels).context("truncated preview")?;
     let row = w as usize * 4;
     let rgba: Vec<u8> = src.chunks_exact(row).rev().flatten().copied().collect();
-    Ok(Raster { width: w, height: ht, rgba })
+    Ok(Raster::full(w, ht, rgba))
 }
 
 #[cfg(test)]
@@ -150,8 +150,9 @@ mod tests {
         let doc = BlendLoader.open(&src).unwrap();
         let Content::Raster(r) = doc.content else { panic!("expected an image") };
         assert_eq!((r.width, r.height), (2, 2));
-        assert_eq!(&r.rgba[..4], [0, 0, 255, 255], "top row first");
-        assert_eq!(&r.rgba[8..12], [255, 0, 0, 255]);
+        let rgba = r.rgba().unwrap();
+        assert_eq!(&rgba[..4], [0, 0, 255, 255], "top row first");
+        assert_eq!(&rgba[8..12], [255, 0, 0, 255]);
         assert!(doc.metadata.iter().any(|(k, v)| k == "Saved by" && v == "Blender 2.83"));
     }
 
