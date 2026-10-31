@@ -2383,6 +2383,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lz4_flex"
+version = "0.11.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "373f5eceeeab7925e0c1098212f2fbc4d416adec9d35051a6ab251e824c1854a"
+
+[[package]]
 name = "lzma-rust2"
 version = "0.23.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4516,6 +4522,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "usd-lite"
+version = "0.1.0"
+dependencies = [
+ "lz4_flex",
+ "thiserror 2.0.21",
+ "zip",
+]
+
+[[package]]
 name = "usvg"
 version = "0.49.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4663,6 +4678,7 @@ dependencies = [
  "rendererx-gltf",
  "rendererx-scene",
  "ufbx",
+ "usd-lite",
  "viewer-core",
 ]
 

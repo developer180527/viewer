@@ -22,10 +22,10 @@ pub enum ImageSource {
     Bytes(Stream<u8>),
     /// A file next to the model, already checked to be inside its folder.
     File(PathBuf),
-    /// Separate roughness and metalness images (FBX, OBJ) packed the glTF way:
-    /// roughness in green, metalness in blue. A missing one is white, so its factor
-    /// alone applies.
-    MetalRough { roughness: Option<Box<ImageSource>>, metalness: Option<Box<ImageSource>> },
+    /// Roughness and metalness from separate images (or channels), packed the glTF way:
+    /// roughness in green, metalness in blue. Each is an image and the channel to take
+    /// (0–3: R, G, B, A); a missing one is white, so its factor alone applies.
+    MetalRough { roughness: Option<(Box<ImageSource>, usize)>, metalness: Option<(Box<ImageSource>, usize)> },
 }
 
 pub struct ImageJob {
@@ -68,19 +68,25 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
 
 fn decode(source: &ImageSource, color_space: ColorSpace) -> Option<TextureData> {
     if let ImageSource::MetalRough { roughness, metalness } = source {
-        return metal_rough(roughness.as_deref(), metalness.as_deref());
+        return metal_rough(roughness.as_ref(), metalness.as_ref());
     }
     let rgba = load(source, color_space)?;
     let (w, h) = rgba.dimensions();
     Some(with_mips(w, h, rgba.into_raw(), color_space))
 }
 
-/// One channel from each image (the first; maps are greyscale), at the size of the
-/// larger, packed as (1, roughness, metalness, 1).
-fn metal_rough(roughness: Option<&ImageSource>, metalness: Option<&ImageSource>) -> Option<TextureData> {
+/// One channel from each image, at the size of the larger, packed as
+/// (1, roughness, metalness, 1).
+fn metal_rough(roughness: Option<&(Box<ImageSource>, usize)>, metalness: Option<&(Box<ImageSource>, usize)>) -> Option<TextureData> {
     // Decoded one after the other and reduced to one channel each, so only one full
     // image is in memory at a time.
-    let channel = |src: Option<&ImageSource>| src.and_then(|s| load(s, ColorSpace::Linear)).map(|i| image::DynamicImage::ImageRgba8(i).into_luma8());
+    let channel = |src: Option<&(Box<ImageSource>, usize)>| {
+        let (src, c) = src?;
+        let rgba = load(src, ColorSpace::Linear)?;
+        let (w, h) = rgba.dimensions();
+        let c = (*c).min(3);
+        image::GrayImage::from_raw(w, h, rgba.as_raw().iter().skip(c).step_by(4).copied().collect())
+    };
     let (r, m) = (channel(roughness), channel(metalness));
     let (w, h) = match (&r, &m) {
         (Some(a), Some(b)) => (a.width().max(b.width()), a.height().max(b.height())),
@@ -338,11 +344,11 @@ mod tests {
             Box::new(ImageSource::Bytes(out.into()))
         };
         // Different sizes: packed at the larger.
-        let t = decode(&ImageSource::MetalRough { roughness: Some(png(200, 4)), metalness: Some(png(30, 2)) }, ColorSpace::Linear).unwrap();
+        let t = decode(&ImageSource::MetalRough { roughness: Some((png(200, 4), 0)), metalness: Some((png(30, 2), 0)) }, ColorSpace::Linear).unwrap();
         assert_eq!((t.width, t.height, t.color_space), (4, 4, ColorSpace::Linear));
         assert_eq!(&t.levels[0].as_slice()[..4], [255, 200, 30, 255]);
         // Only roughness: metal is white, so the metallic factor alone applies.
-        let t = decode(&ImageSource::MetalRough { roughness: Some(png(90, 2)), metalness: None }, ColorSpace::Linear).unwrap();
+        let t = decode(&ImageSource::MetalRough { roughness: Some((png(90, 2), 0)), metalness: None }, ColorSpace::Linear).unwrap();
         assert_eq!(&t.levels[0].as_slice()[..4], [255, 90, 255, 255]);
     }
 

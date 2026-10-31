@@ -18,6 +18,7 @@ viewer-fmt-3d = { path = "crates/fmt-3d" }
 rendererx-scene = { path = "crates/rendererx-scene" }
 rendererx = { path = "crates/rendererx" }
 rendererx-gltf = { path = "crates/rendererx-gltf" }
+usd-lite = { path = "crates/usd-lite" }
 
 anyhow = "1"
 memmap2 = "0.9"

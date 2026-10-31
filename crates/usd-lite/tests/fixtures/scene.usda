@@ -1,0 +1,140 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    doc = """A test scene: transforms, a mesh with
+subsets and primvars, a textured preview surface."""
+    metersPerUnit = 0.01
+    upAxis = "Z"
+)
+
+# Comments are ignored.
+def Xform "World" (
+    kind = "assembly"
+    customData = {
+        dictionary tool = {
+            string name = "hand-written"
+            int version = 2
+        }
+    }
+)
+{
+    double3 xformOp:translate = (10, 0, 0)
+    float3 xformOp:rotateXYZ = (0, 0, 90)
+    float3 xformOp:scale = (2, 2, 2)
+    uniform token[] xformOpOrder = ["xformOp:translate", "xformOp:rotateXYZ", "xformOp:scale"]
+
+    def Mesh "Quad" (
+        prepend apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        int[] faceVertexCounts = [4, 3]
+        int[] faceVertexIndices = [0, 1, 2, 3, 0, 2, 4]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0), (2, 0.5, -inf)]
+        normal3f[] normals = [(0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1), (0, 0, 1)] (
+            interpolation = "vertex"
+        )
+        texCoord2f[] primvars:st = [(0, 0), (1, 0), (1, 1), (0, 1)] (
+            interpolation = "faceVarying"
+        )
+        int[] primvars:st:indices = [0, 1, 2, 3, 0, 2, 1]
+        color3f[] primvars:displayColor = [(1, 0, 0)]
+        uniform bool doubleSided = 1
+        rel material:binding = </World/Looks/Red>
+        float radius.timeSamples = {
+            0: 1.5,
+            10: 2.5,
+        }
+
+        def GeomSubset "second" (
+            prepend apiSchemas = ["MaterialBindingAPI"]
+        )
+        {
+            uniform token elementType = "face"
+            uniform token familyName = "materialBind"
+            int[] indices = [1]
+            rel material:binding = </World/Looks/Textured>
+        }
+    }
+
+    def Scope "Looks"
+    {
+        def Material "Red"
+        {
+            token outputs:surface.connect = </World/Looks/Red/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor = (0.8, 0.1, 0.1)
+                float inputs:metallic = 1
+                float inputs:roughness = 0.25
+                token outputs:surface
+            }
+        }
+
+        def Material "Textured"
+        {
+            token outputs:surface.connect = </World/Looks/Textured/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </World/Looks/Textured/Graph.outputs:color>
+                float inputs:roughness.connect = </World/Looks/Textured/Orm.outputs:g>
+                normal3f inputs:normal.connect = </World/Looks/Textured/Normal.outputs:rgb>
+                float inputs:opacityThreshold = 0.5
+                token outputs:surface
+            }
+
+            def NodeGraph "Graph"
+            {
+                color3f outputs:color.connect = </World/Looks/Textured/Albedo.outputs:rgb>
+            }
+
+            def Shader "Albedo"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @textures/albedo.png@
+                token inputs:sourceColorSpace = "sRGB"
+                float3 outputs:rgb
+            }
+
+            def Shader "Orm"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @./textures/orm.png@
+                token inputs:sourceColorSpace = "raw"
+                float outputs:g
+            }
+
+            def Shader "Normal"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @textures/normal.png@
+                float4 inputs:scale = (2, 2, 2, 2)
+                float4 inputs:bias = (-1, -1, -1, -1)
+                float3 outputs:rgb
+            }
+        }
+    }
+
+    def Xform "Hidden"
+    {
+        token visibility = "invisible"
+    }
+
+    def Xform "Referenced" (
+        prepend references = @./other.usda@</Thing>
+        variants = {
+            string look = "blue"
+        }
+        prepend variantSets = "look"
+    )
+    {
+        variantSet "look" = {
+            "blue" {
+                float3 xformOp:translate = (0, 0, 1)
+            }
+        }
+    }
+}

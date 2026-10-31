@@ -107,7 +107,9 @@ impl Images {
         let id = if r.is_none() && m.is_none() {
             None
         } else {
-            self.queue(ImageSource::MetalRough { roughness: r.map(Box::new), metalness: m.map(Box::new) }, ColorSpace::Linear, b)
+            // FBX maps are greyscale: any channel will do.
+            let pick = |s: Option<ImageSource>| s.map(|s| (Box::new(s), 0));
+            self.queue(ImageSource::MetalRough { roughness: pick(r), metalness: pick(m) }, ColorSpace::Linear, b)
         };
         self.packed.insert(key, id);
         id

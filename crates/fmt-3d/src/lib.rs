@@ -5,6 +5,7 @@
 mod blend;
 mod textures;
 mod ufbx_scene;
+mod usd;
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
@@ -14,7 +15,7 @@ use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Resul
 
 pub use blend::BlendLoader;
 
-pub static LOADERS: &[&dyn FormatLoader] = &[&GltfLoader, &FbxLoader, &ObjLoader, &BlendLoader];
+pub static LOADERS: &[&dyn FormatLoader] = &[&GltfLoader, &FbxLoader, &ObjLoader, &UsdLoader, &BlendLoader];
 
 /// The document for a loaded scene, with the counts the info panel shows. A scene
 /// with nothing to draw is an error, so a file that only looks like a model (a
@@ -111,6 +112,37 @@ impl FormatLoader for GltfLoader {
     }
 }
 
+// ---------------------------------------------------------------- USD
+
+pub struct UsdLoader;
+
+impl FormatLoader for UsdLoader {
+    fn id(&self) -> &'static str {
+        "usd"
+    }
+
+    fn name(&self) -> &'static str {
+        "USD scene"
+    }
+
+    fn probe(&self, header: &[u8], ext: Option<&str>, _: &str) -> Confidence {
+        match (usd_lite::detect(header), ext) {
+            // A zip is only USD when it says so, and then it beats the zip loader.
+            (Some(usd_lite::Format::Usdz), Some("usdz")) => Confidence(Confidence::MAGIC.0 + 1),
+            (Some(usd_lite::Format::Usdz), _) => Confidence::NONE,
+            (Some(_), _) => Confidence::MAGIC,
+            (None, Some("usd" | "usda" | "usdc" | "usdz")) => Confidence::EXTENSION,
+            _ => Confidence::NONE,
+        }
+    }
+
+    fn open(&self, src: &FileSource) -> Result<Document> {
+        let loaded = usd::load(src)?;
+        let note = texture_note(loaded.textures);
+        Ok(scene_document(loaded.format, loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note))
+    }
+}
+
 // ---------------------------------------------------------------- FBX / OBJ
 
 pub struct FbxLoader;
@@ -200,6 +232,28 @@ f 4 1 5 8
         assert!((b.size() - rendererx_scene::glam::Vec3::splat(2.0)).length() < 1e-4);
         // `usemtl missing` names a material that no .mtl defines: no colour, so clay.
         assert!(read.materials().iter().all(|m| m.material.params.get("base_color").is_none()));
+    }
+
+    #[test]
+    fn usd_meshes_split_by_material_in_y_up_metres() {
+        let src = FileSource::from_bytes("scene.usda", include_bytes!("../../usd-lite/tests/fixtures/scene.usda").to_vec());
+        assert_eq!(UsdLoader.probe(src.header(), src.ext().as_deref(), src.name()), Confidence::MAGIC);
+        let doc = UsdLoader.open(&src).unwrap();
+        let Content::Scene(SceneDoc { scene, .. }) = doc.content else { panic!("expected a scene") };
+        let read = scene.read();
+        // The quad (Red) and the triangle (its GeomSubset, Textured) are separate meshes;
+        // the hidden prim adds nothing.
+        assert_eq!(read.meshes().len(), 2);
+        assert_eq!(read.materials().len(), 2);
+        let names: Vec<_> = read.materials().iter().map(|m| m.material.name.as_str()).collect();
+        assert!(names.contains(&"Red") && names.contains(&"Textured"), "{names:?}");
+        // /World is at (10, 0, 0) cm, Z up: 0.1 m along X in Y-up metres. Points span
+        // 0..1 (×2 scale, rotated 90° about the up axis), so everything stays within
+        // ~0.1 m of it, and the up axis is now Y.
+        let b = read.bounds().unwrap();
+        assert!((b.center().x - 0.08).abs() < 0.05, "{b:?}");
+        assert!(b.size().y.abs() < 1e-3, "flat quad: no height after Z-up → Y-up, {b:?}");
+        assert!(doc.metadata.iter().any(|(k, v)| k == "Warning" && v.contains("references")), "composition is reported");
     }
 
     #[test]

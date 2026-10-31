@@ -12,6 +12,7 @@ viewer-core.workspace = true
 anyhow.workspace = true
 rendererx-scene.workspace = true
 rendererx-gltf.workspace = true
+usd-lite.workspace = true
 # Official bindings to ufbx, a single-file C loader for FBX (and OBJ/MTL).
 ufbx = "0.11"
 # Texture decoding; the same pure-Rust decoders viewer-fmt-image already builds.

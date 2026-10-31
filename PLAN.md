@@ -98,7 +98,7 @@ trait Document: Send {
 | FBX | `ufbx` — **done** |
 | DAE, 3DS, X, LWO, … | `russimp` (Assimp, C++), on demand |
 | STEP / IGES / BREP (CAD) | OpenCASCADE (FFI, `opencascade-rs`) or `truck` → tessellate |
-| USD / USDZ | OpenUSD (C++) FFI, or convert; Rust support is immature |
+| USD / USDA / USDC / USDZ | `usd-lite` (our pure-Rust crate, reusable: Sdf-style layers from text, binary crate 0.4–0.10 and packages, plus geometry/preview-material helpers) — **done** for single layers; composition (references, payloads, variants) not yet |
 | 3MF | `zip` + `quick-xml` |
 | LAS / LAZ | `las` |
 | Blend | Saved preview image (`TEST` block) — **done**; geometry: Blender headless → glTF (converter bridge) |

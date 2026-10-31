@@ -1,0 +1,17 @@
+[package]
+name = "usd-lite"
+description = "Reads OpenUSD layers (USDA, USDC, USDZ) into plain data, with helpers for geometry and preview materials. Pure Rust, no Pixar runtime."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on the viewer or the renderer.
+[features]
+default = ["usdz"]
+# USDZ packages (zip, stored entries only, as the spec requires).
+usdz = ["dep:zip"]
+
+[dependencies]
+lz4_flex = { version = "0.11", default-features = false, features = ["safe-decode"] }
+thiserror = "2"
+zip = { version = "9", default-features = false, optional = true }
