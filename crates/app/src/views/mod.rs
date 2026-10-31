@@ -65,6 +65,11 @@ pub fn show(ui: &mut egui::Ui, page: &mut Page, md_cache: &mut egui_commonmark::
             hex::show(ui, src.bytes());
             None
         }
+        (Content::Scene(_), _) => {
+            // RendererX shares libgui's GPU device; the egui frontend is being retired.
+            ui.centered_and_justified(|ui| ui.label("3D models are shown in the libgui frontend (--features libgui)."));
+            None
+        }
         (Content::Raster(_), _) => unreachable!("raster pages always get raster state"),
     })
     .inner

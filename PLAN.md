@@ -91,16 +91,17 @@ trait Document: Send {
 ### 3D
 | Formats | Library |
 |---|---|
-| glTF / GLB (primary) | `gltf` |
-| OBJ | `tobj` |
+| glTF / GLB (primary) | `rendererx-gltf` (own reader, zero-copy from the mapped file) — **done** |
+| OBJ (+ MTL) | `ufbx` (one C file, official Rust bindings) — **done** |
 | STL | `stl_io` |
 | PLY + Gaussian splats | `ply-rs` + custom splat shader |
-| FBX, DAE, 3DS, X, LWO, … (~40) | `russimp` (Assimp, C++) |
+| FBX | `ufbx` — **done** |
+| DAE, 3DS, X, LWO, … | `russimp` (Assimp, C++), on demand |
 | STEP / IGES / BREP (CAD) | OpenCASCADE (FFI, `opencascade-rs`) or `truck` → tessellate |
 | USD / USDZ | OpenUSD (C++) FFI, or convert; Rust support is immature |
 | 3MF | `zip` + `quick-xml` |
 | LAS / LAZ | `las` |
-| Blend | Blender headless → glTF (converter bridge) |
+| Blend | Saved preview image (`TEST` block) — **done**; geometry: Blender headless → glTF (converter bridge) |
 
 ### Audio / video
 - **Default:** `libmpv` (via `libmpv2`) rendering into our wgpu texture. Gives every codec, subtitles and hardware decoding.

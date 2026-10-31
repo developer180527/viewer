@@ -7,9 +7,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use libgui::*;
-use viewer_core::{Container, Content, Raster, Table, TextDoc, TreeNode};
+use viewer_core::{Container, Content, Raster, SceneDoc, Table, TextDoc, TreeNode};
 
-use super::Textures;
+use super::{SceneGpu, Textures};
 use super::app::Page;
 
 /// Longer lines are cut for display (minified files would otherwise stall layout).
@@ -29,6 +29,7 @@ pub enum ViewState {
     Markdown(libgui_markdown::Markdown),
     Tree(TreeView),
     Table(TableState),
+    Scene(Box<SceneView>),
 }
 
 impl ViewState {
@@ -46,6 +47,7 @@ impl ViewState {
                 Column::new("Size").width(110.0).align(Align::End).unsortable(),
                 Column::new("Packed").width(110.0).align(Align::End).unsortable(),
             ])),
+            Content::Scene(_) => Self::Scene(Box::default()),
             _ => Self::None,
         }
     }
@@ -54,6 +56,7 @@ impl ViewState {
     pub fn textures(&self) -> Vec<TextureId> {
         match self {
             Self::Raster(st) => st.tiles.iter().map(|(t, _)| *t).collect(),
+            Self::Scene(st) => st.gpu.texture().into_iter().collect(),
             _ => Vec::new(),
         }
     }
@@ -89,6 +92,10 @@ pub fn show(ui: &mut Ui, page: &mut Page, tex: &mut dyn Textures, dark: bool) ->
         (Content::Container(c), ViewState::Table(st)) => container(ui, c.as_ref(), st).map(|i| Action::OpenEntry(c.clone(), i)),
         (Content::Hex(src), _) => {
             hex(ui, src.bytes());
+            None
+        }
+        (Content::Scene(doc), ViewState::Scene(st)) => {
+            scene(ui, doc, st, tex);
             None
         }
         _ => unreachable!("every page gets the view state its content needs"),
@@ -370,6 +377,95 @@ fn raster(ui: &mut Ui, r: &Raster, st: &mut RasterState, tex: &mut dyn Textures)
             }
             let label = format!("{:.0}%  ·  {w} × {h}", zoom * 100.0);
             p.text(Vec2::new(rect.x + 8.0, rect.y + rect.h - 22.0), 12.0, faint, label);
+        });
+    });
+}
+
+// ---------------------------------------------------------------- 3D
+
+#[derive(Default)]
+pub struct SceneView {
+    gpu: SceneGpu,
+    controls: Option<rendererx::OrbitControls>,
+    /// The user moved the camera, so don't reframe when loading finishes.
+    moved: bool,
+    /// Framed on the finished model's measured bounds (not the loader's early hint).
+    framed_final: bool,
+}
+
+/// A 3D model drawn by RendererX into a texture. Drag to orbit, Shift-drag (or
+/// two-finger pan) to pan, scroll or pinch to zoom, double-click or 0 to reframe.
+fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, tex: &mut dyn Textures) {
+    let id = ui.make_id("scene");
+    let resp = ui.interact_drag(id);
+    let rect = resp.rect; // last frame's: one frame of latency, as for images
+    let aspect = if rect.h > 0.0 { rect.w / rect.h } else { 1.0 };
+
+    let (bounds, loading) = {
+        let read = doc.scene.read();
+        (read.bounds(), read.geometry() == rendererx::scene_data::GeometryState::Loading)
+    };
+    let reset = resp.double_clicked || (resp.hovered && ui.key_pressed(Key::Num0));
+    if let Some(b) = bounds {
+        // Frame as soon as there are bounds, and once more on the finished model's
+        // measured bounds unless the user has taken over the camera.
+        if st.controls.is_none() || reset || (!st.moved && !st.framed_final && !loading) {
+            st.controls = Some(rendererx::OrbitControls::framing(b, aspect));
+            st.framed_final = !loading;
+            st.moved &= !reset;
+        }
+    }
+    if let Some(c) = st.controls.as_mut() {
+        let h = rect.h.max(1.0);
+        if resp.active && resp.drag_delta != Vec2::ZERO {
+            if resp.modifiers.shift {
+                c.pan(resp.drag_delta.x, resp.drag_delta.y, h);
+            } else {
+                c.orbit(resp.drag_delta.x, resp.drag_delta.y, h);
+            }
+            st.moved = true;
+        }
+        if resp.hovered && resp.scroll.y != 0.0 {
+            c.zoom((resp.scroll.y / 300.0).exp());
+            st.moved = true;
+        }
+        if resp.pinch != 0.0 {
+            c.zoom(1.0 + resp.pinch);
+            st.moved = true;
+        }
+        if resp.pan2 != Vec2::ZERO {
+            c.pan(resp.pan2.x, resp.pan2.y, h);
+            st.moved = true;
+        }
+    }
+
+    let camera = st.controls.map(|c| c.camera()).unwrap_or_default();
+    let pal = ui.theme.palette;
+    let bg = [pal.bg_inset.r, pal.bg_inset.g, pal.bg_inset.b, 1.0];
+    let scale = tex.pixels_per_point();
+    let size = ((rect.w * scale).round() as u32, (rect.h * scale).round() as u32);
+    let frame = if size.0 > 0 && size.1 > 0 {
+        tex.render_scene(&mut st.gpu, &doc.scene, size, &camera, bg)
+    } else {
+        // The first frame has no rect yet; the next one will.
+        super::Frame3d { busy: true, ..Default::default() }
+    };
+    if frame.busy {
+        ui.request_repaint();
+    }
+
+    let (texture, error) = (frame.texture, frame.error);
+    let faint = pal.text_muted;
+    let status = if loading { "Loading model…" } else { "Drag to orbit · Shift-drag to pan · Scroll to zoom · Double-click to reframe" };
+    let frame_style = Frame { fill: pal.bg_inset, clip: true, ..Frame::none() };
+    ui.container(Layout::column(), frame_style, |ui| {
+        ui.add_leaf(id, Layout::leaf(Size::Grow(1.0), Size::Grow(1.0)), Vec2::ZERO, true, move |p, r| {
+            match (texture, &error) {
+                (Some(t), _) => p.image_with_alpha(r, t, [0.0, 0.0, 1.0, 1.0], 0.0, Color::WHITE, ImageAlpha::Straight),
+                (None, Some(e)) => p.text_centered(r, 14.0, faint, e),
+                (None, None) => {}
+            }
+            p.text(Vec2::new(r.x + 8.0, r.y + r.h - 22.0), 12.0, faint, status);
         });
     });
 }

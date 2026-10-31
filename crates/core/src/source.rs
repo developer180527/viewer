@@ -8,6 +8,15 @@ enum Data {
     Owned(Vec<u8>),
 }
 
+impl AsRef<[u8]> for Data {
+    fn as_ref(&self) -> &[u8] {
+        match self {
+            Data::Mapped(m) => m,
+            Data::Owned(v) => v,
+        }
+    }
+}
+
 /// The bytes of a file plus its name. Cheap to clone; disk files are memory-mapped
 /// so opening a multi-GB file costs nothing until pages are touched.
 #[derive(Clone)]
@@ -67,6 +76,13 @@ impl FileSource {
             Data::Mapped(m) => m,
             Data::Owned(v) => v,
         }
+    }
+
+    /// The bytes as a shared handle that keeps the mapping alive, for consumers that
+    /// outlive this `FileSource` and must not copy (3D scenes borrow vertex data
+    /// straight from the mapped file).
+    pub fn shared_bytes(&self) -> Arc<dyn AsRef<[u8]> + Send + Sync> {
+        self.data.clone()
     }
 
     pub fn len(&self) -> u64 {

@@ -14,6 +14,7 @@ viewer-fmt-image = { path = "crates/fmt-image" }
 viewer-fmt-doc = { path = "crates/fmt-doc" }
 viewer-fmt-data = { path = "crates/fmt-data" }
 viewer-fmt-archive = { path = "crates/fmt-archive" }
+viewer-fmt-3d = { path = "crates/fmt-3d" }
 rendererx-scene = { path = "crates/rendererx-scene" }
 rendererx = { path = "crates/rendererx" }
 rendererx-gltf = { path = "crates/rendererx-gltf" }

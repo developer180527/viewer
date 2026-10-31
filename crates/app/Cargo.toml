@@ -17,7 +17,7 @@ default = ["egui"]
 egui = ["dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_commonmark"]
 libgui = [
     "dep:libgui", "dep:libgui_keymap", "dep:libgui_wgpu", "dep:libgui_winit", "dep:libgui_soft",
-    "dep:libgui_sysfonts", "dep:libgui_markdown", "dep:wgpu", "dep:winit", "dep:pollster",
+    "dep:libgui_sysfonts", "dep:libgui_markdown", "dep:wgpu", "dep:winit", "dep:pollster", "dep:rendererx",
 ]
 
 [dependencies]
@@ -26,6 +26,7 @@ viewer-fmt-image.workspace = true
 viewer-fmt-doc.workspace = true
 viewer-fmt-data.workspace = true
 viewer-fmt-archive.workspace = true
+viewer-fmt-3d.workspace = true
 anyhow.workspace = true
 rfd = "0.17"
 # Only for writing --screenshot PNGs.
@@ -50,3 +51,4 @@ libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev =
 wgpu = { version = "30", optional = true }
 winit = { version = "0.30", optional = true }
 pollster = { version = "1", optional = true }
+rendererx = { workspace = true, optional = true, features = ["controls"] }

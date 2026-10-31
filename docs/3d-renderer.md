@@ -1,6 +1,6 @@
 # RendererX — a reusable 3D renderer on wgpu
 
-Status: milestone 1 steps 1–2 implemented: `rendererx-scene` (CPU scene) and `rendererx` core (renderer, views, streaming mesh upload, clay shading, on-demand redraw, orbit controls). Step 3 done: `rendererx-gltf` (glTF/GLB, zero-copy streams, materials as authored, images handed to the host to decode). Not yet: texture upload, authored shading models, the Viewer 3D view. Updated 2026-10-31 for the decided architecture (PLAN.md §12): scenes are built without the GPU, one shared device, many windows, and edits as operations.
+Status: milestone 1 steps 1–3 and 5 implemented: `rendererx-scene`, `rendererx` core (clay shading), `rendererx-gltf`, and Viewer's 3D view (libgui frontend, orbit/pan/zoom) with loaders in `viewer-fmt-3d` for glTF/GLB, FBX and OBJ (via ufbx). `.blend` shows Blender's saved preview image. Not yet: texture upload and the authored shading models (models draw in clay with their material colours), USD, `.blend` geometry.
 
 The product name is **RendererX**; the Cargo package and Rust crate are `rendererx`
 (Rust warns on non-snake-case crate names, and lowercase names avoid case clashes on crates.io and in paths).

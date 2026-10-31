@@ -37,6 +37,8 @@ pub enum Content {
     Container(Arc<dyn Container>),
     /// Raw bytes of the source file.
     Hex(FileSource),
+    /// A 3D model: meshes, materials and nodes, built without a GPU.
+    Scene(SceneDoc),
 }
 
 impl Content {
@@ -49,8 +51,15 @@ impl Content {
             Content::Table(_) => "Table",
             Content::Container(_) => "Container",
             Content::Hex(_) => "Hex",
+            Content::Scene(_) => "3D scene",
         }
     }
+}
+
+/// A 3D model. The scene is shared with the renderer, which follows it as it fills in
+/// and frees the CPU copy of what it has uploaded (docs/3d-renderer.md §11.1).
+pub struct SceneDoc {
+    pub scene: rendererx_scene::CpuScene,
 }
 
 /// A decoded image in straight (non-premultiplied) RGBA8.

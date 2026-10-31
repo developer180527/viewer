@@ -20,6 +20,9 @@ use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
 
+use rendererx::Camera;
+use rendererx::scene_data::CpuScene;
+
 use crate::loading::{Job, WAKE};
 use crate::{Args, startup};
 use app::ViewerApp;
@@ -35,6 +38,63 @@ pub trait Textures {
     fn max_side(&self) -> u32;
     /// `rgba` is straight (not premultiplied) RGBA8, `width * height * 4` bytes.
     fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId;
+    /// Physical pixels per logical point, for views that render at native resolution.
+    fn pixels_per_point(&self) -> f32;
+    /// Draws a 3D scene from `camera` into a `size`-pixel frame (RendererX on the
+    /// shared device) and returns the texture to show.
+    fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d;
+}
+
+/// What a 3D view keeps on the GPU between frames. Dropping it frees the uploaded
+/// model and the view's buffers; the registered texture is retired by the page.
+#[derive(Default)]
+pub struct SceneGpu {
+    gpu: Option<rendererx::GpuScene>,
+    view: Option<rendererx::View>,
+    /// The frame registered with the UI renderer, and the view target generation it shows.
+    texture: Option<(TextureId, u64)>,
+}
+
+impl SceneGpu {
+    pub fn texture(&self) -> Option<TextureId> {
+        self.texture.map(|(t, _)| t)
+    }
+}
+
+#[derive(Default)]
+pub struct Frame3d {
+    pub texture: Option<TextureId>,
+    /// Still uploading: draw again soon.
+    pub busy: bool,
+    /// Why nothing can be drawn (no GPU).
+    pub error: Option<String>,
+}
+
+/// Uploads what's new (everything at once when `block`), then renders if the frame
+/// would change. Returns whether uploads remain.
+fn draw_scene(
+    (rx, device, queue): (&rendererx::Renderer, &wgpu::Device, &wgpu::Queue),
+    st: &mut SceneGpu,
+    scene: &CpuScene,
+    (w, h): (u32, u32),
+    camera: &Camera,
+    background: [f32; 4],
+    block: bool,
+) -> bool {
+    let gpu = st.gpu.get_or_insert_with(|| rx.attach(scene));
+    rx.sync(gpu);
+    while block && gpu.needs_sync() {
+        rx.sync(gpu);
+    }
+    let view = st.view.get_or_insert_with(|| rx.create_view(rendererx::ViewDesc { width: w, height: h }));
+    view.resize(w, h);
+    let opts = rendererx::RenderOptions { background };
+    if rx.needs_redraw(gpu, view, camera, &opts) {
+        let mut encoder = device.create_command_encoder(&Default::default());
+        rx.render(&mut encoder, gpu, view, camera, &opts);
+        queue.submit([encoder.finish()]);
+    }
+    gpu.needs_sync() || scene.read().geometry() == rendererx::scene_data::GeometryState::Loading
 }
 
 fn new_ui(dark: bool) -> anyhow::Result<Ui> {
@@ -68,15 +128,57 @@ pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
 
 // --- Headless ------------------------------------------------------------------
 
-impl Textures for libgui_soft::SoftRenderer {
+/// `--screenshot` textures: the CPU renderer's table, plus a windowless GPU device for
+/// 3D scenes (rendered, then read back), created only if a scene is shown.
+struct Headless {
+    soft: libgui_soft::SoftRenderer,
+    /// `None` until a scene asks; `Some(Err)` when there is no adapter.
+    gpu: Option<Result<(wgpu::Device, wgpu::Queue, rendererx::Renderer), String>>,
+}
+
+impl Textures for Headless {
     fn max_side(&self) -> u32 {
         8192
     }
 
     fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
-        self.register_texture(libgui_soft::Texture { width, height, data: rgba.to_vec() })
+        self.soft.register_texture(libgui_soft::Texture { width, height, data: rgba.to_vec() })
+    }
+
+    fn pixels_per_point(&self) -> f32 {
+        HEADLESS_SCALE
+    }
+
+    fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
+        let gpu = self.gpu.get_or_insert_with(|| {
+            let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+            let adapter = pollster::block_on(instance.request_adapter(&Default::default())).map_err(|e| e.to_string())?;
+            let desc = wgpu::DeviceDescriptor { required_limits: adapter.limits(), ..Default::default() };
+            let (device, queue) = pollster::block_on(adapter.request_device(&desc)).map_err(|e| e.to_string())?;
+            let rx = rendererx::Renderer::new(&device, &queue, Default::default());
+            Ok((device, queue, rx))
+        });
+        let (device, queue, rx) = match gpu {
+            Ok(g) => g,
+            Err(e) => return Frame3d { error: Some(format!("no GPU for 3D: {e}")), ..Default::default() },
+        };
+        // A screenshot wants the finished model, so upload all of it now.
+        draw_scene((rx, device, queue), st, scene, size, camera, background, true);
+        let Some(pixels) = st.view.as_ref().and_then(|v| v.read_pixels(device, queue)) else { return Frame3d::default() };
+        let texture = libgui_soft::Texture { width: size.0, height: size.1, data: pixels };
+        let id = match st.texture {
+            Some((id, _)) => {
+                self.soft.update_texture(id, texture);
+                id
+            }
+            None => self.soft.register_texture(texture),
+        };
+        st.texture = Some((id, 0));
+        Frame3d { texture: Some(id), busy: false, error: None }
     }
 }
+
+const HEADLESS_SCALE: f32 = 2.0;
 
 /// `--screenshot`: wait for the file, draw it on the CPU at 2× and save the
 /// pixels. No window, no GPU, so it runs anywhere (CI included).
@@ -90,18 +192,18 @@ fn headless(path: &Path, job: Option<Job>) -> anyhow::Result<()> {
     }
     let mut ui = new_ui(app.dark)?;
     startup::mark("ui created");
-    let mut soft = libgui_soft::SoftRenderer::new();
-    let scale = 2.0;
+    let mut tex = Headless { soft: libgui_soft::SoftRenderer::new(), gpu: None };
+    let scale = HEADLESS_SCALE;
     let info = FrameInfo { screen_size: Vec2::new(SIZE.0, SIZE.1), scale, dt: 1.0 / 60.0 };
     let (w, h) = ((SIZE.0 * scale) as u32, (SIZE.1 * scale) as u32);
     // Rects are a frame late (fit-to-window zoom, table widths), so settle first.
     for frame in 1..=3 {
         let t = Instant::now();
         ui.begin_frame(info);
-        app.ui(&mut ui, &mut soft);
+        app.ui(&mut ui, &mut tex);
         let out = ui.end_frame();
         let built = t.elapsed();
-        let image = soft.render_to_image(&out, w, h);
+        let image = tex.soft.render_to_image(&out, w, h);
         startup::mark(&format!(
             "CPU frame {frame}: built in {:.2} ms, rendered {w}×{h} in {:.2} ms",
             built.as_secs_f64() * 1000.0,
@@ -120,6 +222,10 @@ struct Gpu<'a> {
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
     renderer: &'a mut libgui_wgpu::Renderer,
+    /// RendererX on the same device, created the first time a 3D view needs it so
+    /// startup never pays for its pipelines.
+    rx: &'a mut Option<rendererx::Renderer>,
+    scale: f32,
 }
 
 impl Textures for Gpu<'_> {
@@ -148,6 +254,29 @@ impl Textures for Gpu<'_> {
         // The renderer's bind group keeps the texture alive.
         self.renderer.register_texture(&texture.create_view(&Default::default()))
     }
+
+    fn pixels_per_point(&self) -> f32 {
+        self.scale
+    }
+
+    fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
+        let rx = self.rx.get_or_insert_with(|| rendererx::Renderer::new(self.device, self.queue, Default::default()));
+        let busy = draw_scene((rx, self.device, self.queue), st, scene, size, camera, background, false);
+        // The target is recreated on resize; point the UI's texture at the new one.
+        let view = st.view.as_ref().expect("created by draw_scene");
+        if let Some(target) = view.target_view() {
+            let generation = view.target_generation();
+            match st.texture {
+                Some((_, g)) if g == generation => {}
+                Some((id, _)) => {
+                    self.renderer.update_texture(id, target);
+                    st.texture = Some((id, generation));
+                }
+                None => st.texture = Some((self.renderer.register_texture(target), generation)),
+            }
+        }
+        Frame3d { texture: st.texture(), busy, error: None }
+    }
 }
 
 struct Live {
@@ -165,6 +294,7 @@ struct Live {
     idle: f32,
     batches: Vec<Batch>,
     clear: Color,
+    rx: Option<rendererx::Renderer>,
 }
 
 #[derive(Default)]
@@ -230,6 +360,7 @@ impl Host {
             last: Instant::now(),
             idle: 0.0,
             batches: Vec::new(),
+            rx: None,
         });
         Ok(())
     }
@@ -264,7 +395,7 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale };
             app.ui(&mut w.ui, &mut gpu);
             let out = w.ui.end_frame();
             if self.content_frames == 0 { startup::mark(&format!("  frame built in {:.2} ms", t.elapsed().as_secs_f64() * 1000.0)); }

@@ -9,3 +9,5 @@ license.workspace = true
 anyhow.workspace = true
 memmap2.workspace = true
 infer.workspace = true
+# The 3D content model. Plain data only (glam, bytemuck): no GPU.
+rendererx-scene.workspace = true

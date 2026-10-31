@@ -4441,6 +4441,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "ufbx"
+version = "0.11.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "260522f1eb74139f0e78b29dd82a58e5437d728c5498024a39e5af7282694240"
+dependencies = [
+ "cc",
+]
+
+[[package]]
 name = "unicase"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4622,8 +4631,10 @@ dependencies = [
  "libgui_wgpu",
  "libgui_winit",
  "pollster 1.0.1",
+ "rendererx",
  "rfd",
  "viewer-core",
+ "viewer-fmt-3d",
  "viewer-fmt-archive",
  "viewer-fmt-data",
  "viewer-fmt-doc",
@@ -4639,6 +4650,18 @@ dependencies = [
  "anyhow",
  "infer",
  "memmap2",
+ "rendererx-scene",
+]
+
+[[package]]
+name = "viewer-fmt-3d"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rendererx-gltf",
+ "rendererx-scene",
+ "ufbx",
+ "viewer-core",
 ]
 
 [[package]]
