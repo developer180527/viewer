@@ -1,0 +1,21 @@
+[package]
+name = "rendererx"
+description = "RendererX: a small, embeddable 3D renderer on wgpu for showing models."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Must not depend on viewer-core, libgui, image or any format crate (docs/3d-renderer.md §2).
+[features]
+default = []
+# Orbit / pan / zoom camera controller.
+controls = []
+
+[dependencies]
+rendererx-scene.workspace = true
+wgpu = "30"
+bytemuck = "1"
+thiserror = "2"
+
+[dev-dependencies]
+pollster = "1"
