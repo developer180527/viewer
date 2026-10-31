@@ -1,10 +1,14 @@
 // Clay: the shading every model gets first (docs/3d-renderer.md §7.3), and the only
 // one STL/PLY files need. Soft sky/ground ambient, a key light that follows the
-// camera, a faint rim; the base colour map is multiplied in.
+// camera, a faint rim; the base colour map is multiplied in. Masked materials keep
+// their cutouts here too: every model without its own stage yet (mtoon, matcap…)
+// draws through clay, and VRM hair and lashes are cutouts.
 
 fn shade_clay(in: VOut, front_facing: bool) -> vec3<f32> {
     // Sampled first, in uniform control flow (derivatives for mip selection).
-    let albedo = in.color.rgb * textureSample(base_tex, mat_sampler, in.uv).rgb;
+    let base = textureSample(base_tex, mat_sampler, in.uv);
+    alpha_cut(mask_alpha(in.color.a * base.a, in.uv));
+    let albedo = in.color.rgb * base.rgb;
     let n = facing_normal(in, front_facing);
     let to_eye = normalize(u.eye.xyz - in.world);
     let sky = vec3<f32>(0.62, 0.66, 0.72);

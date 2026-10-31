@@ -33,6 +33,16 @@ pub(crate) struct GpuMesh {
     pub revision: u64,
 }
 
+/// A material's two bind groups over one factors block: with its maps, and with the
+/// 1×1 defaults for meshes that have no uvs to sample maps with.
+pub(crate) struct MaterialGroups {
+    uniforms: wgpu::Buffer,
+    pub textured: wgpu::BindGroup,
+    pub plain: wgpu::BindGroup,
+    /// Revision of the material these were built from.
+    revision: u64,
+}
+
 pub(crate) struct Batch {
     pub mesh: MeshId,
     /// Selects the bind group (factors and maps); `None` uses the defaults.
@@ -58,8 +68,8 @@ pub struct GpuScene {
     textures: Vec<Option<GpuTexture>>,
     /// Textures the device refused, by the revision that failed.
     texture_failed: HashMap<usize, u64>,
-    /// Per material: its bind group (factors, and whichever maps are on the GPU).
-    pub(crate) material_groups: Vec<wgpu::BindGroup>,
+    /// Per material: its bind groups (factors, and whichever maps are on the GPU).
+    pub(crate) material_groups: Vec<Option<MaterialGroups>>,
     /// Meshes that can't be uploaded (over a device limit), by the revision that failed.
     failed: HashMap<usize, u64>,
     errors: Vec<(MeshId, String)>,
@@ -70,6 +80,8 @@ pub struct GpuScene {
     /// Bumped whenever what a frame would draw changes.
     pub(crate) generation: u64,
     seen: u64,
+    /// [`SceneRead::bounds_revision`] the cached bounds were computed at.
+    bounds_seen: Option<u64>,
     pending: bool,
     bounds: Option<rendererx_scene::Aabb>,
     pub(crate) first_mesh_traced: bool,
@@ -105,6 +117,7 @@ impl GpuScene {
             instances: None,
             generation: 0,
             seen: 0,
+            bounds_seen: None,
             pending: true,
             bounds: None,
             first_mesh_traced: false,
@@ -204,7 +217,7 @@ impl GpuScene {
         if self.textures.len() < read.textures().len() {
             self.textures.resize_with(read.textures().len(), || None);
         }
-        let mut textures_arrived = false;
+        let mut arrived: Vec<TextureId> = Vec::new();
         for (i, entry) in read.textures().iter().enumerate() {
             let stale = self.textures[i].as_ref().is_none_or(|t| t.revision < entry.changed)
                 && self.texture_failed.get(&i).is_none_or(|&rev| rev < entry.changed);
@@ -219,7 +232,7 @@ impl GpuScene {
             match upload_texture(device, queue, &limits, data, entry.changed) {
                 Ok(t) => {
                     self.textures[i] = Some(t);
-                    textures_arrived = true;
+                    arrived.push(id);
                 }
                 Err(e) => {
                     self.texture_failed.insert(i, entry.changed);
@@ -228,30 +241,50 @@ impl GpuScene {
             }
             out.done_textures.push(id);
         }
-        let materials_changed = read.materials().iter().any(|m| m.changed > self.seen);
-        if textures_arrived || materials_changed {
-            self.material_groups = read
-                .materials()
-                .iter()
-                .map(|m| {
-                    let maps = std::array::from_fn(|i| {
-                        let id = texture_for(&m.material, &SLOTS[i])?;
-                        self.textures.get(id.index())?.as_ref().map(|t| &t.view)
-                    });
-                    materials.group(device, Some(&m.material), maps)
-                })
-                .collect();
+        // Only the groups an arrival or edit affects are rebuilt: with every material
+        // rebuilt per arriving texture, a model's load time grew with materials ×
+        // textures.
+        let mut textures_shown = false;
+        self.material_groups.resize_with(read.materials().len(), || None);
+        for (i, m) in read.materials().iter().enumerate() {
+            let edited = self.material_groups[i].as_ref().is_none_or(|g| g.revision < m.changed);
+            let uses_arrival = !arrived.is_empty() && m.material.textures.iter().any(|(_, t)| arrived.contains(t));
+            if !edited && !uses_arrival {
+                continue;
+            }
+            textures_shown |= uses_arrival;
+            let maps = std::array::from_fn(|i| {
+                let id = texture_for(&m.material, &SLOTS[i])?;
+                self.textures.get(id.index())?.as_ref().map(|t| &t.view)
+            });
+            match &mut self.material_groups[i] {
+                Some(g) if !edited => g.textured = materials.group(device, &g.uniforms, maps),
+                slot => {
+                    let uniforms = materials.uniforms(device, Some(&m.material));
+                    let textured = materials.group(device, &uniforms, maps);
+                    let plain = materials.group(device, &uniforms, [None; 5]);
+                    *slot = Some(MaterialGroups { uniforms, textured, plain, revision: m.changed });
+                }
+            }
         }
 
         let nodes_changed = read.nodes().iter().any(|n| n.changed > self.seen) || read.materials().iter().any(|m| m.changed > self.seen);
         // A new mesh only changes the frame if some node places it.
         let placed_fresh = !fresh.is_empty() && read.nodes().iter().any(|n| n.node.mesh.is_some_and(|m| fresh.contains(&m)));
-        out.changed = nodes_changed || placed_fresh || textures_arrived;
-        if out.changed {
+        // Instances depend on nodes, materials and which meshes are on the GPU, not on
+        // textures: an arriving texture only swaps a bind group.
+        if nodes_changed || placed_fresh {
             self.rebuild_instances(device, queue, &limits, &read);
+        }
+        out.changed = nodes_changed || placed_fresh || textures_shown;
+        if out.changed {
             self.generation += 1;
         }
-        self.bounds = read.bounds();
+        // Bounds walk every node; only when what they depend on changed.
+        if self.bounds_seen != Some(read.bounds_revision()) {
+            self.bounds = read.bounds();
+            self.bounds_seen = Some(read.bounds_revision());
+        }
         self.seen = revision;
         out
     }
@@ -328,12 +361,15 @@ impl GpuScene {
     }
 }
 
-/// The material's `base_color` parameter when it has one, else clay.
+/// The material's `base_color` parameter when it has one. Without one: the clay
+/// colour for clay materials, and white for the rest (glTF's default factor), so a
+/// map or an unlit colour isn't darkened to clay grey.
 fn base_color(material: &rendererx_scene::Material) -> Vec4 {
     match material.params.get("base_color") {
         Some(ParamValue::Vec4(c)) => c,
         Some(ParamValue::Vec3(c)) => c.extend(1.0),
-        _ => CLAY,
+        _ if material.shading == rendererx_scene::ShadingId::CLAY => CLAY,
+        _ => Vec4::ONE,
     }
 }
 

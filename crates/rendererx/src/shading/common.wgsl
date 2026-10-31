@@ -105,6 +105,26 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
 }
 
 
+/// Alpha for a material's cutoff test. Mips average alpha, so masked foliage and hair
+/// thin out and vanish with distance; scaling alpha up by the mip level the sample
+/// came from keeps their coverage (Golus, "Anti-aliased alpha test", 2017). Call in
+/// uniform control flow (it takes derivatives).
+fn mask_alpha(alpha: f32, uv: vec2<f32>) -> f32 {
+    let size = vec2<f32>(textureDimensions(base_tex));
+    let dx = dpdx(uv * size);
+    let dy = dpdy(uv * size);
+    let lod = max(0.5 * log2(max(max(dot(dx, dx), dot(dy, dy)), 1e-8)), 0.0);
+    return alpha * (1.0 + lod * 0.25);
+}
+
+/// Discards the fragment when the material is masked and `alpha` (from
+/// [`mask_alpha`]) is below its cutoff. Opaque materials have a negative cutoff.
+fn alpha_cut(alpha: f32) {
+    if mat.params.w >= 0.0 && alpha < mat.params.w {
+        discard;
+    }
+}
+
 /// The shading normal: the interpolated one, facing the viewer on double-sided
 /// surfaces. Lines and points have none: they face the camera.
 fn facing_normal(in: VOut, front_facing: bool) -> vec3<f32> {

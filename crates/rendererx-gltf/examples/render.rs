@@ -51,6 +51,7 @@ fn main() {
     };
     let mut view = r.create_view(rendererx::ViewDesc { width: size, height: size });
     let camera = rendererx::Camera::framing(bounds, 1.0);
+    r.prepare(&gpu_scene);
     let mut encoder = device.create_command_encoder(&Default::default());
     r.render(&mut encoder, &gpu_scene, &mut view, &camera, &Default::default());
     queue.submit([encoder.finish()]);

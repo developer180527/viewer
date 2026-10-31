@@ -46,9 +46,11 @@ fn surface(in: VOut, front_facing: bool) -> Surface {
     // Every map is sampled up front, in uniform control flow.
     let base = textureSample(base_tex, mat_sampler, in.uv);
     let mr = textureSample(metal_rough_tex, mat_sampler, in.uv);
-    let nt = textureSample(normal_tex, mat_sampler, in.uv).xyz * 2.0 - 1.0;
+    let raw_normal = textureSample(normal_tex, mat_sampler, in.uv).xyz;
     let occ = textureSample(occlusion_tex, mat_sampler, in.uv).r;
     let emis = textureSample(emissive_tex, mat_sampler, in.uv).rgb;
+    // Taken here, in uniform control flow, for the cutoff test.
+    let alpha = mask_alpha(in.color.a * base.a, in.uv);
     let dp_dx = dpdx(in.world);
     let dp_dy = dpdy(in.world);
     let duv_dx = dpdx(in.uv);
@@ -56,7 +58,10 @@ fn surface(in: VOut, front_facing: bool) -> Surface {
 
     var s: Surface;
     s.albedo = in.color.rgb * base.rgb;
-    s.alpha = in.color.a * base.a;
+    s.alpha = alpha;
+    // Two-channel normal maps (BC5, RG images) leave blue empty: rebuild z from x, y.
+    let n_xy = raw_normal.xy * 2.0 - 1.0;
+    let nt = select(raw_normal * 2.0 - 1.0, vec3<f32>(n_xy, sqrt(max(1.0 - dot(n_xy, n_xy), 0.0))), raw_normal.z < 1e-3);
     s.metallic = clamp(mat.params.x * mr.b, 0.0, 1.0);
     s.roughness = clamp(mat.params.y * mr.g, 0.045, 1.0);
     s.occlusion = mix(1.0, occ, mat.params.z);
@@ -131,9 +136,7 @@ fn tonemap(c: vec3<f32>) -> vec3<f32> {
 
 fn shade_pbr(in: VOut, front_facing: bool) -> vec4<f32> {
     let s = surface(in, front_facing);
-    if mat.params.w >= 0.0 && s.alpha < mat.params.w {
-        discard;
-    }
+    alpha_cut(s.alpha);
     let n = s.normal;
     let v = normalize(u.eye.xyz - in.world);
     let n_v = max(dot(n, v), 1e-4);
@@ -161,9 +164,7 @@ fn shade_pbr(in: VOut, front_facing: bool) -> vec4<f32> {
 fn shade_unlit(in: VOut) -> vec4<f32> {
     let base = textureSample(base_tex, mat_sampler, in.uv);
     let c = in.color * base;
-    if mat.params.w >= 0.0 && c.a < mat.params.w {
-        discard;
-    }
+    alpha_cut(mask_alpha(c.a, in.uv));
     return vec4<f32>(c.rgb, 1.0);
 }
 

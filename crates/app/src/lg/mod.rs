@@ -98,12 +98,17 @@ fn draw_scene(
     let view = st.view.get_or_insert_with(|| rx.create_view(rendererx::ViewDesc { width: w, height: h }));
     view.resize(w, h);
     let opts = rendererx::RenderOptions { background };
+    if block {
+        // A blocking draw (screenshots) shows the final shading, not clay stand-ins.
+        rx.prepare(gpu);
+    }
     if rx.needs_redraw(gpu, view, camera, &opts) {
         let mut encoder = device.create_command_encoder(&Default::default());
         rx.render(&mut encoder, gpu, view, camera, &opts);
         queue.submit([encoder.finish()]);
     }
-    gpu.needs_sync() || scene.read().geometry() == rendererx::scene_data::GeometryState::Loading
+    // Pipelines a material asked for compile in `sync`, one per tick: keep ticking.
+    gpu.needs_sync() || rx.pipelines_pending() || scene.read().geometry() == rendererx::scene_data::GeometryState::Loading
 }
 
 fn new_ui(dark: bool) -> anyhow::Result<Ui> {
@@ -166,7 +171,12 @@ impl Textures for Headless {
         let gpu = self.gpu.get_or_insert_with(|| {
             let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
             let adapter = pollster::block_on(instance.request_adapter(&Default::default())).map_err(|e| e.to_string())?;
-            let desc = wgpu::DeviceDescriptor { required_limits: adapter.limits(), ..Default::default() };
+            let desc = wgpu::DeviceDescriptor {
+                required_limits: adapter.limits(),
+                // Compressed texture formats, where the GPU has them.
+                required_features: adapter.features() & rendererx::OPTIONAL_FEATURES,
+                ..Default::default()
+            };
             let (device, queue) = pollster::block_on(adapter.request_device(&desc)).map_err(|e| e.to_string())?;
             let rx = rendererx::Renderer::new(&device, &queue, Default::default());
             Ok((device, queue, rx))
@@ -345,7 +355,12 @@ impl Host {
             ..Default::default()
         }))
         .context("no GPU adapter")?;
-        let desc = wgpu::DeviceDescriptor { required_limits: adapter.limits(), ..Default::default() };
+        let desc = wgpu::DeviceDescriptor {
+            required_limits: adapter.limits(),
+            // Compressed texture formats, where the GPU has them.
+            required_features: adapter.features() & rendererx::OPTIONAL_FEATURES,
+            ..Default::default()
+        };
         let (device, queue) = pollster::block_on(adapter.request_device(&desc)).context("creating the GPU device")?;
 
         let px = window.inner_size();

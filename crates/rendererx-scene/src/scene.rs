@@ -108,6 +108,9 @@ struct State {
     nodes: Vec<NodeEntry>,
     textures: Vec<TextureEntry>,
     keep_cpu_data: bool,
+    /// Bumped by every change that can move [`SceneRead::bounds`]: meshes, nodes, the
+    /// loader's hint, the geometry state.
+    bounds_revision: u64,
     /// Ids of live [`ReaderGuard`]s: renderers that upload this scene (one per
     /// `GpuScene`).
     readers: Vec<u32>,
@@ -151,6 +154,7 @@ impl CpuScene {
             nodes: Vec::new(),
             textures: Vec::new(),
             keep_cpu_data: false,
+            bounds_revision: 0,
             readers: Vec::new(),
             next_reader: 0,
             received_bytes: 0,
@@ -260,6 +264,12 @@ impl SceneRead<'_> {
         self.0.geometry
     }
 
+    /// Changes whenever [`bounds`](Self::bounds) may have; textures and materials don't
+    /// change it, so readers can skip recomputing bounds while textures stream in.
+    pub fn bounds_revision(&self) -> u64 {
+        self.0.bounds_revision
+    }
+
     pub fn meshes(&self) -> &[MeshEntry] {
         &self.0.meshes
     }
@@ -350,6 +360,7 @@ impl SceneBuilder {
         }
         self.scene.change(|s, _, _| {
             s.bounds = Some(bounds);
+            s.bounds_revision += 1;
             Ok(())
         })
     }
@@ -378,6 +389,7 @@ impl SceneBuilder {
             s.primitives += info.primitives;
             s.received_bytes += info.bytes;
             s.meshes.push(MeshEntry { info, data: Some(data), changed: rev, uploaded_by: Vec::new() });
+            s.bounds_revision += 1;
             Ok(MeshId(s.meshes.len() as u32 - 1))
         })
     }
@@ -421,6 +433,7 @@ impl SceneBuilder {
             check("drawn triangles", s.drawn_primitives + drawn, limits.max_drawn_triangles)?;
             s.drawn_primitives += drawn;
             s.nodes.push(NodeEntry { node, depth, changed: rev });
+            s.bounds_revision += 1;
             Ok(NodeId(s.nodes.len() as u32 - 1))
         })
     }
@@ -449,6 +462,7 @@ impl SceneBuilder {
             self.finished = true;
             let _ = self.scene.change(|s, _, _| {
                 s.geometry = GeometryState::Done;
+                s.bounds_revision += 1;
                 Ok(())
             });
         }
@@ -460,6 +474,7 @@ impl Drop for SceneBuilder {
         if !self.finished {
             let _ = self.scene.change(|s, _, _| {
                 s.geometry = GeometryState::Incomplete;
+                s.bounds_revision += 1;
                 Ok(())
             });
         }

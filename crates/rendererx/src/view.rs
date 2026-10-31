@@ -30,7 +30,11 @@ pub(crate) struct Targets {
     pub color_view: wgpu::TextureView,
     pub msaa: Option<Msaa>,
     pub depth: wgpu::TextureView,
+    /// The target and (with MSAA) the resolve texture: always backed by memory.
     pub bytes: u64,
+    /// MSAA samples and depth: transient attachments, which take no memory on
+    /// tile-based GPUs (Apple, most mobile) and full memory elsewhere.
+    pub transient_bytes: u64,
 }
 
 /// What a frame depended on. The same key means the same pixels.
@@ -38,6 +42,9 @@ pub(crate) struct Targets {
 pub(crate) struct FrameKey {
     pub scene: u64,
     pub generation: u64,
+    /// The renderer's compiled-pipeline count: a frame drawn with clay stand-ins is
+    /// stale once the real pipeline is ready.
+    pub pipelines: u64,
     pub camera: Camera,
     pub options: RenderOptions,
     pub size: (u32, u32),
@@ -91,9 +98,17 @@ impl View {
         self.target_generation
     }
 
-    /// GPU bytes held: targets and uniforms.
+    /// GPU bytes held for sure: the target (plus the MSAA resolve) and uniforms. The
+    /// MSAA and depth attachments are counted separately in
+    /// [`transient_bytes`](Self::transient_bytes).
     pub fn gpu_bytes(&self) -> u64 {
         self.targets.as_ref().map_or(0, |t| t.bytes) + UNIFORM_BYTES
+    }
+
+    /// The most the transient attachments (MSAA samples, depth) can take: zero on
+    /// tile-based GPUs that keep them on chip, this much elsewhere.
+    pub fn transient_bytes(&self) -> u64 {
+        self.targets.as_ref().map_or(0, |t| t.transient_bytes)
     }
 
     /// Copies the last frame back to the CPU as tightly packed RGBA8 rows. Blocks until

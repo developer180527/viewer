@@ -36,12 +36,17 @@ pub struct ImageJob {
 
 /// Decodes `jobs` on worker threads and sets each result on the scene. Returns the
 /// count of images still pending, which reaches zero when all are done (or failed).
+///
+/// The workers hold only a weak reference to the count: once the document that owns
+/// it is dropped (its page closed), they stop before the next image instead of
+/// decoding a whole model's textures nobody will see, which also lets the scene and
+/// its decoded images be freed.
 pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
     let pending = Arc::new(AtomicUsize::new(jobs.len()));
     if jobs.is_empty() {
         return pending;
     }
-    let left = pending.clone();
+    let left = Arc::downgrade(&pending);
     std::thread::Builder::new()
         .name("texture decode".into())
         .spawn(move || {
@@ -52,11 +57,16 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
                 for _ in 0..workers {
                     s.spawn(|| {
                         while let Some(job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
+                            if left.strong_count() == 0 {
+                                return; // The document is gone.
+                            }
                             // A failed image leaves its material untextured.
                             if let Some(data) = decode(&job.source, job.color_space) {
                                 let _ = sink.set_texture(job.texture, data);
                             }
-                            left.fetch_sub(1, Ordering::Release);
+                            if let Some(left) = left.upgrade() {
+                                left.fetch_sub(1, Ordering::Release);
+                            }
                         }
                     });
                 }
@@ -125,26 +135,121 @@ fn load(source: &ImageSource, color_space: ColorSpace) -> Option<image::RgbaImag
     {
         return Some(image);
     }
+    let srgb = color_space == ColorSpace::Srgb;
     if bytes.starts_with(&[0xff, 0xd8])
-        && let Some(image) = load_jpeg(bytes)
+        && let Some(image) = load_jpeg(bytes, srgb)
     {
         return Some(image);
     }
     let image = image::load_from_memory(bytes).ok()?;
-    let image = if image.width().max(image.height()) > MAX_SIDE {
-        // An integer box downscale straight into the output: the filtered resizers keep
-        // a float copy of the image (134 MB for a 4K map) while they work.
-        image.thumbnail(MAX_SIDE, MAX_SIDE)
-    } else {
-        image
+    if image.width().max(image.height()) <= MAX_SIDE {
+        return Some(image.into_rgba8());
+    }
+    // 8-bit images (nearly all textures) shrink straight from their own layout, in
+    // linear light for colour maps; the rest go through `image`.
+    let (w, h) = (image.width(), image.height());
+    let channels = match &image {
+        image::DynamicImage::ImageLuma8(_) => 1,
+        image::DynamicImage::ImageLumaA8(_) => 2,
+        image::DynamicImage::ImageRgb8(_) => 3,
+        image::DynamicImage::ImageRgba8(_) => 4,
+        _ => return Some(image.thumbnail(MAX_SIDE, MAX_SIDE).into_rgba8()),
     };
-    Some(image.into_rgba8())
+    shrink(image.as_bytes(), w, h, channels, srgb)
+}
+
+/// Scales an 8-bit image (1–4 channels) so its longest side is [`MAX_SIDE`], with an
+/// area-weighted box filter: every source pixel adds to the one or two output pixels
+/// it overlaps in each direction. Colour channels of sRGB maps are averaged in linear
+/// light (averaging encoded bytes darkens detail, and disagreed with the mips). Works
+/// a row at a time: only three output rows of floats are held, never a float copy of
+/// the image.
+fn shrink(px: &[u8], w: u32, h: u32, channels: usize, srgb: bool) -> Option<image::RgbaImage> {
+    let side = w.max(h) as u64;
+    let out = |n: u32| ((n as u64 * MAX_SIDE as u64 + side / 2) / side).max(1) as usize;
+    let (ow, oh) = (out(w), out(h));
+    if px.len() < w as usize * h as usize * channels {
+        return None;
+    }
+    let lut: Vec<f32> = (0..256).map(|i| if srgb { srgb_to_linear(i as f32 / 255.0) } else { i as f32 / 255.0 }).collect();
+    let cols: Vec<Split> = (0..w as usize).map(|x| split(x, w as usize, ow)).collect();
+    let (mut row, mut cur, mut next) = (vec![0f32; ow * 4], vec![0f32; ow * 4], vec![0f32; ow * 4]);
+    let mut pixels = Vec::with_capacity(ow * oh * 4);
+    let emit = |acc: &[f32], pixels: &mut Vec<u8>| {
+        for t in acc.as_chunks::<4>().0 {
+            for (c, &v) in t.iter().enumerate() {
+                let v = if srgb && c < 3 { linear_to_srgb(v) } else { v.clamp(0.0, 1.0) };
+                pixels.push((v * 255.0 + 0.5) as u8);
+            }
+        }
+    };
+    let mut done = 0;
+    for y in 0..h as usize {
+        row.fill(0.0);
+        let src = &px[y * w as usize * channels..(y + 1) * w as usize * channels];
+        for (x, t) in src.chunks_exact(channels).enumerate() {
+            let rgba = match *t {
+                [l] => [lut[l as usize], lut[l as usize], lut[l as usize], 1.0],
+                [l, a] => [lut[l as usize], lut[l as usize], lut[l as usize], a as f32 / 255.0],
+                [r, g, b] => [lut[r as usize], lut[g as usize], lut[b as usize], 1.0],
+                [r, g, b, a] => [lut[r as usize], lut[g as usize], lut[b as usize], a as f32 / 255.0],
+                _ => unreachable!("1–4 channels"),
+            };
+            let s = cols[x];
+            for c in 0..4 {
+                row[s.at * 4 + c] += rgba[c] * s.first;
+                if s.second > 0.0 {
+                    row[(s.at + 1) * 4 + c] += rgba[c] * s.second;
+                }
+            }
+        }
+        let s = split(y, h as usize, oh);
+        while done < s.at {
+            emit(&cur, &mut pixels);
+            std::mem::swap(&mut cur, &mut next);
+            next.fill(0.0);
+            done += 1;
+        }
+        cur.iter_mut().zip(&row).for_each(|(a, r)| *a += r * s.first);
+        if s.second > 0.0 {
+            next.iter_mut().zip(&row).for_each(|(a, r)| *a += r * s.second);
+        }
+    }
+    while done < oh {
+        emit(&cur, &mut pixels);
+        std::mem::swap(&mut cur, &mut next);
+        next.fill(0.0);
+        done += 1;
+    }
+    image::RgbaImage::from_raw(ow as u32, oh as u32, pixels)
+}
+
+/// How source pixel `i` of `n` spreads over `out` output pixels: weight `first` to
+/// output `at`, `second` to `at + 1`. Weights are the overlap in output units, so each
+/// output pixel's weights sum to 1.
+#[derive(Clone, Copy)]
+struct Split {
+    at: usize,
+    first: f32,
+    second: f32,
+}
+
+fn split(i: usize, n: usize, out: usize) -> Split {
+    let scale = out as f64 / n as f64;
+    let (a, b) = (i as f64 * scale, (i + 1) as f64 * scale);
+    let at = (a.floor() as usize).min(out - 1);
+    let edge = (at + 1) as f64;
+    if b <= edge || at + 1 >= out {
+        Split { at, first: (b - a) as f32, second: 0.0 }
+    } else {
+        Split { at, first: (edge - a) as f32, second: (b - edge) as f32 }
+    }
 }
 
 /// Decodes a JPEG at the smallest of 1, 1/2, 1/4, 1/8 scale that still reaches
 /// [`MAX_SIDE`] (the IDCT does the scaling), then finishes with a box filter. A 4K map
 /// is decoded at 2K: a quarter of the memory and time.
-fn load_jpeg(bytes: &[u8]) -> Option<image::RgbaImage> {
+fn load_jpeg(bytes: &[u8], srgb: bool) -> Option<image::RgbaImage> {
     let mut d = jpeg_decoder::Decoder::new(bytes);
     d.read_info().ok()?;
     let info = d.info()?;
@@ -157,14 +262,21 @@ fn load_jpeg(bytes: &[u8]) -> Option<image::RgbaImage> {
     let pixels = d.decode().ok()?;
     let info = d.info()?;
     let (w, h) = (info.width as u32, info.height as u32);
-    let rgba: Vec<u8> = match info.pixel_format {
-        jpeg_decoder::PixelFormat::RGB24 => pixels.as_chunks::<3>().0.iter().flat_map(|&[r, g, b]| [r, g, b, 255]).collect(),
-        jpeg_decoder::PixelFormat::L8 => pixels.iter().flat_map(|&l| [l, l, l, 255]).collect(),
+    let channels = match info.pixel_format {
+        jpeg_decoder::PixelFormat::RGB24 => 3,
+        jpeg_decoder::PixelFormat::L8 => 1,
         // CMYK and 16-bit greyscale: let `image` handle them.
         _ => return None,
     };
-    let image = image::RgbaImage::from_raw(w, h, rgba)?;
-    Some(if w.max(h) > MAX_SIDE { image::imageops::thumbnail(&image, (w * MAX_SIDE).div_ceil(w.max(h)), (h * MAX_SIDE).div_ceil(w.max(h))) } else { image })
+    if w.max(h) > MAX_SIDE {
+        // The IDCT's scaling averages encoded values; the finishing step is in linear light.
+        return shrink(&pixels, w, h, channels, srgb);
+    }
+    let rgba: Vec<u8> = match channels {
+        3 => pixels.as_chunks::<3>().0.iter().flat_map(|&[r, g, b]| [r, g, b, 255]).collect(),
+        _ => pixels.iter().flat_map(|&l| [l, l, l, 255]).collect(),
+    };
+    image::RgbaImage::from_raw(w, h, rgba)
 }
 
 /// Reads an EXR straight into the scaled-down result: each decoded pixel is added to
@@ -365,6 +477,42 @@ mod tests {
         let mut c = Shrink::new(1, 1, true);
         c.add(0, 0, [0.2158, 0.0, 1.0, 1.0]); // sRGB 128
         assert_eq!(c.finish().unwrap().get_pixel(0, 0).0, [128, 0, 255, 255]);
+    }
+
+    #[test]
+    fn big_images_shrink_to_max_side_in_linear_light() {
+        // 4096×2 black/white columns → 2048×1, each texel half black, half white:
+        // 50% linear is 188 in sRGB (a gamma-space average would give 128).
+        let px: Vec<u8> = (0..2).flat_map(|_| (0..4096).flat_map(|x| if x % 2 == 0 { [0u8; 3] } else { [255u8; 3] })).collect();
+        let img = shrink(&px, 4096, 2, 3, true).unwrap();
+        assert_eq!(img.dimensions(), (2048, 1));
+        assert_eq!(img.get_pixel(5, 0).0, [188, 188, 188, 255]);
+        // Data maps average as stored.
+        assert_eq!(shrink(&px, 4096, 2, 3, false).unwrap().get_pixel(5, 0).0, [128, 128, 128, 255]);
+        // A non-integer ratio still reaches the full size (3000 → 2048, not 1500).
+        let grey = vec![77u8; 3000 * 10];
+        let img = shrink(&grey, 3000, 10, 1, true).unwrap();
+        assert_eq!(img.dimensions(), (2048, 7));
+        assert!(img.pixels().all(|p| p.0 == [77, 77, 77, 255]), "a flat image stays flat");
+    }
+
+    #[test]
+    fn decoding_stops_once_the_document_is_dropped() {
+        let (scene, mut b) = rendererx_scene::CpuScene::new();
+        let png = |v: u8| {
+            let mut out = Vec::new();
+            image::RgbaImage::from_pixel(64, 64, image::Rgba([v; 4])).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).unwrap();
+            out
+        };
+        let jobs: Vec<ImageJob> = (0..200)
+            .map(|i| ImageJob { texture: b.reserve_texture().unwrap(), source: ImageSource::Bytes(png(i as u8).into()), color_space: ColorSpace::Srgb })
+            .collect();
+        let pending = spawn(b.texture_sink(), jobs);
+        drop(pending);
+        // The workers notice before the next image; give them time to finish one each.
+        std::thread::sleep(std::time::Duration::from_millis(300));
+        let decoded = scene.read().textures().iter().filter(|t| t.info.is_some()).count();
+        assert!(decoded < 200, "decoding went on after the document was dropped ({decoded} of 200)");
     }
 
     #[test]

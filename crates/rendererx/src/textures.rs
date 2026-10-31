@@ -123,16 +123,31 @@ impl MaterialBinding {
         let white = texel("rendererx white", [255; 4]);
         let flat_normal = texel("rendererx flat normal", [128, 128, 255, 255]);
         let defaults = Defaults { white: &white, flat_normal: &flat_normal };
-        let default_group = make_group(device, &layout, &sampler, defaults, None, [None; 5]);
+        let default_uniforms = uniform_buffer(device, None);
+        let default_group = make_group(device, &layout, &sampler, defaults, &default_uniforms, [None; 5]);
         Self { layout, sampler, white, flat_normal, default_group }
     }
 
-    /// The bind group for `material` (defaults when `None`) with the given maps, in
-    /// [`SLOTS`] order; missing maps use the 1×1 defaults.
-    pub fn group(&self, device: &wgpu::Device, material: Option<&Material>, maps: [Option<&wgpu::TextureView>; 5]) -> wgpu::BindGroup {
-        let defaults = Defaults { white: &self.white, flat_normal: &self.flat_normal };
-        make_group(device, &self.layout, &self.sampler, defaults, material, maps)
+    /// The factors block for `material` (defaults when `None`), shared by its groups.
+    pub fn uniforms(&self, device: &wgpu::Device, material: Option<&Material>) -> wgpu::Buffer {
+        uniform_buffer(device, material)
     }
+
+    /// A bind group over `uniforms` with the given maps, in [`SLOTS`] order; missing
+    /// maps use the 1×1 defaults (all of them: the group for meshes without uvs, which
+    /// would otherwise sample one corner texel of every map).
+    pub fn group(&self, device: &wgpu::Device, uniforms: &wgpu::Buffer, maps: [Option<&wgpu::TextureView>; 5]) -> wgpu::BindGroup {
+        let defaults = Defaults { white: &self.white, flat_normal: &self.flat_normal };
+        make_group(device, &self.layout, &self.sampler, defaults, uniforms, maps)
+    }
+}
+
+fn uniform_buffer(device: &wgpu::Device, material: Option<&Material>) -> wgpu::Buffer {
+    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        label: Some("rendererx material"),
+        contents: bytemuck::cast_slice(&uniforms(material)),
+        usage: wgpu::BufferUsages::UNIFORM,
+    })
 }
 
 #[derive(Clone, Copy)]
@@ -146,14 +161,9 @@ fn make_group(
     layout: &wgpu::BindGroupLayout,
     sampler: &wgpu::Sampler,
     defaults: Defaults<'_>,
-    material: Option<&Material>,
+    uniforms: &wgpu::Buffer,
     maps: [Option<&wgpu::TextureView>; 5],
 ) -> wgpu::BindGroup {
-    let uniforms = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("rendererx material"),
-        contents: bytemuck::cast_slice(&uniforms(material)),
-        usage: wgpu::BufferUsages::UNIFORM,
-    });
     let views: [&wgpu::TextureView; 5] =
         std::array::from_fn(|i| maps[i].unwrap_or(if SLOTS[i] == Slot::NORMAL { defaults.flat_normal } else { defaults.white }));
     let mut entries = vec![wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }];

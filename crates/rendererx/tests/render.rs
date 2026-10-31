@@ -48,6 +48,7 @@ fn px(pixels: &[u8], w: u32, x: u32, y: u32) -> [u8; 4] {
 }
 
 fn render_once(r: &Renderer, device: &wgpu::Device, queue: &wgpu::Queue, scene: &GpuScene, view: &mut View, camera: &Camera) -> Vec<u8> {
+    r.prepare(scene);
     let mut encoder = device.create_command_encoder(&Default::default());
     r.render(&mut encoder, scene, view, camera, &RenderOptions::default());
     queue.submit([encoder.finish()]);
@@ -133,8 +134,10 @@ fn memory_follows_the_rules() {
     let empty = view.gpu_bytes();
     render_once(&r, &device, &queue, &gpu_scene, &mut view, &Camera::framing(gpu_scene.bounds().unwrap(), 2.0));
     let full = view.gpu_bytes();
-    // Target + 4× depth + 4× MSAA colour + its resolve, 4 bytes each.
-    assert_eq!(full - empty, 100 * 50 * 4 * 10);
+    // Target + resolve are memory; 4× MSAA colour + 4× depth are transient
+    // (nothing on tile-based GPUs), reported apart. 4 bytes each.
+    assert_eq!(full - empty, 100 * 50 * 4 * 2);
+    assert_eq!(view.transient_bytes(), 100 * 50 * 4 * 8);
     view.release_targets();
     assert_eq!(view.gpu_bytes(), empty);
     assert!(view.target().is_none());
@@ -341,6 +344,7 @@ fn transparent_backgrounds_stay_straight_alpha_at_antialiased_edges() {
     let camera = Camera { eye: Vec3::new(0.0, 0.0, 3.0), ..Default::default() };
     // Magenta at alpha 0: any of it leaking into edge colours is easy to spot.
     let opts = RenderOptions { background: [1.0, 0.0, 1.0, 0.0] };
+    r.prepare(&g);
     let mut encoder = device.create_command_encoder(&Default::default());
     r.render(&mut encoder, &g, &mut view, &camera, &opts);
     queue.submit([encoder.finish()]);
@@ -461,7 +465,12 @@ fn pbr_metals_reflect_the_sky_and_differ_from_clay() {
 fn normal_maps_tilt_towards_the_top_of_the_image() {
     let (device, queue) = gpu_or_skip!();
     let r = Renderer::new(&device, &queue, RendererDesc { msaa: Msaa::Off, ..Default::default() });
-    let pbr = || Material::new(ShadingId::PBR, ShadingSource::FromFile).with_param("roughness", ParamValue::Float(0.8));
+    // Mid grey, so highlights stay clear of the tone mapper's shoulder.
+    let pbr = || {
+        Material::new(ShadingId::PBR, ShadingSource::FromFile)
+            .with_param("roughness", ParamValue::Float(0.8))
+            .with_param("base_color", ParamValue::Vec4(Vec4::new(0.5, 0.5, 0.5, 1.0)))
+    };
     let normal = |g: u8| Some((Slot::NORMAL, TextureData::rgba8(1, 1, ColorSpace::Linear, vec![128, g, 160, 255])));
     // Green up tilts the surface towards the image's top, which is world +Y here:
     // towards the sky and the key light (which comes from above), so it's brighter.
@@ -485,4 +494,122 @@ fn masked_alpha_cuts_holes_in_any_shading_model() {
         assert_eq!(px(&pixels, 64, 20, 32), bg, "{shading:?}: the clear half shows the background");
         assert_ne!(px(&pixels, 64, 44, 32), bg, "{shading:?}: the opaque half draws");
     }
+}
+
+/// A camera-facing quad, with or without uvs, drawn with `material` whose `slot` map
+/// is `pixels` (`w`×1, 8-bit, in `space`).
+fn mapped_quad(material: Material, uvs: bool, slot: Slot, space: ColorSpace, w: u32, pixels: Vec<u8>) -> CpuScene {
+    let (scene, mut b) = CpuScene::new();
+    let tex = b.reserve_texture().unwrap();
+    let mat = b.add_material(material.with_texture(slot, tex)).unwrap();
+    let mut m = MeshData::new(vec![Vec3::new(-1.0, -1.0, 0.0), Vec3::new(1.0, -1.0, 0.0), Vec3::new(1.0, 1.0, 0.0), Vec3::new(-1.0, 1.0, 0.0)])
+        .with_indices(Indices::U16(vec![0, 1, 2, 0, 2, 3].into()));
+    m.normals = Some(vec![Vec3::Z; 4].into());
+    if uvs {
+        m.uvs = Some(vec![Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(1.0, 0.0), Vec2::new(0.0, 0.0)].into());
+    }
+    let mesh = b.add_mesh(m).unwrap();
+    b.add_node(Node::mesh(mesh, Some(mat), Mat4::IDENTITY, None)).unwrap();
+    b.finish();
+    b.set_texture(tex, TextureData::rgba8(w, 1, space, pixels)).unwrap();
+    scene
+}
+
+fn pbr() -> Material {
+    Material::new(ShadingId::PBR, ShadingSource::FromFile).with_param("base_color", ParamValue::Vec4(Vec4::ONE))
+}
+
+fn centre_of_scene(r: &Renderer, device: &wgpu::Device, queue: &wgpu::Queue, scene: &CpuScene) -> [u8; 4] {
+    let mut g = r.attach(scene);
+    while g.needs_sync() {
+        r.sync(&mut g);
+    }
+    centre_of(r, device, queue, &g)
+}
+
+#[test]
+fn meshes_without_uvs_ignore_maps_and_keep_factors() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let striped = centre_of_scene(&r, &device, &queue, &mapped_quad(pbr(), false, Slot::BASE_COLOR, ColorSpace::Srgb, 2, vec![255, 0, 0, 255, 0, 255, 0, 255]));
+    let white = centre_of_scene(&r, &device, &queue, &mapped_quad(pbr(), false, Slot::BASE_COLOR, ColorSpace::Srgb, 1, vec![255; 4]));
+    assert_eq!(striped, white, "no uvs: the map's corner texel mustn't tint the mesh");
+}
+
+#[test]
+fn masks_cut_holes_in_every_shading_model() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let background = [28, 28, 31, 255];
+    for shading in [ShadingId::PBR, ShadingId::UNLIT, ShadingId::MTOON, ShadingId::CLAY] {
+        let mut m = Material::new(shading.clone(), ShadingSource::FromFile);
+        m.alpha = AlphaMode::Mask(0.5);
+        let c = centre_of_scene(&r, &device, &queue, &mapped_quad(m, true, Slot::BASE_COLOR, ColorSpace::Srgb, 1, vec![255, 255, 255, 0]));
+        assert_eq!(c, background, "{} draws a fully transparent masked texel", shading.as_str());
+    }
+}
+
+#[test]
+fn two_channel_normal_maps_get_their_z_rebuilt() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    // (128, 128, 0): flat in x, y with blue left empty (BC5 / RG maps), vs a full flat map.
+    let rg = centre_of_scene(&r, &device, &queue, &mapped_quad(pbr(), true, Slot::NORMAL, ColorSpace::Linear, 1, vec![128, 128, 0, 255]));
+    let full = centre_of_scene(&r, &device, &queue, &mapped_quad(pbr(), true, Slot::NORMAL, ColorSpace::Linear, 1, vec![128, 128, 255, 255]));
+    assert_eq!(rg, full);
+}
+
+#[test]
+fn a_missing_pipeline_draws_as_clay_until_sync_compiles_it() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let scene = mapped_quad(Material::new(ShadingId::UNLIT, ShadingSource::FromFile), true, Slot::BASE_COLOR, ColorSpace::Srgb, 1, vec![255, 0, 0, 255]);
+    let mut g = r.attach(&scene);
+    while g.needs_sync() {
+        r.sync(&mut g);
+    }
+    let mut view = r.create_view(ViewDesc { width: 32, height: 32 });
+    let camera = Camera { eye: Vec3::new(0.0, 0.0, 4.0), ..Default::default() };
+    let frame = |g: &GpuScene, view: &mut View| {
+        let mut encoder = device.create_command_encoder(&Default::default());
+        r.render(&mut encoder, g, view, &camera, &RenderOptions::default());
+        queue.submit([encoder.finish()]);
+        px(&view.read_pixels(&device, &queue).unwrap(), 32, 16, 16)
+    };
+    let stand_in = frame(&g, &mut view);
+    assert!(r.pipelines_pending(), "the unlit pipeline was asked for, not compiled in the frame");
+    assert!(r.sync(&mut g), "sync compiles it and reports a change");
+    assert!(!r.pipelines_pending());
+    assert!(r.needs_redraw(&g, &view, &camera, &RenderOptions::default()), "the clay stand-in frame is stale");
+    let final_frame = frame(&g, &mut view);
+    assert_ne!(stand_in, final_frame);
+    assert_eq!(final_frame, [255, 0, 0, 255], "unlit red, as authored");
+}
+
+#[test]
+fn an_arriving_texture_only_rebuilds_its_own_materials() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc::default());
+    let (scene, mut b) = CpuScene::new();
+    let mesh = b.add_mesh(cube()).unwrap();
+    let mut texs = Vec::new();
+    for i in 0..300 {
+        let t = b.reserve_texture().unwrap();
+        let m = b.add_material(pbr().with_texture(Slot::BASE_COLOR, t)).unwrap();
+        b.add_node(Node::mesh(mesh, Some(m), Mat4::from_translation(Vec3::X * i as f32), None)).unwrap();
+        texs.push(t);
+    }
+    b.finish();
+    let mut g = r.attach(&scene);
+    while g.needs_sync() {
+        r.sync(&mut g);
+    }
+    let sink = b.texture_sink();
+    let start = std::time::Instant::now();
+    for t in texs {
+        sink.set_texture(t, TextureData::rgba8(1, 1, ColorSpace::Srgb, vec![255u8; 4])).unwrap();
+        assert!(r.sync(&mut g), "a texture arriving changes the frame");
+    }
+    // Rebuilding every material per arrival took ~1 s here (quadratic); now linear.
+    assert!(start.elapsed().as_millis() < 500, "{:?}", start.elapsed());
 }

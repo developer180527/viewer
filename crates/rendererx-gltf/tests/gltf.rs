@@ -283,6 +283,7 @@ fn loaded_model_renders_in_its_material_colour() {
     r.sync(&mut gpu_scene);
     let mut view = r.create_view(rendererx::ViewDesc { width: 64, height: 64 });
     let camera = rendererx::Camera::framing(gpu_scene.bounds().unwrap(), 1.0);
+    r.prepare(&gpu_scene);
     let mut encoder = device.create_command_encoder(&Default::default());
     r.render(&mut encoder, &gpu_scene, &mut view, &camera, &Default::default());
     queue.submit([encoder.finish()]);

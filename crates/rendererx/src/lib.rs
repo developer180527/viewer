@@ -24,7 +24,8 @@ mod scene;
 mod textures;
 mod view;
 
-use std::sync::{Arc, OnceLock};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, OnceLock};
 
 pub use camera::Camera;
 #[cfg(feature = "controls")]
@@ -37,6 +38,13 @@ use rendererx_scene::{CpuScene, Topology};
 use scene::INSTANCE_FLOATS;
 use textures::Model;
 use view::{DEPTH_FORMAT, FrameKey, LINEAR_FORMAT, Targets, UNIFORM_BYTES};
+
+/// GPU features RendererX uses when the device has them: compressed texture formats
+/// (BC, ETC2, ASTC). Request `adapter.features() & rendererx::OPTIONAL_FEATURES`
+/// when creating the device, or compressed textures are refused as unsupported.
+pub const OPTIONAL_FEATURES: wgpu::Features = wgpu::Features::TEXTURE_COMPRESSION_BC
+    .union(wgpu::Features::TEXTURE_COMPRESSION_ETC2)
+    .union(wgpu::Features::TEXTURE_COMPRESSION_ASTC);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Msaa {
@@ -96,10 +104,23 @@ pub struct Renderer {
     /// then without/with uvs. Clay triangles are compiled up front (the first frame);
     /// the rest on first use.
     pipelines: [[[[OnceLock<wgpu::RenderPipeline>; 2]; 2]; 3]; 3],
+    /// Pipelines a frame needed but didn't have (drawn as clay meanwhile), for
+    /// [`compile_pending`](Self::compile_pending) or the next [`sync`](Self::sync).
+    wanted: Mutex<Vec<PipelineKey>>,
+    /// Bumped when a wanted pipeline is ready, so views redraw with it.
+    pipelines_ready: AtomicU64,
     materials: textures::MaterialBinding,
     /// The sRGB → target copy, when MSAA is on.
     encode: Option<Encode>,
     trace: Option<Trace>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PipelineKey {
+    model: Model,
+    topology: Topology,
+    colors: bool,
+    uvs: bool,
 }
 
 struct Encode {
@@ -145,25 +166,87 @@ impl Renderer {
             clay_layout: layout,
             clay_module: module,
             pipelines: Default::default(),
+            wanted: Mutex::new(Vec::new()),
+            pipelines_ready: AtomicU64::new(0),
             materials,
             encode,
             trace: None,
         };
-        // The pipelines a typical model needs for its first frame.
-        r.pipeline(Model::Clay, Topology::Triangles, false, false);
-        r.pipeline(Model::Clay, Topology::Triangles, false, true);
+        // The pipelines a typical model needs for its first frame: clay triangles,
+        // with and without vertex colours and uvs. Everything else draws as clay until
+        // its own pipeline is compiled, off the frame path (§7.3).
+        for (colors, uvs) in [(false, false), (false, true), (true, false), (true, true)] {
+            r.pipeline(PipelineKey { model: Model::Clay, topology: Topology::Triangles, colors, uvs });
+        }
         r
     }
 
-    fn pipeline(&self, model: Model, topology: Topology, colors: bool, uvs: bool) -> &wgpu::RenderPipeline {
-        let t = match topology {
+    fn slot(&self, k: PipelineKey) -> &OnceLock<wgpu::RenderPipeline> {
+        let t = match k.topology {
             Topology::Triangles => 0,
             Topology::Lines => 1,
             Topology::Points => 2,
         };
-        self.pipelines[model.index()][t][colors as usize][uvs as usize].get_or_init(|| {
-            mesh_pipeline(&self.device, &self.clay_layout, &self.clay_module, self.desc.msaa.samples(), model, topology, colors, uvs)
+        &self.pipelines[k.model.index()][t][k.colors as usize][k.uvs as usize]
+    }
+
+    /// Compiles (if needed) and returns a pipeline, blocking.
+    fn pipeline(&self, k: PipelineKey) -> &wgpu::RenderPipeline {
+        self.slot(k).get_or_init(|| {
+            mesh_pipeline(&self.device, &self.clay_layout, &self.clay_module, self.desc.msaa.samples(), k.model, k.topology, k.colors, k.uvs)
         })
+    }
+
+    /// The pipeline for `k` if it is compiled. Otherwise it is queued and the clay
+    /// pipeline for the same vertex streams is used (compiled now if need be: clay is
+    /// the one shader allowed on the frame path).
+    fn pipeline_or_clay(&self, k: PipelineKey) -> &wgpu::RenderPipeline {
+        if let Some(p) = self.slot(k).get() {
+            return p;
+        }
+        let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        if !wanted.contains(&k) {
+            wanted.push(k);
+        }
+        drop(wanted);
+        self.pipeline(PipelineKey { model: Model::Clay, ..k })
+    }
+
+    /// Compiles every pipeline a frame has asked for. Safe to call from any thread;
+    /// hosts with a worker pool can run it there so no frame ever waits on a shader.
+    /// Returns true when something was compiled (views then redraw on their own).
+    pub fn compile_pending(&self) -> bool {
+        let mut any = false;
+        while let Some(k) = self.next_wanted() {
+            self.pipeline(k);
+            any = true;
+        }
+        if any {
+            self.pipelines_ready.fetch_add(1, Ordering::Release);
+        }
+        any
+    }
+
+    /// Compiles, blocking, every pipeline `scene` draws with as it stands, so the next
+    /// frame has its final shading instead of clay stand-ins. For one-shot renders
+    /// (thumbnails, screenshots, tests); interactive hosts let pipelines arrive through
+    /// [`sync`](Self::sync) or [`compile_pending`](Self::compile_pending).
+    pub fn prepare(&self, scene: &GpuScene) {
+        for batch in &scene.batches {
+            if let Some(mesh) = scene.meshes.get(batch.mesh.index()).and_then(Option::as_ref) {
+                self.pipeline(PipelineKey { model: batch.model, topology: mesh.topology, colors: mesh.colors.is_some(), uvs: mesh.uvs.is_some() });
+            }
+        }
+    }
+
+    /// Some material is drawing as clay until its pipeline is compiled: keep ticking
+    /// (call [`sync`](Self::sync) or [`compile_pending`](Self::compile_pending)).
+    pub fn pipelines_pending(&self) -> bool {
+        !self.wanted.lock().unwrap_or_else(|e| e.into_inner()).is_empty()
+    }
+
+    fn next_wanted(&self) -> Option<PipelineKey> {
+        self.wanted.lock().unwrap_or_else(|e| e.into_inner()).pop()
     }
 
     /// Receives milestones (`first mesh uploaded`, `first frame`) for startup tracing.
@@ -188,7 +271,19 @@ impl Renderer {
     /// budget, then frees the CPU copies of what was uploaded (unless the scene keeps
     /// them for editing). Returns true when the next frame would look different.
     /// Call once per tick while [`GpuScene::needs_sync`] is true.
+    ///
+    /// Also compiles one pipeline a frame asked for, if any (so hosts that never call
+    /// [`compile_pending`](Self::compile_pending) still get every shading model, one
+    /// per tick, without a frame waiting on all of them).
     pub fn sync(&self, scene: &mut GpuScene) -> bool {
+        let compiled = match self.next_wanted() {
+            Some(k) => {
+                self.pipeline(k);
+                self.pipelines_ready.fetch_add(1, Ordering::Release);
+                true
+            }
+            None => false,
+        };
         let synced = scene.sync(&self.device, &self.queue, &self.materials, self.desc.upload_budget);
         for id in &synced.done {
             scene.reader.release_mesh_data(*id);
@@ -200,7 +295,7 @@ impl Renderer {
             scene.first_mesh_traced = true;
             self.trace("first mesh uploaded");
         }
-        synced.changed
+        synced.changed || compiled
     }
 
     pub fn create_view(&self, desc: ViewDesc) -> View {
@@ -229,7 +324,7 @@ impl Renderer {
     /// False when the view already shows exactly this scene state, camera and options:
     /// an idle viewer renders nothing.
     pub fn needs_redraw(&self, scene: &GpuScene, view: &View, camera: &Camera, options: &RenderOptions) -> bool {
-        view.targets.is_none() || view.last != Some(frame_key(scene, view, camera, options))
+        view.targets.is_none() || view.last != Some(self.frame_key(scene, view, camera, options))
     }
 
     /// Records a frame into `encoder`; the host submits it (alongside its UI work, on
@@ -284,8 +379,11 @@ impl Renderer {
             pass.set_bind_group(0, &view.bind_group, &[]);
             for batch in &scene.batches {
                 let Some(mesh) = scene.meshes.get(batch.mesh.index()).and_then(Option::as_ref) else { continue };
-                pass.set_pipeline(self.pipeline(batch.model, mesh.topology, mesh.colors.is_some(), mesh.uvs.is_some()));
-                let group = batch.material.and_then(|m| scene.material_groups.get(m.index()));
+                let key = PipelineKey { model: batch.model, topology: mesh.topology, colors: mesh.colors.is_some(), uvs: mesh.uvs.is_some() };
+                pass.set_pipeline(self.pipeline_or_clay(key));
+                let groups = batch.material.and_then(|m| scene.material_groups.get(m.index())).and_then(Option::as_ref);
+                // Without uvs there is nothing to sample maps with: the factors alone.
+                let group = groups.map(|g| if mesh.uvs.is_some() { &g.textured } else { &g.plain });
                 pass.set_bind_group(1, group.unwrap_or(&self.materials.default_group), &[]);
                 // Streams in the pipeline's slot order: positions, normals, then the
                 // optional colours and uvs, then instances.
@@ -322,7 +420,7 @@ impl Renderer {
             pass.set_bind_group(0, &msaa.encode, &[]);
             pass.draw(0..3, 0..1);
         }
-        view.last = Some(frame_key(scene, view, camera, options));
+        view.last = Some(self.frame_key(scene, view, camera, options));
         if !scene.batches.is_empty() && !scene.first_frame_traced.swap(true, std::sync::atomic::Ordering::Relaxed) {
             self.trace("first frame");
         }
@@ -372,13 +470,24 @@ impl Renderer {
         });
         let depth = texture("rendererx depth", DEPTH_FORMAT, samples, transient);
         // Target, depth, and with MSAA the sample and resolve textures.
-        let bytes = pixels * 4 + pixels * 4 * samples as u64 + msaa.as_ref().map_or(0, |_| pixels * 4 * (samples as u64 + 1));
-        Targets { color_view: color.create_view(&Default::default()), color, msaa, depth: depth.create_view(&Default::default()), bytes }
+        // Target and resolve are real memory; samples and depth are transient.
+        let bytes = pixels * 4 + msaa.as_ref().map_or(0, |_| pixels * 4);
+        let transient_bytes = pixels * 4 * samples as u64 + msaa.as_ref().map_or(0, |_| pixels * 4 * samples as u64);
+        Targets { color_view: color.create_view(&Default::default()), color, msaa, depth: depth.create_view(&Default::default()), bytes, transient_bytes }
     }
 }
 
-fn frame_key(scene: &GpuScene, view: &View, camera: &Camera, options: &RenderOptions) -> FrameKey {
-    FrameKey { scene: scene.id, generation: scene.generation, camera: *camera, options: *options, size: (view.width, view.height) }
+impl Renderer {
+    fn frame_key(&self, scene: &GpuScene, view: &View, camera: &Camera, options: &RenderOptions) -> FrameKey {
+        FrameKey {
+            scene: scene.id,
+            generation: scene.generation,
+            pipelines: self.pipelines_ready.load(Ordering::Acquire),
+            camera: *camera,
+            options: *options,
+            size: (view.width, view.height),
+        }
+    }
 }
 
 #[allow(clippy::too_many_arguments)]
