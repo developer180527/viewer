@@ -14,6 +14,7 @@ viewer-fmt-image = { path = "crates/fmt-image" }
 viewer-fmt-doc = { path = "crates/fmt-doc" }
 viewer-fmt-data = { path = "crates/fmt-data" }
 viewer-fmt-archive = { path = "crates/fmt-archive" }
+rendererx-scene = { path = "crates/rendererx-scene" }
 
 anyhow = "1"
 memmap2 = "0.9"

@@ -1,0 +1,15 @@
+[package]
+name = "rendererx-scene"
+description = "RendererX's CPU scene: plain mesh, material, texture and node data, built without a GPU."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Loaders depend on this crate only, so it must stay small: no wgpu, no file formats.
+[dependencies]
+glam = { version = "0.34", features = ["bytemuck"] }
+bytemuck = "1"
+thiserror = "2"
+
+[dev-dependencies]
+bytemuck = "1"

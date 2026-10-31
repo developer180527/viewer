@@ -106,6 +106,8 @@ trait Document: Send {
 - **Default:** `libmpv` (via `libmpv2`) rendering into our wgpu texture. Gives every codec, subtitles and hardware decoding.
 - **Lite or mobile builds:** platform decoders (AVFoundation, MediaCodec, Media Foundation) + `symphonia` / `cpal` for audio.
 - Waveform / spectrogram views: `symphonia` + `rustfft`.
+- **Playback is not ours to solve.** libmpv/ffmpeg (desktop, Android) and AVFoundation (iOS) already handle codecs, seeking, subtitles and hardware decoding. We embed them; we never write a player.
+- **Editing is deliberately tiny** (§12.6): trim (video and audio) and gain/normalise (audio). No timeline, no effects.
 
 ### Archives
 `zip`, `tar`, `flate2`, `xz2`, `zstd`, `bzip2`, `sevenz-rust`, `unrar`, ISO via `cdfs`. Shown as a Tree; any entry can be opened in place.
@@ -151,7 +153,7 @@ The fallback is always Hex.
 |---|---|
 | Windowing / input | `winit` (desktop, Android, iOS) |
 | GPU | `wgpu` (Metal / Vulkan / DX12 / GLES) |
-| UI | `egui` for v1 (fast to build). Re-evaluate `Slint` if mobile UX needs native-feeling widgets |
+| UI | **libgui** on every platform, one shell (decided, §12.1). The egui frontend from the MVP is removed |
 | CPU fallback renderer | `softbuffer` + `tiny-skia` (instant first frame, no-GPU machines, old BSD boxes) |
 | Async / threads | `rayon` pool + small `tokio` runtime only where I/O needs it |
 | File dialogs / clipboard | `rfd`, `arboard` (desktop); platform pickers on mobile |
@@ -203,8 +205,13 @@ The fallback is always Hex.
 
 **Target:** double-click → file visible in ≤ 100 ms warm, ≤ 250 ms cold.
 
+**App first, file second.** Two separate clocks:
+- **App ready** — a window with toolbar and chrome is on screen and responds to input. This is a hard limit: ≤ 100 ms cold, and it must **not depend on the file** (type, size, or whether it parses at all).
+- **File ready** — the content is drawn. This may take longer for big or heavy files, as long as progress is visible (spinner, thumbnail, first page, untextured mesh) and the window stays responsive.
+Nothing that serves a particular format runs before "app ready": no format module loaded, no 3D pipeline built, no parser started on the UI thread.
+
 ### Process and binary
-- **Single instance with IPC.** A second launch hands the path to the running instance (Unix socket / named pipe) and exits in a few ms. Optionally, a tiny resident agent keeps a hidden window warm (user setting, off by default).
+- **Single instance, many windows (§12.3).** A second launch hands the path to the running instance (Unix socket / named pipe) and exits in a few ms; the instance opens it in a **new window**. Optionally, a tiny resident agent keeps a hidden window warm (user setting, off by default).
 - **Small core binary.** Heavy libraries (PDFium, Assimp, mpv, OpenCASCADE) are **not linked into the main executable**. They live in on-demand modules that are `dlopen`ed on first use (desktop/Android), or in the worker process. Opening a JPEG must never page in PDFium.
 - **Release profile:** `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `opt-level = 3`, strip symbols. Also try PGO and BOLT (`cargo-pgo`).
 - **Zero static initialisers.** The loader registry is a `const` table of function pointers. No plugin scanning at startup; WASM plugins are indexed lazily and cached.
@@ -220,16 +227,27 @@ The fallback is always Hex.
 - **Lazy fonts.** Embed one small UI font. Load CJK and emoji fonts from the system only when the text needs them.
 - **Lazy UI.** Panels (metadata, tree, search) build on first open.
 
+### Memory
+Measured and budgeted like startup, in the same CI job (peak RSS plus GPU bytes from wgpu's allocator report):
+- **Empty app** (one window, no file): budget to be set from the first measurement, then only allowed to go down.
+- **Per file type** (small text, 45 MP image, archive, glTF): peak and settled memory; closing the file returns to the empty-app number.
+- **No duplicate copies:** once pixels or geometry are on the GPU the CPU copy is freed, unless an editor needs it. Large images are shown from a screen-sized version and decode full resolution only for zoomed tiles.
+- **Shared, not per-window:** a file open in two windows is held once (§12.3); each window adds only its own window-sized buffers, and a hidden window frees them.
+- **Lazy fonts:** glyphs are rasterised when first drawn; fallback fonts load only when text needs them.
+- The resident agent (if ever shipped) has its own memory cap and is measured before it can be turned on.
+
 ### Measurement
-- A `--trace-startup` flag records timestamps for process start → window → first frame → full quality.
+- A `--trace-startup` flag records timestamps for process start → window → **app ready** → **file ready** → full quality.
+- CI fails on regressions of either clock, and of the memory budgets above.
 - CI benchmark with `hyperfine` on a fixed corpus. **Startup regressions fail the build.**
 
 ---
 
 ## 8. Security and robustness
 
-- **Worker process** for every C/C++ parser. Communicates over shared memory + IPC. If it crashes, show "couldn't render, showing hex" instead of crashing the app. Sandbox it with seccomp (Linux), App Sandbox (macOS), AppContainer (Windows), pledge/unveil (OpenBSD), Capsicum (FreeBSD).
-  - On iOS, run in-process with the platform backends.
+- **Parser host (§12.4).** Desktop and Android isolate parsers in a separate process; iOS and HarmonyOS isolate them in-process. Details:
+- **Worker process** for every C/C++ parser (desktop). Communicates over shared memory + IPC. If it crashes, show "couldn't render, showing hex" instead of crashing the app. Sandbox it with seccomp (Linux), App Sandbox (macOS), AppContainer (Windows), pledge/unveil (OpenBSD), Capsicum (FreeBSD).
+  - On iOS and HarmonyOS, run in-process: pure-Rust parsers, platform backends, and C libraries only as WASM (§12.4).
 - **Fuzz** every loader with `cargo-fuzz`, and integrate OSS-Fuzz later.
 - **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document.
 - **Never auto-execute.** Scripts and macros in documents are never run. HTML in the webview runs with JS off and no network by default.
@@ -256,7 +274,8 @@ viewer/
 ├─ crates/
 │  ├─ core/            # traits, detection, registry, content models
 │  ├─ render/          # wgpu + CPU renderers: raster, scene, text, table, tree, hex
-│  ├─ app/             # egui shell, tabs, info panel, single-instance IPC
+│  ├─ app/             # libgui shell, windows, info panel, single-instance IPC
+│  ├─ rendererx/       # reusable 3D renderer (docs/3d-renderer.md)
 │  ├─ worker/          # sandboxed parser process + IPC protocol
 │  ├─ plugin-host/     # wasmtime / wasmi + WIT
 │  ├─ platform-desktop/
@@ -279,9 +298,97 @@ viewer/
 1. **MVP (desktop):** shell, detection, Hex, images, text/code, Markdown, JSON tree, CSV, zip. Startup tracing and benchmark from day 1.
 2. **Documents:** PDF (PDFium), EPUB, XLSX, comics.
 3. **3D:** wgpu viewport, glTF/OBJ/STL/PLY, then Assimp.
-4. **Media:** libmpv (desktop), platform decoders (mobile).
+4. **Media:** libmpv (desktop), platform decoders (mobile); trim and gain editors (§12.6).
 5. **Mobile:** Android, then iOS, using platform backends and OS open-file integration.
 6. **Hardening:** worker sandbox, fuzzing, signing and packaging.
 7. **Wider OS reach:** FreeBSD/OpenBSD ports, LoongArch/RISC-V builds for Kylin/UOS/openEuler, HarmonyOS NEXT shell.
 8. **Long tail:** converter bridge, WASM plugin SDK, CAD, DICOM, science formats.
 9. **OS preview integration:** Quick Look, Explorer preview handler, freedesktop thumbnailer, quick-preview mode toggled with the spacebar.
+
+---
+
+## 12. Decided architecture (2026-10-31)
+
+These are the decisions that are expensive to change later. Everything else (micro-optimising startup, widget polish, which format comes next) can change freely. Each decision lists what it rules out.
+
+### 12.1 One UI: libgui everywhere
+- libgui on desktop, mobile, BSD and HarmonyOS, styled the same everywhere. No per-platform native UI shells.
+- The egui frontend is deleted once the libgui one reaches parity. Until then it is not extended.
+- Rules out: SwiftUI / Compose / ArkTS UIs. (HarmonyOS still needs a thin ArkTS wrapper that hosts the `XComponent` surface; it contains no UI.)
+
+### 12.2 One GPU device, shared
+- Each process creates **one** `wgpu::Device`. libgui, RendererX, the media player's video textures and image tiles all use it.
+- At creation it requests **every optional feature the adapter has** (texture compression BC / ETC2 / ASTC, pipeline cache, …) and the adapter's own limits. The device can't gain features later, and at launch we don't yet know what file will be opened.
+- Code checks what the device actually has before using a feature (e.g. compressed textures fall back to RGBA8).
+- All windows share the device; each window has only its own surface.
+- Image interchange with libgui: RGBA8, sRGB-encoded, straight alpha.
+
+### 12.3 One instance, many windows
+- **One app process per user session.** Opening a file (double-click, "Open with", drag onto the Dock icon, `viewer file` in a terminal, a share sheet) always reaches that process, which opens the file **in a new window**. Each window shows its own file with its own navigation stack, and windows don't block each other.
+- How the file reaches the running instance:
+
+| Platform | Mechanism |
+|---|---|
+| macOS | the OS already sends `open file` events to the running app (no IPC needed); a CLI launch uses a Unix socket |
+| Windows | named pipe; the second process forwards the path and exits |
+| Linux / BSD / Chinese distros | Unix socket under `$XDG_RUNTIME_DIR` (D-Bus activation optional later) |
+| iPadOS | multiple scenes (`UISceneSession`): each opened document gets its own scene/window. iPhone: one window, documents stack |
+| Android | multi-window / freeform: each document opens a new task (`FLAG_ACTIVITY_NEW_DOCUMENT` + `MULTIPLE_TASK`) in the same process |
+| HarmonyOS | one UIAbility per document in the same process |
+
+- Inside the process: windows are independent **UI state** (libgui `Ui`, surface, navigation stack) on top of shared **services** (GPU device, font cache, loader registry, thread pool, parser host). A second window costs one surface and one `Ui`, not a second app.
+- Opening a file that is already open focuses its window (configurable).
+- **One file, one document (decided 2026-10-31).** The same file open in two windows is one in-memory document. An edit made in either window appears in both at once: operations are applied to the shared document, and every window showing it redraws. Undo history and unsaved state belong to the document, not the window; scroll position, zoom, camera and selection belong to each window. Files are matched by identity (device + inode / file ID), not path, so two paths to the same file are still one document.
+- A crash in one document must not close other windows: loaders run in the parser host (§12.4), and the UI catches panics per window and shows an error in that window.
+- Rules out: one process per window (slower to open, more memory, no shared caches).
+
+### 12.4 Parser host: same interface, isolation per platform
+All file parsing goes through one interface, the **parser host**. Which isolation backs it is a per-platform choice the rest of the app never sees.
+
+| Platform | Isolation | When a parser fails |
+|---|---|---|
+| Windows, macOS, Linux, BSD, Kylin / UOS / openEuler | **separate worker process**, OS-sandboxed (AppContainer, App Sandbox, seccomp, Capsicum, pledge/unveil) | the worker dies; the window shows "couldn't open" and falls back to hex; the worker restarts |
+| Android | **`isolatedProcess` service** (no file or network access; the document is passed as a file descriptor) | same |
+| iOS, HarmonyOS | **in-process** (neither allows us to spawn helper processes), hardened as below | the loader returns an error; panics are caught |
+
+In-process hardening (iOS, HarmonyOS, and the first line of defence everywhere):
+- **Pure-Rust parsers by default**: memory-safe, so a hostile file can cause an error but not memory corruption.
+- **C/C++ libraries only as WebAssembly** run in `wasmi` / wasmtime's Pulley interpreter (no JIT, so App-Store-legal). The sandbox is the isolation: a bug in the C code can only corrupt its own linear memory. Slower than native, which is acceptable for niche formats. Platform frameworks (ImageIO, PDFKit, AVFoundation) are used directly: the OS vendor maintains them.
+- **Budgets on every parse**: size, nesting depth, decompression ratio, memory and time. A parse over budget is cancelled.
+- **Panics are caught** at the loader boundary (already done), falling back to the next loader or hex.
+- iOS / macOS **Quick Look extensions** are separate processes managed by the OS, so previews from Files or Mail get process isolation for free.
+
+Phasing: the interface exists now and runs in-process everywhere. The worker process on desktop arrives together with the first C/C++ parser (PDFium), because today every parser is Rust and gains nothing from it.
+
+Rules out: calling a parser directly from UI code; linking a native C parser into the iOS app.
+
+### 12.5 Documents and the editing model
+**Loading.** Loaders produce **plain data that doesn't need the GPU** (CPU-side rasters, text, tables, trees and 3D scenes). This is what lets parsing start at launch, before the window and GPU exist. The renderers upload it later. `viewer-core` never depends on wgpu.
+
+**Editing.** One model for every content type (text, table, tree, raster, 3D scene, media):
+- A document is its loaded content plus a list of **operations**. Every change is a small operation that can be applied and reversed, so undo/redo, "unsaved changes" and autosave work the same everywhere.
+- Views only display and **send operations**; they never mutate content directly. This makes editors cheap to add and keeps multiple windows on one document consistent.
+- **Large files stay memory-mapped**; edits are kept beside the original (a piece table for text and bytes, row/cell overlays for tables, a parameter list for media), never as a full copy. Opening stays as fast as viewing.
+- **Saving** is per format and optional: a format without a writer is view-only (or offers "export as …"). Saves go to a temporary file then an atomic rename; the original is never half-written.
+- Rules out: views that write into document data; copying a whole file into memory just to make it editable.
+
+### 12.6 Audio and video
+Playback and decoding are solved problems, so we embed rather than build:
+
+| Platform | Engine |
+|---|---|
+| Desktop, Android | **libmpv** (on ffmpeg) rendering into a texture on the shared device (§12.2); LGPL build, linked dynamically |
+| iOS | **AVFoundation** (avoids static LGPL in an App Store app) |
+| HarmonyOS | the system media kit (AVPlayer), libmpv later if needed |
+
+Editing is **deliberately basic**, using the operation model (§12.5) and the same engines to write the result:
+- **Trim** (video and audio): set in/out points, save. By default it **cuts at keyframes without re-encoding** (instant and lossless; ffmpeg stream copy, `AVAssetExportPresetPassthrough`). "Exact cut" re-encodes and says so.
+- **Volume** (audio and the audio track of video): gain in dB and "normalise" (peak or loudness). Needs only the audio to be re-encoded; video is copied.
+- Also: a waveform for audio; frame grab as PNG for video.
+- Out of scope: timelines, multiple clips, transitions, effects, colour grading, subtitle editing.
+
+### 12.7 Startup is a constraint, not a phase
+Every decision above is measured against §7: the startup benchmark runs in CI, and a change that makes "first frame showing the file" slower fails the build. Today's numbers (libgui frontend, warm, M-series Mac): ~190 ms. Known cheap fixes: subset the UI font / rasterise lazily (~20 ms), avoid the first surface being reported occluded (~40 ms), tidy event-loop setup. Target ≤ 120 ms, then the §7 target.
+
+### 12.8 Still open
+- Whether the resident agent (§7) should ship on by default on desktop.

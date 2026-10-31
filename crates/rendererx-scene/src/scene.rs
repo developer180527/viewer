@@ -1,0 +1,441 @@
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, RwLock, RwLockReadGuard, RwLockWriteGuard};
+
+use glam::Mat4;
+
+use crate::error::check;
+use crate::{Aabb, Error, Material, MeshData, MeshInfo, SceneLimits, TextureData, TextureInfo};
+
+macro_rules! id {
+    ($(#[$doc:meta])* $name:ident) => {
+        $(#[$doc])*
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+        pub struct $name(pub u32);
+
+        impl $name {
+            pub fn index(self) -> usize {
+                self.0 as usize
+            }
+        }
+    };
+}
+
+id!(MeshId);
+id!(MaterialId);
+id!(NodeId);
+id!(
+    /// Reserved before the texture decodes, so materials can point at it right away.
+    TextureId
+);
+
+/// A placed mesh, or a group (no mesh) that only carries a transform.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Node {
+    pub mesh: Option<MeshId>,
+    /// `None` draws with clay.
+    pub material: Option<MaterialId>,
+    /// Relative to the parent.
+    pub transform: Mat4,
+    /// Must already exist, so the hierarchy can't contain cycles.
+    pub parent: Option<NodeId>,
+}
+
+impl Node {
+    pub fn group(transform: Mat4, parent: Option<NodeId>) -> Self {
+        Self { mesh: None, material: None, transform, parent }
+    }
+
+    pub fn mesh(mesh: MeshId, material: Option<MaterialId>, transform: Mat4, parent: Option<NodeId>) -> Self {
+        Self { mesh: Some(mesh), material, transform, parent }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GeometryState {
+    Loading,
+    /// The loader called [`SceneBuilder::finish`]. Textures may still arrive.
+    Done,
+    /// The builder was dropped without finishing (the loader failed part way); what
+    /// arrived is still shown.
+    Incomplete,
+}
+
+/// Every entry records the scene revision that last changed it, so a renderer that has
+/// seen revision `r` uploads only entries with `changed > r`.
+#[derive(Debug)]
+pub struct MeshEntry {
+    pub info: MeshInfo,
+    /// `None` once released after upload (docs/3d-renderer.md §11.1).
+    pub data: Option<MeshData>,
+    pub changed: u64,
+}
+
+#[derive(Debug)]
+pub struct MaterialEntry {
+    pub material: Material,
+    pub changed: u64,
+}
+
+#[derive(Debug)]
+pub struct NodeEntry {
+    pub node: Node,
+    /// 1 for a root.
+    pub depth: u32,
+    pub changed: u64,
+}
+
+#[derive(Debug)]
+pub struct TextureEntry {
+    /// `None` while reserved but not yet decoded.
+    pub info: Option<TextureInfo>,
+    pub data: Option<TextureData>,
+    pub changed: u64,
+}
+
+#[derive(Debug)]
+struct State {
+    revision: u64,
+    geometry: GeometryState,
+    bounds: Option<Aabb>,
+    meshes: Vec<MeshEntry>,
+    materials: Vec<MaterialEntry>,
+    nodes: Vec<NodeEntry>,
+    textures: Vec<TextureEntry>,
+    keep_cpu_data: bool,
+    // Running totals checked against the limits. They count what arrived, not what is
+    // still held, so releasing data can't be used to get past a limit.
+    received_bytes: u64,
+    vertices: u64,
+    primitives: u64,
+    drawn_primitives: u64,
+}
+
+type OnChange = Arc<dyn Fn() + Send + Sync>;
+
+struct Inner {
+    limits: SceneLimits,
+    state: RwLock<State>,
+    revision: AtomicU64,
+    on_change: RwLock<Option<OnChange>>,
+}
+
+/// The host's handle to a scene: cheap to clone, `Send + Sync`. Readers (renderers,
+/// the UI) see everything the builder has added so far.
+#[derive(Clone)]
+pub struct CpuScene(Arc<Inner>);
+
+impl CpuScene {
+    /// A scene with the default limits, and the builder a loader fills it through.
+    #[allow(clippy::new_ret_no_self)]
+    pub fn new() -> (CpuScene, SceneBuilder) {
+        Self::with_limits(SceneLimits::default())
+    }
+
+    pub fn with_limits(limits: SceneLimits) -> (CpuScene, SceneBuilder) {
+        let state = State {
+            revision: 0,
+            geometry: GeometryState::Loading,
+            bounds: None,
+            meshes: Vec::new(),
+            materials: Vec::new(),
+            nodes: Vec::new(),
+            textures: Vec::new(),
+            keep_cpu_data: false,
+            received_bytes: 0,
+            vertices: 0,
+            primitives: 0,
+            drawn_primitives: 0,
+        };
+        let scene = CpuScene(Arc::new(Inner {
+            limits,
+            state: RwLock::new(state),
+            revision: AtomicU64::new(0),
+            on_change: RwLock::new(None),
+        }));
+        let builder = SceneBuilder { scene: scene.clone(), finished: false };
+        (scene, builder)
+    }
+
+    pub fn limits(&self) -> &SceneLimits {
+        &self.0.limits
+    }
+
+    /// Bumped by every change. Cheap: no lock.
+    pub fn revision(&self) -> u64 {
+        self.0.revision.load(Ordering::Acquire)
+    }
+
+    pub fn read(&self) -> SceneRead<'_> {
+        SceneRead(self.0.state.read().unwrap_or_else(|e| e.into_inner()))
+    }
+
+    /// Called after every change, on the thread that made it, with no lock held.
+    /// Hosts use it to wake their event loop.
+    pub fn set_on_change(&self, f: impl Fn() + Send + Sync + 'static) {
+        *self.0.on_change.write().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
+    }
+
+    /// Editors keep the CPU data as the source of truth; viewers let the renderer free
+    /// it after upload. Off by default.
+    pub fn set_keep_cpu_data(&self, keep: bool) {
+        self.lock().keep_cpu_data = keep;
+    }
+
+    /// Frees a mesh's vertex data (after upload). Its [`MeshInfo`] stays. Returns false
+    /// when the scene keeps CPU data or there was nothing to free.
+    pub fn release_mesh_data(&self, id: MeshId) -> bool {
+        let mut s = self.lock();
+        let keep = s.keep_cpu_data;
+        s.meshes.get_mut(id.index()).is_some_and(|m| !keep && m.data.take().is_some())
+    }
+
+    /// Frees a texture's pixels (after upload). Its [`TextureInfo`] stays.
+    pub fn release_texture_data(&self, id: TextureId) -> bool {
+        let mut s = self.lock();
+        let keep = s.keep_cpu_data;
+        s.textures.get_mut(id.index()).is_some_and(|t| !keep && t.data.take().is_some())
+    }
+
+    fn lock(&self) -> RwLockWriteGuard<'_, State> {
+        self.0.state.write().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// Runs `f` with the revision a successful change gets. `f` must check everything
+    /// before mutating, so an error leaves the scene untouched.
+    fn change<R>(&self, f: impl FnOnce(&mut State, &SceneLimits, u64) -> crate::Result<R>) -> crate::Result<R> {
+        let mut s = self.lock();
+        let rev = s.revision + 1;
+        let out = f(&mut s, &self.0.limits, rev)?;
+        s.revision = rev;
+        self.0.revision.store(rev, Ordering::Release);
+        drop(s);
+        let notify = self.0.on_change.read().unwrap_or_else(|e| e.into_inner()).clone();
+        if let Some(notify) = notify {
+            notify();
+        }
+        Ok(out)
+    }
+}
+
+/// A consistent view of the scene. Holds a read lock: keep it short (one upload pass,
+/// one frame), since the builder waits for it.
+pub struct SceneRead<'a>(RwLockReadGuard<'a, State>);
+
+impl SceneRead<'_> {
+    pub fn revision(&self) -> u64 {
+        self.0.revision
+    }
+
+    pub fn geometry(&self) -> GeometryState {
+        self.0.geometry
+    }
+
+    pub fn meshes(&self) -> &[MeshEntry] {
+        &self.0.meshes
+    }
+
+    pub fn mesh(&self, id: MeshId) -> Option<&MeshEntry> {
+        self.0.meshes.get(id.index())
+    }
+
+    pub fn materials(&self) -> &[MaterialEntry] {
+        &self.0.materials
+    }
+
+    pub fn material(&self, id: MaterialId) -> Option<&MaterialEntry> {
+        self.0.materials.get(id.index())
+    }
+
+    /// Parents always come before their children.
+    pub fn nodes(&self) -> &[NodeEntry] {
+        &self.0.nodes
+    }
+
+    pub fn textures(&self) -> &[TextureEntry] {
+        &self.0.textures
+    }
+
+    pub fn texture(&self, id: TextureId) -> Option<&TextureEntry> {
+        self.0.textures.get(id.index())
+    }
+
+    /// Bytes of mesh and texture data still held on the CPU (borrowed streams count,
+    /// though their pages belong to the file mapping).
+    pub fn cpu_bytes(&self) -> u64 {
+        let meshes: u64 = self.0.meshes.iter().filter_map(|m| m.data.as_ref()).map(MeshData::byte_len).sum();
+        let textures: u64 = self.0.textures.iter().filter_map(|t| t.data.as_ref()).map(TextureData::byte_len).sum();
+        meshes + textures
+    }
+
+    /// World matrix of every node, in node order.
+    pub fn world_transforms(&self) -> Vec<Mat4> {
+        let mut world: Vec<Mat4> = Vec::with_capacity(self.0.nodes.len());
+        for entry in &self.0.nodes {
+            let parent = entry.node.parent.map_or(Mat4::IDENTITY, |p| world[p.index()]);
+            world.push(parent * entry.node.transform);
+        }
+        world
+    }
+
+    /// Where the camera should look: the loader's bounds if it set them, otherwise the
+    /// world bounds of the placed meshes. `None` while there is nothing to frame.
+    pub fn bounds(&self) -> Option<Aabb> {
+        if let Some(b) = self.0.bounds {
+            return Some(b);
+        }
+        let world = self.world_transforms();
+        let b = self.0.nodes.iter().zip(&world).fold(Aabb::EMPTY, |acc, (entry, m)| {
+            match entry.node.mesh.and_then(|id| self.mesh(id)) {
+                Some(mesh) => acc.union(mesh.info.bounds.transformed(m)),
+                None => acc,
+            }
+        });
+        b.is_valid().then_some(b)
+    }
+}
+
+/// The loader's side of a scene. Geometry goes in until [`finish`](Self::finish);
+/// textures can be set any time, from any thread, through a [`TextureSink`].
+pub struct SceneBuilder {
+    scene: CpuScene,
+    finished: bool,
+}
+
+impl SceneBuilder {
+    pub fn scene(&self) -> &CpuScene {
+        &self.scene
+    }
+
+    /// Frames the camera before any mesh exists. Invalid bounds are ignored.
+    pub fn set_bounds(&mut self, bounds: Aabb) -> crate::Result<()> {
+        if !bounds.is_valid() {
+            return Ok(());
+        }
+        self.scene.change(|s, _, _| {
+            s.bounds = Some(bounds);
+            Ok(())
+        })
+    }
+
+    pub fn add_mesh(&mut self, data: MeshData) -> crate::Result<MeshId> {
+        // The index scan is the slow part; do it before taking the lock.
+        let info = data.validate(self.scene.limits())?;
+        self.scene.change(|s, limits, rev| {
+            geometry_open(s)?;
+            check("meshes", s.meshes.len() as u64 + 1, limits.max_meshes as u64)?;
+            check("vertices", s.vertices + info.vertices as u64, limits.max_vertices)?;
+            check("triangles", s.primitives + info.primitives, limits.max_triangles)?;
+            check("scene bytes", s.received_bytes + info.bytes, limits.max_bytes)?;
+            s.vertices += info.vertices as u64;
+            s.primitives += info.primitives;
+            s.received_bytes += info.bytes;
+            s.meshes.push(MeshEntry { info, data: Some(data), changed: rev });
+            Ok(MeshId(s.meshes.len() as u32 - 1))
+        })
+    }
+
+    pub fn add_material(&mut self, material: Material) -> crate::Result<MaterialId> {
+        material.validate()?;
+        self.scene.change(|s, limits, rev| {
+            geometry_open(s)?;
+            check("materials", s.materials.len() as u64 + 1, limits.max_materials as u64)?;
+            for (_, tex) in &material.textures {
+                if tex.index() >= s.textures.len() {
+                    return Err(Error::UnknownId { kind: "texture", id: tex.0 });
+                }
+            }
+            s.materials.push(MaterialEntry { material, changed: rev });
+            Ok(MaterialId(s.materials.len() as u32 - 1))
+        })
+    }
+
+    pub fn add_node(&mut self, node: Node) -> crate::Result<NodeId> {
+        if !node.transform.is_finite() {
+            return Err(Error::BadNode("transform is not finite"));
+        }
+        self.scene.change(|s, limits, rev| {
+            geometry_open(s)?;
+            check("nodes", s.nodes.len() as u64 + 1, limits.max_nodes as u64)?;
+            let depth = match node.parent {
+                Some(p) => s.nodes.get(p.index()).ok_or(Error::UnknownId { kind: "node", id: p.0 })?.depth + 1,
+                None => 1,
+            };
+            check("node depth", depth as u64, limits.max_node_depth as u64)?;
+            if let Some(m) = node.material
+                && m.index() >= s.materials.len()
+            {
+                return Err(Error::UnknownId { kind: "material", id: m.0 });
+            }
+            let drawn = match node.mesh {
+                Some(m) => s.meshes.get(m.index()).ok_or(Error::UnknownId { kind: "mesh", id: m.0 })?.info.primitives,
+                None => 0,
+            };
+            check("drawn triangles", s.drawn_primitives + drawn, limits.max_drawn_triangles)?;
+            s.drawn_primitives += drawn;
+            s.nodes.push(NodeEntry { node, depth, changed: rev });
+            Ok(NodeId(s.nodes.len() as u32 - 1))
+        })
+    }
+
+    /// An id for a texture that will be decoded later.
+    pub fn reserve_texture(&mut self) -> crate::Result<TextureId> {
+        self.scene.change(|s, limits, rev| {
+            check("textures", s.textures.len() as u64 + 1, limits.max_textures as u64)?;
+            s.textures.push(TextureEntry { info: None, data: None, changed: rev });
+            Ok(TextureId(s.textures.len() as u32 - 1))
+        })
+    }
+
+    pub fn set_texture(&self, id: TextureId, data: TextureData) -> crate::Result<()> {
+        self.texture_sink().set_texture(id, data)
+    }
+
+    /// A handle for decoder threads; outlives the builder.
+    pub fn texture_sink(&self) -> TextureSink {
+        TextureSink(self.scene.clone())
+    }
+
+    /// No more geometry. Readers see [`GeometryState::Done`].
+    pub fn finish(&mut self) {
+        if !self.finished {
+            self.finished = true;
+            let _ = self.scene.change(|s, _, _| {
+                s.geometry = GeometryState::Done;
+                Ok(())
+            });
+        }
+    }
+}
+
+impl Drop for SceneBuilder {
+    fn drop(&mut self) {
+        if !self.finished {
+            let _ = self.scene.change(|s, _, _| {
+                s.geometry = GeometryState::Incomplete;
+                Ok(())
+            });
+        }
+    }
+}
+
+/// Sets decoded textures on a scene, from any thread. Setting a texture again replaces
+/// it (a sharper version arriving after a preview).
+#[derive(Clone)]
+pub struct TextureSink(CpuScene);
+
+impl TextureSink {
+    pub fn set_texture(&self, id: TextureId, data: TextureData) -> crate::Result<()> {
+        let info = data.validate(self.0.limits())?;
+        self.0.change(|s, limits, rev| {
+            check("scene bytes", s.received_bytes + info.bytes, limits.max_bytes)?;
+            let entry = s.textures.get_mut(id.index()).ok_or(Error::UnknownId { kind: "texture", id: id.0 })?;
+            *entry = TextureEntry { info: Some(info), data: Some(data), changed: rev };
+            s.received_bytes += info.bytes;
+            Ok(())
+        })
+    }
+}
+
+fn geometry_open(s: &State) -> crate::Result<()> {
+    if s.geometry == GeometryState::Loading { Ok(()) } else { Err(Error::GeometryFinished) }
+}
