@@ -35,6 +35,7 @@ pub use view::{TARGET_FORMAT, View, ViewDesc};
 
 use rendererx_scene::{CpuScene, Topology};
 use scene::INSTANCE_FLOATS;
+use textures::Model;
 use view::{DEPTH_FORMAT, FrameKey, LINEAR_FORMAT, Targets, UNIFORM_BYTES};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -91,10 +92,10 @@ pub struct Renderer {
     view_layout: wgpu::BindGroupLayout,
     clay_layout: wgpu::PipelineLayout,
     clay_module: wgpu::ShaderModule,
-    /// Clay pipelines by topology, then without/with a vertex colour stream, then
-    /// without/with uvs. Triangles with and without uvs are compiled up front; the
-    /// rest on first use.
-    clay: [[[OnceLock<wgpu::RenderPipeline>; 2]; 2]; 3],
+    /// Pipelines by shading model, topology, then without/with a vertex colour stream,
+    /// then without/with uvs. Clay triangles are compiled up front (the first frame);
+    /// the rest on first use.
+    pipelines: [[[[OnceLock<wgpu::RenderPipeline>; 2]; 2]; 3]; 3],
     materials: textures::MaterialBinding,
     /// The sRGB → target copy, when MSAA is on.
     encode: Option<Encode>,
@@ -130,7 +131,10 @@ impl Renderer {
         });
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("rendererx clay"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shading/clay.wgsl").into()),
+            // One module: the shared vertex stage, then each model's fragment stage.
+            source: wgpu::ShaderSource::Wgsl(
+                concat!(include_str!("shading/common.wgsl"), include_str!("shading/clay.wgsl"), include_str!("shading/pbr.wgsl")).into(),
+            ),
         });
         let encode = (desc.msaa.samples() > 1).then(|| encode_pipeline(device));
         let r = Self {
@@ -140,25 +144,25 @@ impl Renderer {
             view_layout,
             clay_layout: layout,
             clay_module: module,
-            clay: Default::default(),
+            pipelines: Default::default(),
             materials,
             encode,
             trace: None,
         };
         // The pipelines a typical model needs for its first frame.
-        r.pipeline(Topology::Triangles, false, false);
-        r.pipeline(Topology::Triangles, false, true);
+        r.pipeline(Model::Clay, Topology::Triangles, false, false);
+        r.pipeline(Model::Clay, Topology::Triangles, false, true);
         r
     }
 
-    fn pipeline(&self, topology: Topology, colors: bool, uvs: bool) -> &wgpu::RenderPipeline {
+    fn pipeline(&self, model: Model, topology: Topology, colors: bool, uvs: bool) -> &wgpu::RenderPipeline {
         let t = match topology {
             Topology::Triangles => 0,
             Topology::Lines => 1,
             Topology::Points => 2,
         };
-        self.clay[t][colors as usize][uvs as usize].get_or_init(|| {
-            clay_pipeline(&self.device, &self.clay_layout, &self.clay_module, self.desc.msaa.samples(), topology, colors, uvs)
+        self.pipelines[model.index()][t][colors as usize][uvs as usize].get_or_init(|| {
+            mesh_pipeline(&self.device, &self.clay_layout, &self.clay_module, self.desc.msaa.samples(), model, topology, colors, uvs)
         })
     }
 
@@ -280,9 +284,9 @@ impl Renderer {
             pass.set_bind_group(0, &view.bind_group, &[]);
             for batch in &scene.batches {
                 let Some(mesh) = scene.meshes.get(batch.mesh.index()).and_then(Option::as_ref) else { continue };
-                pass.set_pipeline(self.pipeline(mesh.topology, mesh.colors.is_some(), mesh.uvs.is_some()));
-                let group = batch.material.and_then(|m| scene.material_groups.get(m.index())?.as_ref());
-                pass.set_bind_group(1, group.unwrap_or(&self.materials.white_group), &[]);
+                pass.set_pipeline(self.pipeline(batch.model, mesh.topology, mesh.colors.is_some(), mesh.uvs.is_some()));
+                let group = batch.material.and_then(|m| scene.material_groups.get(m.index()));
+                pass.set_bind_group(1, group.unwrap_or(&self.materials.default_group), &[]);
                 // Streams in the pipeline's slot order: positions, normals, then the
                 // optional colours and uvs, then instances.
                 let streams = [Some(&mesh.positions), Some(&mesh.normals), mesh.colors.as_ref(), mesh.uvs.as_ref(), Some(instances)];
@@ -373,11 +377,13 @@ fn frame_key(scene: &GpuScene, view: &View, camera: &Camera, options: &RenderOpt
     FrameKey { scene: scene.id, generation: scene.generation, camera: *camera, options: *options, size: (view.width, view.height) }
 }
 
-fn clay_pipeline(
+#[allow(clippy::too_many_arguments)]
+fn mesh_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::PipelineLayout,
     module: &wgpu::ShaderModule,
     samples: u32,
+    model: Model,
     topology: Topology,
     colors: bool,
     uvs: bool,
@@ -399,7 +405,8 @@ fn clay_pipeline(
         attributes: &INSTANCE,
     });
     // With MSAA the frame is drawn linear into an sRGB target (resolved in linear light).
-    let (format, fs) = if samples > 1 { (LINEAR_FORMAT, "fs_linear") } else { (TARGET_FORMAT, "fs_main") };
+    let (encoded, linear) = model.entry_points();
+    let (format, fs) = if samples > 1 { (LINEAR_FORMAT, linear) } else { (TARGET_FORMAT, encoded) };
     let mut buffers = vec![stream(12, &POSITIONS), stream(12, &NORMALS)];
     if colors {
         buffers.push(stream(16, &COLORS));
@@ -409,7 +416,7 @@ fn clay_pipeline(
     }
     buffers.push(instance);
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("rendererx clay"),
+        label: Some("rendererx mesh"),
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module,

@@ -394,3 +394,95 @@ fn base_colour_textures_are_sampled_and_freed_after_upload() {
     assert!(left[0] > 3 * left[1].max(10), "left should be red: {left:?}");
     assert!(right[1] > 3 * right[0].max(10), "right should be green: {right:?}");
 }
+
+/// A camera-facing quad over most of the view, uv (0,0) at the top left, with
+/// `material` and an optional 1×1 or 2×1 texture in `slot`.
+fn material_quad(material: Material, texture: Option<(Slot, TextureData)>) -> CpuScene {
+    let (scene, mut b) = CpuScene::new();
+    let mut mesh = MeshData::new(vec![Vec3::new(-1.0, -1.0, 0.0), Vec3::new(1.0, -1.0, 0.0), Vec3::new(-1.0, 1.0, 0.0), Vec3::new(1.0, 1.0, 0.0)])
+        .with_indices(Indices::U16(vec![0, 1, 2, 2, 1, 3].into()));
+    mesh.uvs = Some(vec![Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)].into());
+    let m = b.add_mesh(mesh).unwrap();
+    let mut material = material;
+    if let Some((slot, data)) = texture {
+        let t = b.reserve_texture().unwrap();
+        b.set_texture(t, data).unwrap();
+        material = material.with_texture(slot, t);
+    }
+    let mat = b.add_material(material).unwrap();
+    b.add_node(Node::mesh(m, Some(mat), Mat4::IDENTITY, None)).unwrap();
+    scene
+}
+
+fn render_quad(r: &Renderer, device: &wgpu::Device, queue: &wgpu::Queue, scene: &CpuScene) -> Vec<u8> {
+    let mut g = r.attach(scene);
+    while g.needs_sync() {
+        r.sync(&mut g);
+    }
+    let mut view = r.create_view(ViewDesc { width: 64, height: 64 });
+    let camera = Camera { eye: Vec3::new(0.0, 0.0, 2.0), ..Default::default() };
+    render_once(r, device, queue, &g, &mut view, &camera)
+}
+
+fn luma(p: [u8; 4]) -> u32 {
+    p[0] as u32 + p[1] as u32 + p[2] as u32
+}
+
+#[test]
+fn unlit_materials_show_their_colour_exactly() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc { msaa: Msaa::Off, ..Default::default() });
+    // Linear 0.2140 is sRGB 128.
+    let unlit = Material::new(ShadingId::UNLIT, ShadingSource::FromFile).with_param("base_color", ParamValue::Vec4(Vec4::new(0.2140, 0.2140, 0.2140, 1.0)));
+    let p = px(&render_quad(&r, &device, &queue, &material_quad(unlit, None)), 64, 32, 32);
+    assert!(p[..3].iter().all(|&c| c.abs_diff(128) <= 1), "{p:?}");
+}
+
+#[test]
+fn pbr_metals_reflect_the_sky_and_differ_from_clay() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc { msaa: Msaa::Off, ..Default::default() });
+    let pbr = |metallic: f32| {
+        Material::new(ShadingId::PBR, ShadingSource::FromFile)
+            .with_param("base_color", ParamValue::Vec4(Vec4::new(0.9, 0.6, 0.2, 1.0)))
+            .with_param("metallic", ParamValue::Float(metallic))
+            .with_param("roughness", ParamValue::Float(0.3))
+    };
+    let metal = px(&render_quad(&r, &device, &queue, &material_quad(pbr(1.0), None)), 64, 32, 32);
+    let plastic = px(&render_quad(&r, &device, &queue, &material_quad(pbr(0.0), None)), 64, 32, 32);
+    let clay = px(&render_quad(&r, &device, &queue, &material_quad(Material::clay().with_param("base_color", ParamValue::Vec4(Vec4::new(0.9, 0.6, 0.2, 1.0))), None)), 64, 32, 32);
+    assert!(luma(metal) > 120, "a gold metal facing the viewer reflects the sky, not black: {metal:?}");
+    assert!(metal[0] > metal[2] && plastic[0] > plastic[2], "both keep their warm colour: {metal:?} {plastic:?}");
+    assert_ne!(metal, plastic);
+    assert_ne!(plastic, clay);
+}
+
+#[test]
+fn normal_maps_tilt_towards_the_top_of_the_image() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc { msaa: Msaa::Off, ..Default::default() });
+    let pbr = || Material::new(ShadingId::PBR, ShadingSource::FromFile).with_param("roughness", ParamValue::Float(0.8));
+    let normal = |g: u8| Some((Slot::NORMAL, TextureData::rgba8(1, 1, ColorSpace::Linear, vec![128, g, 160, 255])));
+    // Green up tilts the surface towards the image's top, which is world +Y here:
+    // towards the sky and the key light (which comes from above), so it's brighter.
+    let up = px(&render_quad(&r, &device, &queue, &material_quad(pbr(), normal(250))), 64, 32, 32);
+    let down = px(&render_quad(&r, &device, &queue, &material_quad(pbr(), normal(5))), 64, 32, 32);
+    let flat = px(&render_quad(&r, &device, &queue, &material_quad(pbr(), None)), 64, 32, 32);
+    assert!(luma(up) > luma(flat) && luma(flat) > luma(down), "up {up:?}, flat {flat:?}, down {down:?}");
+}
+
+#[test]
+fn masked_alpha_cuts_holes_in_any_shading_model() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc { msaa: Msaa::Off, ..Default::default() });
+    // Left half transparent, right half opaque.
+    let base = || Some((Slot::BASE_COLOR, TextureData::rgba8(4, 1, ColorSpace::Srgb, [[255u8, 255, 255, 0], [255, 255, 255, 0], [255; 4], [255; 4]].concat())));
+    for shading in [ShadingId::PBR, ShadingId::UNLIT] {
+        let mut m = Material::new(shading.clone(), ShadingSource::FromFile);
+        m.alpha = AlphaMode::Mask(0.5);
+        let pixels = render_quad(&r, &device, &queue, &material_quad(m, base()));
+        let bg = [28, 28, 31, 255];
+        assert_eq!(px(&pixels, 64, 20, 32), bg, "{shading:?}: the clear half shows the background");
+        assert_ne!(px(&pixels, 64, 44, 32), bg, "{shading:?}: the opaque half draws");
+    }
+}

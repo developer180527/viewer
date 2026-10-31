@@ -1,36 +1,94 @@
 //! Textures on the GPU, and the per-material bind groups that point at them.
 //!
-//! Milestone 1 binds one texture per material, the base colour, which clay multiplies
-//! into the material colour. The other slots arrive with the authored shading models.
+//! Every material gets one bind group: a small uniform block (the factors) and its
+//! five glTF maps, with 1×1 defaults for missing ones. All shading models share the
+//! layout and use what they need (clay only the base colour).
 
-use rendererx_scene::{ColorSpace, Material, Slot, TextureData, TextureFormat, TextureId};
+use rendererx_scene::{AlphaMode, ColorSpace, Material, ParamValue, ShadingId, Slot, TextureData, TextureFormat, TextureId};
+use wgpu::util::DeviceExt;
+
+/// The fragment stage a material is drawn with (docs/3d-renderer.md §8.3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub(crate) enum Model {
+    Clay,
+    Pbr,
+    Unlit,
+}
+
+impl Model {
+    /// Built-in models not written yet (mtoon, matcap, wireframe) draw as clay. FBX
+    /// Lambert and Phong draw as PBR from the factors ufbx translates them to.
+    pub fn of(material: Option<&Material>) -> Self {
+        let Some(m) = material else { return Model::Clay };
+        if m.shading == ShadingId::PBR || m.shading == ShadingId::LAMBERT || m.shading == ShadingId::BLINN_PHONG {
+            Model::Pbr
+        } else if m.shading == ShadingId::UNLIT {
+            Model::Unlit
+        } else {
+            Model::Clay
+        }
+    }
+
+    pub fn index(self) -> usize {
+        self as usize
+    }
+
+    /// Fragment entry points: (writes sRGB bytes, writes linear for the MSAA path).
+    pub fn entry_points(self) -> (&'static str, &'static str) {
+        match self {
+            Model::Clay => ("fs_clay", "fs_clay_linear"),
+            Model::Pbr => ("fs_pbr", "fs_pbr_linear"),
+            Model::Unlit => ("fs_unlit", "fs_unlit_linear"),
+        }
+    }
+}
+
+/// The map slots in binding order (bindings 1–5).
+pub(crate) const SLOTS: [Slot; 5] = [Slot::BASE_COLOR, Slot::METALLIC_ROUGHNESS, Slot::NORMAL, Slot::OCCLUSION, Slot::EMISSIVE];
 
 /// What every material bind group is built from; one per renderer.
 pub(crate) struct MaterialBinding {
     pub layout: wgpu::BindGroupLayout,
     sampler: wgpu::Sampler,
-    /// For materials without a base colour texture (or whose texture isn't here yet).
     white: wgpu::TextureView,
-    pub white_group: wgpu::BindGroup,
+    /// (128, 128, 255): a normal map that changes nothing.
+    flat_normal: wgpu::TextureView,
+    /// For nodes without a material.
+    pub default_group: wgpu::BindGroup,
 }
 
 impl MaterialBinding {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let texture_entry = |binding| wgpu::BindGroupLayoutEntry {
+            binding,
+            visibility: wgpu::ShaderStages::FRAGMENT,
+            ty: wgpu::BindingType::Texture {
+                sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                view_dimension: wgpu::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        };
         let layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("rendererx material"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
                     visibility: wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture {
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                        view_dimension: wgpu::TextureViewDimension::D2,
-                        multisampled: false,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: wgpu::BufferSize::new(UNIFORM_BYTES),
                     },
                     count: None,
                 },
+                texture_entry(1),
+                texture_entry(2),
+                texture_entry(3),
+                texture_entry(4),
+                texture_entry(5),
                 wgpu::BindGroupLayoutEntry {
-                    binding: 1,
+                    binding: 6,
                     visibility: wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                     count: None,
@@ -46,47 +104,100 @@ impl MaterialBinding {
             mipmap_filter: wgpu::MipmapFilterMode::Linear,
             ..Default::default()
         });
-        let white = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("rendererx white"),
-            size: wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        queue.write_texture(
-            white.as_image_copy(),
-            &[255; 4],
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) },
-            wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 },
-        );
-        let white = white.create_view(&Default::default());
-        let white_group = group(device, &layout, &sampler, &white);
-        Self { layout, sampler, white, white_group }
+        let texel = |label, rgba: [u8; 4]| {
+            let size = wgpu::Extent3d { width: 1, height: 1, depth_or_array_layers: 1 };
+            let t = device.create_texture(&wgpu::TextureDescriptor {
+                label: Some(label),
+                size,
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            let layout = wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(4), rows_per_image: Some(1) };
+            queue.write_texture(t.as_image_copy(), &rgba, layout, size);
+            t.create_view(&Default::default())
+        };
+        let white = texel("rendererx white", [255; 4]);
+        let flat_normal = texel("rendererx flat normal", [128, 128, 255, 255]);
+        let defaults = Defaults { white: &white, flat_normal: &flat_normal };
+        let default_group = make_group(device, &layout, &sampler, defaults, None, [None; 5]);
+        Self { layout, sampler, white, flat_normal, default_group }
     }
 
-    /// A bind group sampling `base` (white when `None`).
-    pub fn group(&self, device: &wgpu::Device, base: Option<&wgpu::TextureView>) -> wgpu::BindGroup {
-        group(device, &self.layout, &self.sampler, base.unwrap_or(&self.white))
+    /// The bind group for `material` (defaults when `None`) with the given maps, in
+    /// [`SLOTS`] order; missing maps use the 1×1 defaults.
+    pub fn group(&self, device: &wgpu::Device, material: Option<&Material>, maps: [Option<&wgpu::TextureView>; 5]) -> wgpu::BindGroup {
+        let defaults = Defaults { white: &self.white, flat_normal: &self.flat_normal };
+        make_group(device, &self.layout, &self.sampler, defaults, material, maps)
     }
 }
 
-fn group(device: &wgpu::Device, layout: &wgpu::BindGroupLayout, sampler: &wgpu::Sampler, view: &wgpu::TextureView) -> wgpu::BindGroup {
-    device.create_bind_group(&wgpu::BindGroupDescriptor {
+#[derive(Clone, Copy)]
+struct Defaults<'a> {
+    white: &'a wgpu::TextureView,
+    flat_normal: &'a wgpu::TextureView,
+}
+
+fn make_group(
+    device: &wgpu::Device,
+    layout: &wgpu::BindGroupLayout,
+    sampler: &wgpu::Sampler,
+    defaults: Defaults<'_>,
+    material: Option<&Material>,
+    maps: [Option<&wgpu::TextureView>; 5],
+) -> wgpu::BindGroup {
+    let uniforms = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
         label: Some("rendererx material"),
-        layout,
-        entries: &[
-            wgpu::BindGroupEntry { binding: 0, resource: wgpu::BindingResource::TextureView(view) },
-            wgpu::BindGroupEntry { binding: 1, resource: wgpu::BindingResource::Sampler(sampler) },
-        ],
-    })
+        contents: bytemuck::cast_slice(&uniforms(material)),
+        usage: wgpu::BufferUsages::UNIFORM,
+    });
+    let views: [&wgpu::TextureView; 5] =
+        std::array::from_fn(|i| maps[i].unwrap_or(if SLOTS[i] == Slot::NORMAL { defaults.flat_normal } else { defaults.white }));
+    let mut entries = vec![wgpu::BindGroupEntry { binding: 0, resource: uniforms.as_entire_binding() }];
+    entries.extend(views.iter().enumerate().map(|(i, v)| wgpu::BindGroupEntry { binding: i as u32 + 1, resource: wgpu::BindingResource::TextureView(v) }));
+    entries.push(wgpu::BindGroupEntry { binding: 6, resource: wgpu::BindingResource::Sampler(sampler) });
+    // The bind group keeps the uniform buffer alive.
+    device.create_bind_group(&wgpu::BindGroupDescriptor { label: Some("rendererx material"), layout, entries: &entries })
 }
 
-/// The texture clay samples for a material: its base colour map.
-pub(crate) fn base_texture(material: &Material) -> Option<TextureId> {
-    material.textures.iter().find(|(slot, _)| *slot == Slot::BASE_COLOR).map(|(_, t)| *t)
+const UNIFORM_BYTES: u64 = 32;
+
+/// `MaterialUniforms` in common.wgsl: emissive (rgb) + normal scale, then metallic,
+/// roughness, occlusion strength and alpha cutoff (negative: opaque).
+fn uniforms(material: Option<&Material>) -> [f32; 8] {
+    let float = |name: &str, default: f32| match material.and_then(|m| m.params.get(name)) {
+        Some(ParamValue::Float(v)) if v.is_finite() => v,
+        _ => default,
+    };
+    let emissive = match material.and_then(|m| m.params.get("emissive")) {
+        Some(ParamValue::Vec3(v)) => v.to_array(),
+        Some(ParamValue::Vec4(v)) => v.truncate().to_array(),
+        _ => [0.0; 3],
+    };
+    let cutoff = match material.map(|m| m.alpha) {
+        Some(AlphaMode::Mask(c)) => c,
+        // No blending yet: drawn as a cutout, so fully clear parts still vanish.
+        Some(AlphaMode::Blend) => 0.05,
+        _ => -1.0,
+    };
+    [
+        emissive[0],
+        emissive[1],
+        emissive[2],
+        float("normal_scale", 1.0),
+        float("metallic", 0.0),
+        float("roughness", 0.5),
+        float("occlusion_strength", 1.0),
+        cutoff,
+    ]
+}
+
+/// The texture a material uses for `slot`.
+pub(crate) fn texture_for(material: &Material, slot: &Slot) -> Option<TextureId> {
+    material.textures.iter().find(|(s, _)| s == slot).map(|(_, t)| *t)
 }
 
 pub(crate) struct GpuTexture {

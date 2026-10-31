@@ -8,7 +8,7 @@ use rendererx_scene::glam::{Mat3, Vec4};
 use rendererx_scene::{CpuScene, Indices, MaterialId, MeshData, MeshId, ParamValue, ReaderGuard, SceneRead, TextureId, Topology};
 use wgpu::util::DeviceExt;
 
-use crate::textures::{GpuTexture, MaterialBinding, base_texture, upload_texture};
+use crate::textures::{GpuTexture, MaterialBinding, Model, SLOTS, texture_for, upload_texture};
 
 /// Clay colour for nodes without a material colour, linear.
 const CLAY: Vec4 = Vec4::new(0.60, 0.57, 0.53, 1.0);
@@ -35,8 +35,10 @@ pub(crate) struct GpuMesh {
 
 pub(crate) struct Batch {
     pub mesh: MeshId,
-    /// Selects the bind group (base colour texture); `None` draws untextured.
+    /// Selects the bind group (factors and maps); `None` uses the defaults.
     pub material: Option<MaterialId>,
+    /// The material's shading model: which pipeline draws the batch.
+    pub model: Model,
     pub instances: Range<u32>,
 }
 
@@ -56,8 +58,8 @@ pub struct GpuScene {
     textures: Vec<Option<GpuTexture>>,
     /// Textures the device refused, by the revision that failed.
     texture_failed: HashMap<usize, u64>,
-    /// Per material: its bind group, when it has a texture on the GPU.
-    pub(crate) material_groups: Vec<Option<wgpu::BindGroup>>,
+    /// Per material: its bind group (factors, and whichever maps are on the GPU).
+    pub(crate) material_groups: Vec<wgpu::BindGroup>,
     /// Meshes that can't be uploaded (over a device limit), by the revision that failed.
     failed: HashMap<usize, u64>,
     errors: Vec<(MeshId, String)>,
@@ -232,8 +234,11 @@ impl GpuScene {
                 .materials()
                 .iter()
                 .map(|m| {
-                    let view = base_texture(&m.material).and_then(|t| self.textures.get(t.index())?.as_ref()).map(|t| &t.view);
-                    view.map(|v| materials.group(device, Some(v)))
+                    let maps = std::array::from_fn(|i| {
+                        let id = texture_for(&m.material, &SLOTS[i])?;
+                        self.textures.get(id.index())?.as_ref().map(|t| &t.view)
+                    });
+                    materials.group(device, Some(&m.material), maps)
                 })
                 .collect();
         }
@@ -294,7 +299,10 @@ impl GpuScene {
             let index = data.len() as u32;
             match self.batches.last_mut() {
                 Some(b) if b.mesh == mesh && b.material == material => b.instances.end = index + 1,
-                _ => self.batches.push(Batch { mesh, material, instances: index..index + 1 }),
+                _ => {
+                    let model = Model::of(material.and_then(|m| read.material(m)).map(|e| &e.material));
+                    self.batches.push(Batch { mesh, material, model, instances: index..index + 1 })
+                }
             }
             data.push(inst);
         }

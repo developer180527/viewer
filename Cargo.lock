@@ -4658,6 +4658,7 @@ name = "viewer-fmt-3d"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "exr",
  "image",
  "rendererx-gltf",
  "rendererx-scene",

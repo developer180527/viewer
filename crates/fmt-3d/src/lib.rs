@@ -6,11 +6,10 @@ mod blend;
 mod textures;
 mod ufbx_scene;
 
-use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use rendererx_scene::{CpuScene, SceneRead, Slot, TextureId};
+use rendererx_scene::{CpuScene, SceneRead};
 use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Result, SceneDoc};
 
 pub use blend::BlendLoader;
@@ -63,16 +62,10 @@ impl Stats {
     }
 }
 
-/// Textures some material uses as its base colour map.
-fn base_color_textures(scene: &CpuScene) -> HashSet<TextureId> {
-    let read = scene.read();
-    read.materials().iter().flat_map(|m| &m.material.textures).filter(|(slot, _)| *slot == Slot::BASE_COLOR).map(|(_, t)| *t).collect()
-}
-
-fn texture_note(base_colour_maps: usize) -> String {
-    match base_colour_maps {
-        0 => "none shown (other maps arrive with PBR shading)".into(),
-        n => format!("{n} base colour map(s), up to {} px; other maps arrive with PBR shading", textures::MAX_SIDE),
+fn texture_note(maps: usize) -> String {
+    match maps {
+        0 => "none".into(),
+        n => format!("{n} map(s), up to {} px", textures::MAX_SIDE),
     }
 }
 
@@ -107,12 +100,9 @@ impl FormatLoader for GltfLoader {
             None => rendererx_gltf::load(src.shared_bytes(), &rendererx_gltf::NoResolver, &mut builder),
         }?;
         let format = if src.header().starts_with(b"glTF") { "glTF binary (GLB)" } else { "glTF 2.0" };
-        // Only base colour maps are drawn so far; the other maps aren't decoded at all.
-        let base = base_color_textures(&scene);
         let jobs: Vec<_> = loaded
             .images
             .into_iter()
-            .filter(|i| base.contains(&i.texture))
             .map(|i| textures::ImageJob { texture: i.texture, source: textures::ImageSource::Bytes(i.data), color_space: i.color_space })
             .collect();
         let decoding = jobs.len();

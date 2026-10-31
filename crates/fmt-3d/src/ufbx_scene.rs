@@ -49,7 +49,8 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<Loaded> {
         .iter()
         .map(|w| if w.count > 1 { format!("{} (×{})", w.description, w.count) } else { w.description.to_string() })
         .collect();
-    let mut images = Images { dir: src.path().and_then(|p| p.parent()).map(PathBuf::from), seen: HashMap::new(), jobs: Vec::new() };
+    let dir = src.path().and_then(|p| p.parent()).map(PathBuf::from);
+    let mut images = Images { dir, seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new() };
     convert(&root, &mut builder, &mut images, &mut warnings).context("building the scene")?;
     builder.finish();
     let textures = images.jobs.len();
@@ -61,31 +62,88 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<Loaded> {
 struct Images {
     /// The model's folder; texture files must be inside it.
     dir: Option<PathBuf>,
-    seen: HashMap<u32, Option<TextureId>>,
+    /// By (texture, sRGB): one image used as colour and as data is two textures.
+    seen: HashMap<(u32, bool), Option<TextureId>>,
+    /// Packed roughness + metalness, by the two source textures.
+    packed: HashMap<(Option<u32>, Option<u32>), Option<TextureId>>,
     jobs: Vec<ImageJob>,
 }
 
 impl Images {
-    /// The scene texture for `tex` as a colour map: its embedded bytes, or the file it
-    /// names, found next to the model.
-    fn texture(&mut self, tex: &ufbx::Texture, b: &mut SceneBuilder) -> Option<TextureId> {
-        if let Some(id) = self.seen.get(&tex.element.typed_id) {
-            return *id;
-        }
+    /// Where a texture's image is: its embedded bytes, or the file it names, found
+    /// next to the model.
+    fn source(&self, tex: &ufbx::Texture) -> Option<ImageSource> {
         // A layered texture: use its first file.
         let file = tex.file_textures.first().map(|t| &**t).unwrap_or(tex);
-        let source = if !file.content.is_empty() {
-            Some(ImageSource::Bytes(Stream::from(file.content.to_vec())))
-        } else {
-            self.dir.as_deref().and_then(|dir| textures::find_file(dir, &file.relative_filename, &file.absolute_filename)).map(ImageSource::File)
-        };
-        let id = source.and_then(|source| {
-            let texture = b.reserve_texture().ok()?;
-            self.jobs.push(ImageJob { texture, source, color_space: ColorSpace::Srgb });
-            Some(texture)
-        });
-        self.seen.insert(tex.element.typed_id, id);
+        if !file.content.is_empty() {
+            return Some(ImageSource::Bytes(Stream::from(file.content.to_vec())));
+        }
+        let dir = self.dir.as_deref()?;
+        textures::find_file(dir, &file.relative_filename, &file.absolute_filename).map(ImageSource::File)
+    }
+
+    fn queue(&mut self, source: ImageSource, color_space: ColorSpace, b: &mut SceneBuilder) -> Option<TextureId> {
+        let texture = b.reserve_texture().ok()?;
+        self.jobs.push(ImageJob { texture, source, color_space });
+        Some(texture)
+    }
+
+    fn texture(&mut self, tex: &ufbx::Texture, color_space: ColorSpace, b: &mut SceneBuilder) -> Option<TextureId> {
+        let key = (tex.element.typed_id, color_space == ColorSpace::Srgb);
+        if let Some(id) = self.seen.get(&key) {
+            return *id;
+        }
+        let id = self.source(tex).and_then(|source| self.queue(source, color_space, b));
+        self.seen.insert(key, id);
         id
+    }
+
+    fn metal_rough(&mut self, roughness: Option<&ufbx::Texture>, metalness: Option<&ufbx::Texture>, b: &mut SceneBuilder) -> Option<TextureId> {
+        let key = (roughness.map(|t| t.element.typed_id), metalness.map(|t| t.element.typed_id));
+        if let Some(id) = self.packed.get(&key) {
+            return *id;
+        }
+        let (r, m) = (roughness.and_then(|t| self.source(t)), metalness.and_then(|t| self.source(t)));
+        let id = if r.is_none() && m.is_none() {
+            None
+        } else {
+            self.queue(ImageSource::MetalRough { roughness: r.map(Box::new), metalness: m.map(Box::new) }, ColorSpace::Linear, b)
+        };
+        self.packed.insert(key, id);
+        id
+    }
+}
+
+/// The first of `maps` with an enabled texture.
+fn map_texture<'a>(maps: &[&'a ufbx::MaterialMap]) -> Option<&'a ufbx::Texture> {
+    maps.iter().find_map(|m| m.texture.as_deref().filter(|_| m.texture_enabled))
+}
+
+/// Queues the material's maps and points `out` at them. A map's factor becomes 1
+/// where the map carries the values (ufbx often reports 0 beside a texture).
+fn attach_maps(m: &ufbx::Material, out: &mut Material, images: &mut Images, b: &mut SceneBuilder) {
+    let mut add = |slot: Slot, tex: Option<&ufbx::Texture>, space: ColorSpace, b: &mut SceneBuilder| {
+        tex.and_then(|t| images.texture(t, space, b)).map(|id| out.textures.push((slot, id))).is_some()
+    };
+    add(Slot::BASE_COLOR, map_texture(&[&m.pbr.base_color, &m.fbx.diffuse_color]), ColorSpace::Srgb, b);
+    add(Slot::NORMAL, map_texture(&[&m.pbr.normal_map, &m.fbx.normal_map]), ColorSpace::Linear, b);
+    add(Slot::OCCLUSION, map_texture(&[&m.pbr.ambient_occlusion]), ColorSpace::Linear, b);
+    if add(Slot::EMISSIVE, map_texture(&[&m.pbr.emission_color, &m.fbx.emission_color]), ColorSpace::Srgb, b) {
+        let strength = if m.pbr.emission_factor.has_value { m.pbr.emission_factor.value_vec4.x as f32 } else { 1.0 };
+        let lit = matches!(out.params.get("emissive"), Some(ParamValue::Vec3(c)) if c.max_element() > 0.0);
+        if !lit {
+            out.params.set("emissive", ParamValue::Vec3(Vec3::splat(strength)));
+        }
+    }
+    let (rough, metal) = (map_texture(&[&m.pbr.roughness]), map_texture(&[&m.pbr.metalness]));
+    if let Some(id) = images.metal_rough(rough, metal, b) {
+        out.textures.push((Slot::METALLIC_ROUGHNESS, id));
+        if rough.is_some() {
+            out.params.set("roughness", ParamValue::Float(1.0));
+        }
+        if metal.is_some() {
+            out.params.set("metallic", ParamValue::Float(1.0));
+        }
     }
 }
 
@@ -115,10 +173,7 @@ fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, images: &mut Images, warnin
             let material = node.materials.get(slot).or_else(|| mesh.materials.get(slot)).and_then(|m| {
                 *materials.entry(m.element.typed_id).or_insert_with(|| {
                     let mut out = material(m);
-                    let map = [&m.pbr.base_color, &m.fbx.diffuse_color].into_iter().find_map(|map| map.texture.as_ref().filter(|_| map.texture_enabled));
-                    if let Some(id) = map.and_then(|t| images.texture(t, b)) {
-                        out.textures.push((Slot::BASE_COLOR, id));
-                    }
+                    attach_maps(m, &mut out, images, b);
                     b.add_material(out).map_err(|e| warnings.push(format!("material {}: {e}", m.element.name))).ok()
                 })
             });
@@ -251,6 +306,14 @@ fn material(m: &ufbx::Material) -> Material {
     }
     if m.pbr.metalness.has_value {
         out.params.set("metallic", ParamValue::Float(m.pbr.metalness.value_vec4.x as f32));
+    }
+    if m.pbr.emission_color.has_value {
+        let c = m.pbr.emission_color.value_vec4;
+        let f = if m.pbr.emission_factor.has_value { m.pbr.emission_factor.value_vec4.x } else { 1.0 };
+        let e = Vec3::new((c.x * f) as f32, (c.y * f) as f32, (c.z * f) as f32);
+        if e.is_finite() {
+            out.params.set("emissive", ParamValue::Vec3(e.max(Vec3::ZERO)));
+        }
     }
     out
 }

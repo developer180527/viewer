@@ -22,6 +22,10 @@ pub enum ImageSource {
     Bytes(Stream<u8>),
     /// A file next to the model, already checked to be inside its folder.
     File(PathBuf),
+    /// Separate roughness and metalness images (FBX, OBJ) packed the glTF way:
+    /// roughness in green, metalness in blue. A missing one is white, so its factor
+    /// alone applies.
+    MetalRough { roughness: Option<Box<ImageSource>>, metalness: Option<Box<ImageSource>> },
 }
 
 pub struct ImageJob {
@@ -41,7 +45,8 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
     std::thread::Builder::new()
         .name("texture decode".into())
         .spawn(move || {
-            let workers = std::thread::available_parallelism().map_or(2, |n| n.get().clamp(1, 4)).min(jobs.len());
+            // Two at a time: a 4K float EXR is ~256 MB while it decodes.
+            let workers = std::thread::available_parallelism().map_or(1, |n| n.get().clamp(1, 2)).min(jobs.len());
             let next = AtomicUsize::new(0);
             std::thread::scope(|s| {
                 for _ in 0..workers {
@@ -62,6 +67,41 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
 }
 
 fn decode(source: &ImageSource, color_space: ColorSpace) -> Option<TextureData> {
+    if let ImageSource::MetalRough { roughness, metalness } = source {
+        return metal_rough(roughness.as_deref(), metalness.as_deref());
+    }
+    let rgba = load(source, color_space)?;
+    let (w, h) = rgba.dimensions();
+    Some(with_mips(w, h, rgba.into_raw(), color_space))
+}
+
+/// One channel from each image (the first; maps are greyscale), at the size of the
+/// larger, packed as (1, roughness, metalness, 1).
+fn metal_rough(roughness: Option<&ImageSource>, metalness: Option<&ImageSource>) -> Option<TextureData> {
+    // Decoded one after the other and reduced to one channel each, so only one full
+    // image is in memory at a time.
+    let channel = |src: Option<&ImageSource>| src.and_then(|s| load(s, ColorSpace::Linear)).map(|i| image::DynamicImage::ImageRgba8(i).into_luma8());
+    let (r, m) = (channel(roughness), channel(metalness));
+    let (w, h) = match (&r, &m) {
+        (Some(a), Some(b)) => (a.width().max(b.width()), a.height().max(b.height())),
+        (Some(a), None) | (None, Some(a)) => a.dimensions(),
+        (None, None) => return None,
+    };
+    let fit = |c: Option<image::GrayImage>| {
+        c.map(|c| if c.dimensions() == (w, h) { c } else { image::imageops::resize(&c, w, h, image::imageops::FilterType::Triangle) })
+    };
+    let (r, m) = (fit(r), fit(m));
+    let mut rgba = Vec::with_capacity((w * h * 4) as usize);
+    for i in 0..(w * h) as usize {
+        let get = |c: &Option<image::GrayImage>| c.as_ref().map_or(255, |c| c.as_raw()[i]);
+        rgba.extend_from_slice(&[255, get(&r), get(&m), 255]);
+    }
+    Some(with_mips(w, h, rgba, ColorSpace::Linear))
+}
+
+/// Decodes and scales one image to at most [`MAX_SIDE`]. `color_space` says how to
+/// store float (EXR) data: sRGB-encoded for colour maps, as-is for data maps.
+fn load(source: &ImageSource, color_space: ColorSpace) -> Option<image::RgbaImage> {
     let file;
     let bytes: &[u8] = match source {
         ImageSource::Bytes(s) => s.as_slice(),
@@ -72,7 +112,13 @@ fn decode(source: &ImageSource, color_space: ColorSpace) -> Option<TextureData> 
             file = std::fs::read(path).ok()?;
             &file
         }
+        ImageSource::MetalRough { .. } => return None,
     };
+    if bytes.starts_with(&[0x76, 0x2f, 0x31, 0x01])
+        && let Some(image) = load_exr(bytes, color_space == ColorSpace::Srgb)
+    {
+        return Some(image);
+    }
     let image = image::load_from_memory(bytes).ok()?;
     let image = if image.width().max(image.height()) > MAX_SIDE {
         // An integer box downscale straight into the output: the filtered resizers keep
@@ -81,9 +127,92 @@ fn decode(source: &ImageSource, color_space: ColorSpace) -> Option<TextureData> 
     } else {
         image
     };
-    let rgba = image.into_rgba8();
-    let (w, h) = rgba.dimensions();
-    Some(with_mips(w, h, rgba.into_raw(), color_space))
+    Some(image.into_rgba8())
+}
+
+/// Reads an EXR straight into the scaled-down result: each decoded pixel is added to
+/// its target texel, so a 4K float map costs ~32 MB of sums instead of the ~256 MB a
+/// full float image would. RGB(A) and single-channel (Y) files; others return `None`
+/// and go through `image`.
+fn load_exr(bytes: &[u8], srgb: bool) -> Option<image::RgbaImage> {
+    use exr::prelude::*;
+    let rgba = read()
+        .no_deep_data()
+        .largest_resolution_level()
+        .rgba_channels(|size, _| Shrink::new(size.width(), size.height(), srgb), |s: &mut Shrink, at, (r, g, b, a): (f32, f32, f32, f32)| {
+            s.add(at.x(), at.y(), [r, g, b, a])
+        })
+        .first_valid_layer()
+        .all_attributes()
+        .non_parallel()
+        .from_buffered(std::io::Cursor::new(bytes));
+    if let Ok(image) = rgba {
+        return image.layer_data.channel_data.pixels.finish();
+    }
+    let grey = read()
+        .no_deep_data()
+        .largest_resolution_level()
+        .specific_channels()
+        .required("Y")
+        .collect_pixels(|size, _| Shrink::new(size.width(), size.height(), srgb), |s: &mut Shrink, at, (y,): (f32,)| {
+            s.add(at.x(), at.y(), [y, y, y, 1.0])
+        })
+        .first_valid_layer()
+        .all_attributes()
+        .non_parallel()
+        .from_buffered(std::io::Cursor::new(bytes))
+        .ok()?;
+    grey.layer_data.channel_data.pixels.finish()
+}
+
+/// A box-filter downscale by a whole factor, filled one source pixel at a time in any
+/// order. Sums of 8-bit values fit u16 for factors up to 16 (65 536 px sources).
+struct Shrink {
+    width: usize,
+    height: usize,
+    factor: usize,
+    out_w: usize,
+    out_h: usize,
+    srgb: bool,
+    sums: Vec<u16>,
+}
+
+impl Shrink {
+    fn new(width: usize, height: usize, srgb: bool) -> Self {
+        let factor = width.max(height).div_ceil(MAX_SIDE as usize).max(1);
+        let (out_w, out_h) = (width.div_ceil(factor), height.div_ceil(factor));
+        // Oversized files get an empty buffer and are refused in `finish`.
+        let sums = if factor <= 16 { vec![0u16; out_w * out_h * 4] } else { Vec::new() };
+        Self { width, height, factor, out_w, out_h, srgb, sums }
+    }
+
+    fn add(&mut self, x: usize, y: usize, rgba: [f32; 4]) {
+        if self.sums.is_empty() || x >= self.width || y >= self.height {
+            return;
+        }
+        let i = ((y / self.factor) * self.out_w + x / self.factor) * 4;
+        for (c, v) in rgba.into_iter().enumerate() {
+            let v = if self.srgb && c < 3 { linear_to_srgb(v) } else { v.clamp(0.0, 1.0) };
+            let v = if v.is_nan() { 0.0 } else { v };
+            self.sums[i + c] += (v * 255.0 + 0.5) as u16;
+        }
+    }
+
+    fn finish(self) -> Option<image::RgbaImage> {
+        if self.sums.is_empty() {
+            return None;
+        }
+        let mut out = Vec::with_capacity(self.out_w * self.out_h * 4);
+        for ty in 0..self.out_h {
+            let rows = self.factor.min(self.height - ty * self.factor);
+            for tx in 0..self.out_w {
+                let count = (rows * self.factor.min(self.width - tx * self.factor)) as u32;
+                let i = (ty * self.out_w + tx) * 4;
+                out.extend(self.sums[i..i + 4].iter().map(|&s| ((s as u32 + count / 2) / count) as u8));
+            }
+        }
+        image::RgbaImage::from_raw(self.out_w as u32, self.out_h as u32, out)
+    }
 }
 
 /// Level 0 plus every smaller level down to 1×1, each a 2×2 box filter of the one
@@ -177,6 +306,44 @@ mod tests {
         let t = with_mips(5, 3, vec![10; 5 * 3 * 4], ColorSpace::Linear);
         assert_eq!(t.levels.len(), 3, "5×3, 2×1, 1×1");
         assert!(t.validate(&Default::default()).is_ok());
+    }
+
+    #[test]
+    fn exr_style_shrinking_averages_whole_blocks_and_partial_edges() {
+        // 4099 wide: factor 3 (to 1367), so the last column's block has one pixel.
+        let mut s = Shrink::new(4099, 2, false);
+        assert_eq!((s.factor, s.out_w, s.out_h), (3, 1367, 1));
+        for y in 0..2 {
+            for x in 0..4099 {
+                let v = if x < 3 { [1.0, 0.0, 0.5, 1.0] } else { [0.2, 0.2, 0.2, 1.0] };
+                s.add(x, y, v);
+            }
+        }
+        s.add(9999, 0, [1.0; 4]); // out of range: ignored
+        let img = s.finish().unwrap();
+        assert_eq!(img.dimensions(), (1367, 1));
+        assert_eq!(img.get_pixel(0, 0).0, [255, 0, 128, 255]);
+        assert_eq!(img.get_pixel(1366, 0).0, [51, 51, 51, 255], "the 1-pixel-wide edge block averages its 2 pixels");
+        // Colour maps stored as linear floats are sRGB-encoded.
+        let mut c = Shrink::new(1, 1, true);
+        c.add(0, 0, [0.2158, 0.0, 1.0, 1.0]); // sRGB 128
+        assert_eq!(c.finish().unwrap().get_pixel(0, 0).0, [128, 0, 255, 255]);
+    }
+
+    #[test]
+    fn separate_roughness_and_metal_maps_pack_into_green_and_blue() {
+        let png = |v: u8, w: u32| {
+            let mut out = Vec::new();
+            image::GrayImage::from_pixel(w, w, image::Luma([v])).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).unwrap();
+            Box::new(ImageSource::Bytes(out.into()))
+        };
+        // Different sizes: packed at the larger.
+        let t = decode(&ImageSource::MetalRough { roughness: Some(png(200, 4)), metalness: Some(png(30, 2)) }, ColorSpace::Linear).unwrap();
+        assert_eq!((t.width, t.height, t.color_space), (4, 4, ColorSpace::Linear));
+        assert_eq!(&t.levels[0].as_slice()[..4], [255, 200, 30, 255]);
+        // Only roughness: metal is white, so the metallic factor alone applies.
+        let t = decode(&ImageSource::MetalRough { roughness: Some(png(90, 2)), metalness: None }, ColorSpace::Linear).unwrap();
+        assert_eq!(&t.levels[0].as_slice()[..4], [255, 90, 255, 255]);
     }
 
     #[test]

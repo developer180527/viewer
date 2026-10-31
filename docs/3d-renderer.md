@@ -1,6 +1,6 @@
 # RendererX — a reusable 3D renderer on wgpu
 
-Status: milestone 1 steps 1–3 and 5 implemented: `rendererx-scene`, `rendererx` core, `rendererx-gltf`, and Viewer's 3D view (libgui frontend, orbit/pan/zoom) with loaders in `viewer-fmt-3d` for glTF/GLB, FBX and OBJ (via ufbx). Base colour textures: decoded off-thread by the loaders (capped at 2048 px, mips averaged in linear light), uploaded within the per-sync budget, sampled by clay; CPU copies freed after upload. `.blend` shows Blender's saved preview image. Not yet: the other texture maps and the authored shading models (PBR, toon…), USD, `.blend` geometry.
+Status: milestone 1 steps 1–3 and 5 implemented: `rendererx-scene`, `rendererx` core, `rendererx-gltf`, and Viewer's 3D view (libgui frontend, orbit/pan/zoom) with loaders in `viewer-fmt-3d` for glTF/GLB, FBX and OBJ (via ufbx). Shading: `clay`, `pbr` (all five glTF maps, procedural sky, key light, PBR Neutral tone mapping) and `unlit`; FBX Lambert/Phong draw through `pbr` with the factors ufbx translates them to; `mtoon`, `matcap` and `wireframe` still fall back to clay. Textures decode off-thread (capped at 2048 px, mips in linear light; EXRs stream into the reduced size). `.blend` shows Blender's saved preview image. Not yet: the shading-model registry API (§8.2; models are fixed entry points for now), image-based lighting from a real environment map, alpha blending (Blend draws as a cutout), USD, `.blend` geometry.
 
 The product name is **RendererX**; the Cargo package and Rust crate are `rendererx`
 (Rust warns on non-snake-case crate names, and lowercase names avoid case clashes on crates.io and in paths).
@@ -253,6 +253,8 @@ pub struct ShadingModel {
 - Runtime-loaded shaders can still be slow (validation can't catch a huge loop). Hosts should only load trusted ones until they have a sandbox.
 
 ### 8.3 Built-in models
+
+Implemented so far (milestone 1): one shader module, `common.wgsl` (bindings, instance data, vertex stage) followed by each model's fragment stage (`clay.wgsl`, `pbr.wgsl`); a material's model picks the entry points, and pipelines are built per (model, topology, vertex streams) on first use. Every material has the same bind group: a uniform block (emissive + normal scale, metallic, roughness, occlusion strength, alpha cutoff) and the five glTF maps with 1×1 defaults. Normal maps need no tangents: the tangent frame comes from screen-space derivatives, with the bitangent oriented by the uv mapping itself (works on every backend and with mirrored uvs).
 
 | id | Look | Notes |
 |---|---|---|
