@@ -1,0 +1,24 @@
+[package]
+name = "rendererx-gltf"
+description = "glTF 2.0 / GLB to a RendererX CPU scene. No GPU, no image decoding."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Depends on rendererx-scene only, never rendererx or wgpu: it must run in a parser
+# worker or sandbox before any GPU exists (docs/3d-renderer.md §2).
+[dependencies]
+rendererx-scene.workspace = true
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+bytemuck = "1"
+base64 = "0.22"
+thiserror = "2"
+
+[dev-dependencies]
+rendererx = { workspace = true, features = ["controls"] }
+wgpu = "30"
+pollster = "1"
+serde_json = "1"
+bytemuck = "1"
+base64 = "0.22"

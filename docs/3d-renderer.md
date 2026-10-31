@@ -1,6 +1,6 @@
 # RendererX — a reusable 3D renderer on wgpu
 
-Status: milestone 1 steps 1–2 implemented: `rendererx-scene` (CPU scene) and `rendererx` core (renderer, views, streaming mesh upload, clay shading, on-demand redraw, orbit controls). Not yet: textures, authored shading models, glTF adapter, the Viewer 3D view. Updated 2026-10-31 for the decided architecture (PLAN.md §12): scenes are built without the GPU, one shared device, many windows, and edits as operations.
+Status: milestone 1 steps 1–2 implemented: `rendererx-scene` (CPU scene) and `rendererx` core (renderer, views, streaming mesh upload, clay shading, on-demand redraw, orbit controls). Step 3 done: `rendererx-gltf` (glTF/GLB, zero-copy streams, materials as authored, images handed to the host to decode). Not yet: texture upload, authored shading models, the Viewer 3D view. Updated 2026-10-31 for the decided architecture (PLAN.md §12): scenes are built without the GPU, one shared device, many windows, and edits as operations.
 
 The product name is **RendererX**; the Cargo package and Rust crate are `rendererx`
 (Rust warns on non-snake-case crate names, and lowercase names avoid case clashes on crates.io and in paths).
@@ -165,6 +165,12 @@ The renderer doesn't parse files, but its input types are shaped so loaders can 
 - Streams that need conversion (FBX via `ufbx`, OBJ, STL) are converted on the loader's threads and handed over as owned data.
 - Loaders should call `set_bounds` early (glTF accessors carry min/max), so the camera frames the model before the meshes arrive.
 - Texture decoding happens in the loader (it owns the image decoders). The renderer accepts RGBA8, RGBA16F and **GPU-compressed blocks** (BC1–7, ETC2, ASTC) when the device supports them.
+
+`rendererx-gltf` (implemented) follows these rules:
+- Its own reader for the glTF subset we use (serde_json), not the `gltf` crate, which copies the GLB binary chunk. Every offset, stride and count is checked against its buffer view and buffer.
+- Images aren't decoded by the adapter: it reserves a `TextureId` per (image, colour space) and returns the encoded bytes (`PendingImage`) for the host's decoders and threads.
+- External files go through a `Resolver`. `DirResolver` refuses absolute paths, URI schemes and `..`, so a model can't make the app read outside its folder.
+- Draco and meshopt compression are refused up front (`Error::Unsupported`). Any other unknown required extension, a broken primitive or a missing file becomes a warning, and the rest of the model still loads.
 
 Shading as authored, per format (the adapters fill `Material::shading`):
 
