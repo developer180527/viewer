@@ -391,11 +391,28 @@ pub struct SceneView {
     moved: bool,
     /// Framed on the finished model's measured bounds (not the loader's early hint).
     framed_final: bool,
+    /// The scene wakes the window when it changes (textures arriving).
+    wakes: bool,
 }
 
 /// A 3D model drawn by RendererX into a texture. Drag to orbit, Shift-drag (or
 /// two-finger pan) to pan, scroll or pinch to zoom, double-click or 0 to reframe.
 fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, tex: &mut dyn Textures) {
+    if !std::mem::replace(&mut st.wakes, true) {
+        doc.scene.set_on_change(|| {
+            if let Some(wake) = crate::loading::WAKE.get() {
+                wake();
+            }
+        });
+    }
+    let pending = || doc.textures_pending.load(std::sync::atomic::Ordering::Acquire);
+    if tex.settles() {
+        // Screenshots show the finished model; decoding is bounded, but don't hang.
+        let start = std::time::Instant::now();
+        while pending() > 0 && start.elapsed().as_secs() < 60 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
     let id = ui.make_id("scene");
     let resp = ui.interact_drag(id);
     let rect = resp.rect; // last frame's: one frame of latency, as for images
@@ -452,11 +469,19 @@ fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, tex: &mut dyn Textures
     };
     if frame.busy {
         ui.request_repaint();
+    } else if pending() > 0 {
+        // Arriving textures wake the window, but a failed decode changes nothing; look
+        // again now and then so the status line can't get stuck.
+        ui.request_repaint_in(0.25);
     }
 
     let (texture, error) = (frame.texture, frame.error);
     let faint = pal.text_muted;
-    let status = if loading { "Loading model…" } else { "Drag to orbit · Shift-drag to pan · Scroll to zoom · Double-click to reframe" };
+    let status = match (loading, pending()) {
+        (true, _) => "Loading model…".to_string(),
+        (false, n) if n > 0 => format!("Decoding textures… ({n} left)"),
+        _ => "Drag to orbit · Shift-drag to pan · Scroll to zoom · Double-click to reframe".to_string(),
+    };
     let frame_style = Frame { fill: pal.bg_inset, clip: true, ..Frame::none() };
     ui.container(Layout::column(), frame_style, |ui| {
         ui.add_leaf(id, Layout::leaf(Size::Grow(1.0), Size::Grow(1.0)), Vec2::ZERO, true, move |p, r| {

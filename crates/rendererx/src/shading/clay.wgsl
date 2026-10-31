@@ -13,6 +13,10 @@ struct ViewUniforms {
 
 @group(0) @binding(0) var<uniform> u: ViewUniforms;
 
+// The material's base colour map (a 1×1 white texture when it has none).
+@group(1) @binding(0) var base_tex: texture_2d<f32>;
+@group(1) @binding(1) var base_sampler: sampler;
+
 struct Instance {
     @location(4) m0: vec4<f32>,
     @location(5) m1: vec4<f32>,
@@ -34,9 +38,10 @@ struct VOut {
     @location(2) world: vec3<f32>,
     // Constant per instance, so plain interpolation is exact (and works everywhere).
     @location(3) mirror: f32,
+    @location(4) uv: vec2<f32>,
 }
 
-fn shade_vertex(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>, inst: Instance) -> VOut {
+fn shade_vertex(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>, uv: vec2<f32>, inst: Instance) -> VOut {
     let model = mat4x4<f32>(inst.m0, inst.m1, inst.m2, inst.m3);
     let normal_m = mat3x3<f32>(inst.n0.xyz, inst.n1.xyz, inst.n2.xyz);
     let world = model * vec4<f32>(pos, 1.0);
@@ -46,17 +51,34 @@ fn shade_vertex(pos: vec3<f32>, normal: vec3<f32>, color: vec4<f32>, inst: Insta
     out.normal = normal_m * normal;
     out.color = inst.color * color;
     out.mirror = inst.n0.w;
+    out.uv = uv;
     return out;
 }
 
 @vertex
 fn vs_main(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, inst: Instance) -> VOut {
-    return shade_vertex(pos, normal, vec4<f32>(1.0), inst);
+    return shade_vertex(pos, normal, vec4<f32>(1.0), vec2<f32>(0.0), inst);
 }
 
 @vertex
 fn vs_color(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @location(2) color: vec4<f32>, inst: Instance) -> VOut {
-    return shade_vertex(pos, normal, color, inst);
+    return shade_vertex(pos, normal, color, vec2<f32>(0.0), inst);
+}
+
+@vertex
+fn vs_uv(@location(0) pos: vec3<f32>, @location(1) normal: vec3<f32>, @location(3) uv: vec2<f32>, inst: Instance) -> VOut {
+    return shade_vertex(pos, normal, vec4<f32>(1.0), uv, inst);
+}
+
+@vertex
+fn vs_color_uv(
+    @location(0) pos: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) color: vec4<f32>,
+    @location(3) uv: vec2<f32>,
+    inst: Instance,
+) -> VOut {
+    return shade_vertex(pos, normal, color, uv, inst);
 }
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -67,6 +89,8 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
 }
 
 fn shade(in: VOut, front_facing: bool) -> vec3<f32> {
+    // Sampled first, in uniform control flow (derivatives for mip selection).
+    let albedo = in.color.rgb * textureSample(base_tex, base_sampler, in.uv).rgb;
     // A mirrored transform reverses winding on screen, so the outside shows as "back".
     let front = front_facing != (in.mirror < 0.0);
     let to_eye = normalize(u.eye.xyz - in.world);
@@ -84,7 +108,7 @@ fn shade(in: VOut, front_facing: bool) -> vec3<f32> {
     let ambient = mix(ground, sky, n.y * 0.5 + 0.5);
     let key = max(dot(n, normalize(u.light.xyz)), 0.0);
     let rim = pow(1.0 - max(dot(n, to_eye), 0.0), 3.0) * 0.12;
-    return in.color.rgb * (ambient * 0.45 + key * 0.8) + vec3<f32>(rim);
+    return albedo * (ambient * 0.45 + key * 0.8) + vec3<f32>(rim);
 }
 
 @fragment

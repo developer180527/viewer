@@ -5,13 +5,29 @@
 //! node that uses it, with the node's world transform.
 
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
 
 use anyhow::{Context, anyhow};
 use rendererx_scene::glam::{Mat4, Vec2, Vec3, Vec4};
-use rendererx_scene::{CpuScene, Indices, Material, MaterialId, MeshData, MeshId, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource};
+use rendererx_scene::{
+    ColorSpace, CpuScene, Indices, Material, MaterialId, MeshData, MeshId, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource, Slot,
+    Stream, TextureId,
+};
 use viewer_core::{FileSource, Result};
 
-pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<(CpuScene, Vec<String>)> {
+use crate::textures::{self, ImageJob, ImageSource};
+
+pub struct Loaded {
+    pub scene: CpuScene,
+    pub warnings: Vec<String>,
+    /// Base colour maps queued for decoding.
+    pub textures: usize,
+    pub pending: Arc<AtomicUsize>,
+}
+
+pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<Loaded> {
     let filename = src.path().map(|p| p.to_string_lossy().into_owned());
     let opts = ufbx::LoadOpts {
         file_format: format,
@@ -33,16 +49,51 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<(CpuScene, Vec
         .iter()
         .map(|w| if w.count > 1 { format!("{} (×{})", w.description, w.count) } else { w.description.to_string() })
         .collect();
-    convert(&root, &mut builder, &mut warnings).context("building the scene")?;
+    let mut images = Images { dir: src.path().and_then(|p| p.parent()).map(PathBuf::from), seen: HashMap::new(), jobs: Vec::new() };
+    convert(&root, &mut builder, &mut images, &mut warnings).context("building the scene")?;
     builder.finish();
-    Ok((scene, warnings))
+    let textures = images.jobs.len();
+    let pending = textures::spawn(builder.texture_sink(), images.jobs);
+    Ok(Loaded { scene, warnings, textures, pending })
+}
+
+/// Texture images found while converting materials, each queued once.
+struct Images {
+    /// The model's folder; texture files must be inside it.
+    dir: Option<PathBuf>,
+    seen: HashMap<u32, Option<TextureId>>,
+    jobs: Vec<ImageJob>,
+}
+
+impl Images {
+    /// The scene texture for `tex` as a colour map: its embedded bytes, or the file it
+    /// names, found next to the model.
+    fn texture(&mut self, tex: &ufbx::Texture, b: &mut SceneBuilder) -> Option<TextureId> {
+        if let Some(id) = self.seen.get(&tex.element.typed_id) {
+            return *id;
+        }
+        // A layered texture: use its first file.
+        let file = tex.file_textures.first().map(|t| &**t).unwrap_or(tex);
+        let source = if !file.content.is_empty() {
+            Some(ImageSource::Bytes(Stream::from(file.content.to_vec())))
+        } else {
+            self.dir.as_deref().and_then(|dir| textures::find_file(dir, &file.relative_filename, &file.absolute_filename)).map(ImageSource::File)
+        };
+        let id = source.and_then(|source| {
+            let texture = b.reserve_texture().ok()?;
+            self.jobs.push(ImageJob { texture, source, color_space: ColorSpace::Srgb });
+            Some(texture)
+        });
+        self.seen.insert(tex.element.typed_id, id);
+        id
+    }
 }
 
 /// One uploaded mesh per (ufbx mesh, material part): the scene mesh and the part's
 /// material slot.
 type Parts = Vec<(MeshId, usize)>;
 
-fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, warnings: &mut Vec<String>) -> Result<()> {
+fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, images: &mut Images, warnings: &mut Vec<String>) -> Result<()> {
     let mut meshes: HashMap<u32, Parts> = HashMap::new();
     let mut materials: HashMap<u32, Option<MaterialId>> = HashMap::new();
     for node in root.nodes.iter() {
@@ -63,7 +114,12 @@ fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, warnings: &mut Vec<String>)
             // Nodes can override the mesh's materials (one mesh, several looks).
             let material = node.materials.get(slot).or_else(|| mesh.materials.get(slot)).and_then(|m| {
                 *materials.entry(m.element.typed_id).or_insert_with(|| {
-                    b.add_material(material(m)).map_err(|e| warnings.push(format!("material {}: {e}", m.element.name))).ok()
+                    let mut out = material(m);
+                    let map = [&m.pbr.base_color, &m.fbx.diffuse_color].into_iter().find_map(|map| map.texture.as_ref().filter(|_| map.texture_enabled));
+                    if let Some(id) = map.and_then(|t| images.texture(t, b)) {
+                        out.textures.push((Slot::BASE_COLOR, id));
+                    }
+                    b.add_material(out).map_err(|e| warnings.push(format!("material {}: {e}", m.element.name))).ok()
                 })
             });
             if let Err(e) = b.add_node(Node::mesh(id, material, world, None)) {

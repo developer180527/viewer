@@ -60,6 +60,9 @@ impl Content {
 /// and frees the CPU copy of what it has uploaded (docs/3d-renderer.md §11.1).
 pub struct SceneDoc {
     pub scene: rendererx_scene::CpuScene,
+    /// Textures still being decoded on background threads; they arrive in `scene`
+    /// one by one.
+    pub textures_pending: Arc<std::sync::atomic::AtomicUsize>,
 }
 
 /// A decoded image in straight (non-premultiplied) RGBA8.

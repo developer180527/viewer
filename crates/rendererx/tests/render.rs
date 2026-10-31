@@ -3,7 +3,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use rendererx::scene_data::glam::{Mat4, Vec3, Vec4};
+use rendererx::scene_data::glam::{Mat4, Vec2, Vec3, Vec4};
 use rendererx::scene_data::*;
 use rendererx::*;
 
@@ -357,4 +357,40 @@ fn transparent_backgrounds_stay_straight_alpha_at_antialiased_edges() {
         let close = (0..3).all(|c| (e[c] as i32 - interior[c] as i32).abs() < 40);
         assert!(close, "edge {e:?} vs interior {interior:?}");
     }
+}
+
+#[test]
+fn base_colour_textures_are_sampled_and_freed_after_upload() {
+    let (device, queue) = gpu_or_skip!();
+    let r = Renderer::new(&device, &queue, RendererDesc { msaa: Msaa::Off, ..Default::default() });
+    let (scene, mut b) = CpuScene::new();
+    // A full-view quad; left half of the texture red, right half green, with a mip.
+    // Four texels a row, so linear filtering at the sample points stays in one colour.
+    let mut mesh = MeshData::new(vec![Vec3::new(-1.0, -1.0, 0.0), Vec3::new(1.0, -1.0, 0.0), Vec3::new(-1.0, 1.0, 0.0), Vec3::new(1.0, 1.0, 0.0)])
+        .with_indices(Indices::U16(vec![0, 1, 2, 2, 1, 3].into()));
+    mesh.uvs = Some(vec![Vec2::new(0.0, 1.0), Vec2::new(1.0, 1.0), Vec2::new(0.0, 0.0), Vec2::new(1.0, 0.0)].into());
+    let m = b.add_mesh(mesh).unwrap();
+    let tex = b.reserve_texture().unwrap();
+    let mat = b.add_material(Material::clay().with_param("base_color", ParamValue::Vec4(Vec4::ONE)).with_texture(Slot::BASE_COLOR, tex)).unwrap();
+    b.add_node(Node::mesh(m, Some(mat), Mat4::IDENTITY, None)).unwrap();
+    let mut level0 = Vec::new();
+    for _y in 0..2 {
+        level0.extend_from_slice(&[255, 0, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255]);
+    }
+    let mut data = TextureData::rgba8(4, 2, ColorSpace::Srgb, level0);
+    data.levels.push(vec![255, 0, 0, 255, 0, 255, 0, 255].into());
+    b.set_texture(tex, data).unwrap();
+
+    let mut g = r.attach(&scene);
+    while g.needs_sync() {
+        r.sync(&mut g);
+    }
+    assert!(g.texture_errors().is_empty(), "{:?}", g.texture_errors());
+    assert_eq!(scene.read().cpu_bytes(), 0, "mesh and texture freed once on the GPU");
+    let mut view = r.create_view(ViewDesc { width: 64, height: 64 });
+    let camera = Camera { eye: Vec3::new(0.0, 0.0, 2.0), ..Default::default() };
+    let pixels = render_once(&r, &device, &queue, &g, &mut view, &camera);
+    let (left, right) = (px(&pixels, 64, 16, 32), px(&pixels, 64, 48, 32));
+    assert!(left[0] > 3 * left[1].max(10), "left should be red: {left:?}");
+    assert!(right[1] > 3 * right[0].max(10), "right should be green: {right:?}");
 }

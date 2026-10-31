@@ -21,6 +21,7 @@
 
 mod camera;
 mod scene;
+mod textures;
 mod view;
 
 use std::sync::{Arc, OnceLock};
@@ -90,9 +91,11 @@ pub struct Renderer {
     view_layout: wgpu::BindGroupLayout,
     clay_layout: wgpu::PipelineLayout,
     clay_module: wgpu::ShaderModule,
-    /// Clay pipelines by topology, without and with a vertex colour stream. Triangles
-    /// are compiled up front; lines and points on first use.
-    clay: [[OnceLock<wgpu::RenderPipeline>; 2]; 3],
+    /// Clay pipelines by topology, then without/with a vertex colour stream, then
+    /// without/with uvs. Triangles with and without uvs are compiled up front; the
+    /// rest on first use.
+    clay: [[[OnceLock<wgpu::RenderPipeline>; 2]; 2]; 3],
+    materials: textures::MaterialBinding,
     /// The sRGB → target copy, when MSAA is on.
     encode: Option<Encode>,
     trace: Option<Trace>,
@@ -119,9 +122,10 @@ impl Renderer {
                 count: None,
             }],
         });
+        let materials = textures::MaterialBinding::new(device, queue);
         let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: Some("rendererx clay"),
-            bind_group_layouts: &[Some(&view_layout)],
+            bind_group_layouts: &[Some(&view_layout), Some(&materials.layout)],
             immediate_size: 0,
         });
         let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -137,23 +141,24 @@ impl Renderer {
             clay_layout: layout,
             clay_module: module,
             clay: Default::default(),
+            materials,
             encode,
             trace: None,
         };
         // The pipelines a typical model needs for its first frame.
-        r.pipeline(Topology::Triangles, false);
-        r.pipeline(Topology::Triangles, true);
+        r.pipeline(Topology::Triangles, false, false);
+        r.pipeline(Topology::Triangles, false, true);
         r
     }
 
-    fn pipeline(&self, topology: Topology, colors: bool) -> &wgpu::RenderPipeline {
+    fn pipeline(&self, topology: Topology, colors: bool, uvs: bool) -> &wgpu::RenderPipeline {
         let t = match topology {
             Topology::Triangles => 0,
             Topology::Lines => 1,
             Topology::Points => 2,
         };
-        self.clay[t][colors as usize].get_or_init(|| {
-            clay_pipeline(&self.device, &self.clay_layout, &self.clay_module, self.desc.msaa.samples(), topology, colors)
+        self.clay[t][colors as usize][uvs as usize].get_or_init(|| {
+            clay_pipeline(&self.device, &self.clay_layout, &self.clay_module, self.desc.msaa.samples(), topology, colors, uvs)
         })
     }
 
@@ -180,9 +185,12 @@ impl Renderer {
     /// them for editing). Returns true when the next frame would look different.
     /// Call once per tick while [`GpuScene::needs_sync`] is true.
     pub fn sync(&self, scene: &mut GpuScene) -> bool {
-        let synced = scene.sync(&self.device, &self.queue, self.desc.upload_budget);
+        let synced = scene.sync(&self.device, &self.queue, &self.materials, self.desc.upload_budget);
         for id in &synced.done {
             scene.reader.release_mesh_data(*id);
+        }
+        for id in &synced.done_textures {
+            scene.reader.release_texture_data(*id);
         }
         if synced.uploaded > 0 && !scene.first_mesh_traced {
             scene.first_mesh_traced = true;
@@ -272,17 +280,15 @@ impl Renderer {
             pass.set_bind_group(0, &view.bind_group, &[]);
             for batch in &scene.batches {
                 let Some(mesh) = scene.meshes.get(batch.mesh.index()).and_then(Option::as_ref) else { continue };
-                pass.set_pipeline(self.pipeline(mesh.topology, mesh.colors.is_some()));
-                pass.set_vertex_buffer(0, mesh.positions.slice(..));
-                pass.set_vertex_buffer(1, mesh.normals.slice(..));
-                let instance_slot = match &mesh.colors {
-                    Some(colors) => {
-                        pass.set_vertex_buffer(2, colors.slice(..));
-                        3
-                    }
-                    None => 2,
-                };
-                pass.set_vertex_buffer(instance_slot, instances.slice(..));
+                pass.set_pipeline(self.pipeline(mesh.topology, mesh.colors.is_some(), mesh.uvs.is_some()));
+                let group = batch.material.and_then(|m| scene.material_groups.get(m.index())?.as_ref());
+                pass.set_bind_group(1, group.unwrap_or(&self.materials.white_group), &[]);
+                // Streams in the pipeline's slot order: positions, normals, then the
+                // optional colours and uvs, then instances.
+                let streams = [Some(&mesh.positions), Some(&mesh.normals), mesh.colors.as_ref(), mesh.uvs.as_ref(), Some(instances)];
+                for (slot, buffer) in streams.into_iter().flatten().enumerate() {
+                    pass.set_vertex_buffer(slot as u32, buffer.slice(..));
+                }
                 match &mesh.indices {
                     Some((indices, format)) => {
                         pass.set_index_buffer(indices.slice(..), *format);
@@ -374,10 +380,12 @@ fn clay_pipeline(
     samples: u32,
     topology: Topology,
     colors: bool,
+    uvs: bool,
 ) -> wgpu::RenderPipeline {
     const POSITIONS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![0 => Float32x3];
     const NORMALS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![1 => Float32x3];
     const COLORS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![2 => Float32x4];
+    const UVS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![3 => Float32x2];
     const INSTANCE: [wgpu::VertexAttribute; 8] = wgpu::vertex_attr_array![
         4 => Float32x4, 5 => Float32x4, 6 => Float32x4, 7 => Float32x4,
         8 => Float32x4, 9 => Float32x4, 10 => Float32x4, 11 => Float32x4,
@@ -392,17 +400,25 @@ fn clay_pipeline(
     });
     // With MSAA the frame is drawn linear into an sRGB target (resolved in linear light).
     let (format, fs) = if samples > 1 { (LINEAR_FORMAT, "fs_linear") } else { (TARGET_FORMAT, "fs_main") };
-    let buffers = if colors {
-        vec![stream(12, &POSITIONS), stream(12, &NORMALS), stream(16, &COLORS), instance]
-    } else {
-        vec![stream(12, &POSITIONS), stream(12, &NORMALS), instance]
-    };
+    let mut buffers = vec![stream(12, &POSITIONS), stream(12, &NORMALS)];
+    if colors {
+        buffers.push(stream(16, &COLORS));
+    }
+    if uvs {
+        buffers.push(stream(8, &UVS));
+    }
+    buffers.push(instance);
     device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
         label: Some("rendererx clay"),
         layout: Some(layout),
         vertex: wgpu::VertexState {
             module,
-            entry_point: Some(if colors { "vs_color" } else { "vs_main" }),
+            entry_point: Some(match (colors, uvs) {
+                (false, false) => "vs_main",
+                (true, false) => "vs_color",
+                (false, true) => "vs_uv",
+                (true, true) => "vs_color_uv",
+            }),
             compilation_options: Default::default(),
             buffers: &buffers,
         },

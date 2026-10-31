@@ -3,9 +3,14 @@
 //! their material colours.
 
 mod blend;
+mod textures;
 mod ufbx_scene;
 
-use rendererx_scene::{CpuScene, SceneRead};
+use std::collections::HashSet;
+use std::sync::Arc;
+use std::sync::atomic::AtomicUsize;
+
+use rendererx_scene::{CpuScene, SceneRead, Slot, TextureId};
 use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Result, SceneDoc};
 
 pub use blend::BlendLoader;
@@ -15,14 +20,14 @@ pub static LOADERS: &[&dyn FormatLoader] = &[&GltfLoader, &FbxLoader, &ObjLoader
 /// The document for a loaded scene, with the counts the info panel shows. A scene
 /// with nothing to draw is an error, so a file that only looks like a model (a
 /// compiler's `.obj`) falls through to the next loader.
-fn scene_document(format: &str, scene: CpuScene, warnings: &[String]) -> Result<Document> {
+fn scene_document(format: &str, scene: CpuScene, warnings: &[String], textures_pending: Arc<AtomicUsize>) -> Result<Document> {
     let mut doc = {
         let read = scene.read();
         let stats = Stats::of(&read);
         if stats.placed == 0 {
             anyhow::bail!("no geometry{}", warnings.first().map(|w| format!(" ({w})")).unwrap_or_default());
         }
-        Document::new(format, Content::Scene(SceneDoc { scene: scene.clone() }))
+        Document::new(format, Content::Scene(SceneDoc { scene: scene.clone(), textures_pending }))
             .with_meta("Meshes", stats.meshes)
             .with_meta("Placed meshes", stats.placed)
             .with_meta("Triangles", stats.triangles)
@@ -58,6 +63,19 @@ impl Stats {
     }
 }
 
+/// Textures some material uses as its base colour map.
+fn base_color_textures(scene: &CpuScene) -> HashSet<TextureId> {
+    let read = scene.read();
+    read.materials().iter().flat_map(|m| &m.material.textures).filter(|(slot, _)| *slot == Slot::BASE_COLOR).map(|(_, t)| *t).collect()
+}
+
+fn texture_note(base_colour_maps: usize) -> String {
+    match base_colour_maps {
+        0 => "none shown (other maps arrive with PBR shading)".into(),
+        n => format!("{n} base colour map(s), up to {} px; other maps arrive with PBR shading", textures::MAX_SIDE),
+    }
+}
+
 // ---------------------------------------------------------------- glTF
 
 pub struct GltfLoader;
@@ -89,11 +107,17 @@ impl FormatLoader for GltfLoader {
             None => rendererx_gltf::load(src.shared_bytes(), &rendererx_gltf::NoResolver, &mut builder),
         }?;
         let format = if src.header().starts_with(b"glTF") { "glTF binary (GLB)" } else { "glTF 2.0" };
-        let mut doc = scene_document(format, scene, &loaded.warnings)?;
-        if !loaded.images.is_empty() {
-            doc = doc.with_meta("Textures", format!("{} (not shown yet)", loaded.images.len()));
-        }
-        Ok(doc)
+        // Only base colour maps are drawn so far; the other maps aren't decoded at all.
+        let base = base_color_textures(&scene);
+        let jobs: Vec<_> = loaded
+            .images
+            .into_iter()
+            .filter(|i| base.contains(&i.texture))
+            .map(|i| textures::ImageJob { texture: i.texture, source: textures::ImageSource::Bytes(i.data), color_space: i.color_space })
+            .collect();
+        let decoding = jobs.len();
+        let pending = textures::spawn(builder.texture_sink(), jobs);
+        Ok(scene_document(format, scene, &loaded.warnings, pending)?.with_meta("Textures", texture_note(decoding)))
     }
 }
 
@@ -121,9 +145,10 @@ impl FormatLoader for FbxLoader {
     }
 
     fn open(&self, src: &FileSource) -> Result<Document> {
-        let (scene, warnings) = ufbx_scene::load(src, ufbx::FileFormat::Fbx)?;
+        let loaded = ufbx_scene::load(src, ufbx::FileFormat::Fbx)?;
         let binary = src.header().starts_with(b"Kaydara FBX Binary");
-        scene_document(if binary { "FBX (binary)" } else { "FBX (ASCII)" }, scene, &warnings)
+        let note = texture_note(loaded.textures);
+        Ok(scene_document(if binary { "FBX (binary)" } else { "FBX (ASCII)" }, loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note))
     }
 }
 
@@ -145,8 +170,9 @@ impl FormatLoader for ObjLoader {
     }
 
     fn open(&self, src: &FileSource) -> Result<Document> {
-        let (scene, warnings) = ufbx_scene::load(src, ufbx::FileFormat::Obj)?;
-        scene_document("Wavefront OBJ", scene, &warnings)
+        let loaded = ufbx_scene::load(src, ufbx::FileFormat::Obj)?;
+        let note = texture_note(loaded.textures);
+        Ok(scene_document("Wavefront OBJ", loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note))
     }
 }
 
@@ -177,7 +203,7 @@ f 4 1 5 8
     fn obj_quads_are_triangulated_and_unlit_materials_stay_clay() {
         let src = FileSource::from_bytes("cube.obj", CUBE_OBJ.as_bytes().to_vec());
         let doc = ObjLoader.open(&src).unwrap();
-        let Content::Scene(SceneDoc { scene }) = doc.content else { panic!("expected a scene") };
+        let Content::Scene(SceneDoc { scene, .. }) = doc.content else { panic!("expected a scene") };
         let read = scene.read();
         assert_eq!(read.meshes().iter().map(|m| m.info.primitives).sum::<u64>(), 12);
         let b = read.bounds().unwrap();

@@ -40,6 +40,10 @@ pub trait Textures {
     fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId;
     /// Physical pixels per logical point, for views that render at native resolution.
     fn pixels_per_point(&self) -> f32;
+    /// Waits for background work (texture decoding) before drawing, for screenshots.
+    fn settles(&self) -> bool {
+        false
+    }
     /// Draws a 3D scene from `camera` into a `size`-pixel frame (RendererX on the
     /// shared device) and returns the texture to show.
     fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d;
@@ -147,6 +151,10 @@ impl Textures for Headless {
 
     fn pixels_per_point(&self) -> f32 {
         HEADLESS_SCALE
+    }
+
+    fn settles(&self) -> bool {
+        true
     }
 
     fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
@@ -498,8 +506,10 @@ impl ApplicationHandler for Host {
     }
 
     fn user_event(&mut self, _el: &ActiveEventLoop, _: ()) {
-        // A loader thread finished.
-        if let Some(w) = self.live.as_ref() {
+        // A loader thread finished, or a 3D scene gained something (a decoded texture):
+        // build a frame so the view can pick it up.
+        if let Some(w) = self.live.as_mut() {
+            w.ui.request_repaint();
             w.window.request_redraw();
         }
     }

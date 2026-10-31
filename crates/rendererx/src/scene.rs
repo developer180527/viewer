@@ -5,8 +5,10 @@ use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 use rendererx_scene::glam::{Mat3, Vec4};
-use rendererx_scene::{CpuScene, Indices, MeshData, MeshId, ParamValue, ReaderGuard, SceneRead, Topology};
+use rendererx_scene::{CpuScene, Indices, MaterialId, MeshData, MeshId, ParamValue, ReaderGuard, SceneRead, TextureId, Topology};
 use wgpu::util::DeviceExt;
+
+use crate::textures::{GpuTexture, MaterialBinding, base_texture, upload_texture};
 
 /// Clay colour for nodes without a material colour, linear.
 const CLAY: Vec4 = Vec4::new(0.60, 0.57, 0.53, 1.0);
@@ -22,6 +24,7 @@ pub(crate) struct GpuMesh {
     pub positions: wgpu::Buffer,
     pub normals: wgpu::Buffer,
     pub colors: Option<wgpu::Buffer>,
+    pub uvs: Option<wgpu::Buffer>,
     pub indices: Option<(wgpu::Buffer, wgpu::IndexFormat)>,
     pub elements: u32,
     pub topology: Topology,
@@ -32,6 +35,8 @@ pub(crate) struct GpuMesh {
 
 pub(crate) struct Batch {
     pub mesh: MeshId,
+    /// Selects the bind group (base colour texture); `None` draws untextured.
+    pub material: Option<MaterialId>,
     pub instances: Range<u32>,
 }
 
@@ -48,9 +53,15 @@ pub struct GpuScene {
     pub(crate) scene: CpuScene,
     pub(crate) reader: ReaderGuard,
     pub(crate) meshes: Vec<Option<GpuMesh>>,
+    textures: Vec<Option<GpuTexture>>,
+    /// Textures the device refused, by the revision that failed.
+    texture_failed: HashMap<usize, u64>,
+    /// Per material: its bind group, when it has a texture on the GPU.
+    pub(crate) material_groups: Vec<Option<wgpu::BindGroup>>,
     /// Meshes that can't be uploaded (over a device limit), by the revision that failed.
     failed: HashMap<usize, u64>,
     errors: Vec<(MeshId, String)>,
+    texture_errors: Vec<(TextureId, String)>,
     unavailable: usize,
     pub(crate) batches: Vec<Batch>,
     pub(crate) instances: Option<wgpu::Buffer>,
@@ -69,6 +80,8 @@ pub(crate) struct Synced {
     pub uploaded: usize,
     /// Meshes this scene is done with (uploaded or refused), whose CPU data may go.
     pub done: Vec<MeshId>,
+    /// The same for textures.
+    pub done_textures: Vec<TextureId>,
     pub changed: bool,
 }
 
@@ -79,8 +92,12 @@ impl GpuScene {
             scene: scene.clone(),
             reader: scene.add_reader(),
             meshes: Vec::new(),
+            textures: Vec::new(),
+            texture_failed: HashMap::new(),
+            material_groups: Vec::new(),
             failed: HashMap::new(),
             errors: Vec::new(),
+            texture_errors: Vec::new(),
             unavailable: 0,
             batches: Vec::new(),
             instances: None,
@@ -107,16 +124,23 @@ impl GpuScene {
         self.bounds
     }
 
-    /// GPU bytes held: vertex, index and instance buffers.
+    /// GPU bytes held: vertex, index and instance buffers, and textures.
     pub fn gpu_bytes(&self) -> u64 {
         let meshes: u64 = self.meshes.iter().flatten().map(|m| m.bytes).sum();
-        meshes + self.instances.as_ref().map_or(0, |b| b.size())
+        let textures: u64 = self.textures.iter().flatten().map(|t| t.bytes).sum();
+        meshes + textures + self.instances.as_ref().map_or(0, |b| b.size())
     }
 
     /// Meshes (and instances) the device refused, e.g. a buffer over its
     /// `max_buffer_size`. They are skipped; the rest of the model still draws.
     pub fn upload_errors(&self) -> &[(MeshId, String)] {
         &self.errors
+    }
+
+    /// Textures the device refused (an unsupported compressed format, over its size
+    /// limit). Those materials draw untextured.
+    pub fn texture_errors(&self) -> &[(TextureId, String)] {
+        &self.texture_errors
     }
 
     /// Meshes whose CPU data was already freed before this scene uploaded them (it was
@@ -127,8 +151,8 @@ impl GpuScene {
 
     /// Uploads what changed since the last call, up to `budget` bytes (at least one
     /// mesh, so progress is always made).
-    pub(crate) fn sync(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, budget: u64) -> Synced {
-        let mut out = Synced { uploaded: 0, done: Vec::new(), changed: false };
+    pub(crate) fn sync(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, materials: &MaterialBinding, budget: u64) -> Synced {
+        let mut out = Synced { uploaded: 0, done: Vec::new(), done_textures: Vec::new(), changed: false };
         if !self.needs_sync() {
             return out;
         }
@@ -173,10 +197,51 @@ impl GpuScene {
             out.done.push(id);
         }
 
+        // Textures share the budget, after geometry: the model shows first, then its
+        // surfaces arrive.
+        if self.textures.len() < read.textures().len() {
+            self.textures.resize_with(read.textures().len(), || None);
+        }
+        let mut textures_arrived = false;
+        for (i, entry) in read.textures().iter().enumerate() {
+            let stale = self.textures[i].as_ref().is_none_or(|t| t.revision < entry.changed)
+                && self.texture_failed.get(&i).is_none_or(|&rev| rev < entry.changed);
+            let (Some(data), true, false) = (entry.data.as_ref(), stale, self.pending) else { continue };
+            let bytes = data.byte_len();
+            if spent > 0 && spent + bytes > budget {
+                self.pending = true;
+                break;
+            }
+            spent += bytes;
+            let id = TextureId(i as u32);
+            match upload_texture(device, queue, &limits, data, entry.changed) {
+                Ok(t) => {
+                    self.textures[i] = Some(t);
+                    textures_arrived = true;
+                }
+                Err(e) => {
+                    self.texture_failed.insert(i, entry.changed);
+                    self.texture_errors.push((id, e));
+                }
+            }
+            out.done_textures.push(id);
+        }
+        let materials_changed = read.materials().iter().any(|m| m.changed > self.seen);
+        if textures_arrived || materials_changed {
+            self.material_groups = read
+                .materials()
+                .iter()
+                .map(|m| {
+                    let view = base_texture(&m.material).and_then(|t| self.textures.get(t.index())?.as_ref()).map(|t| &t.view);
+                    view.map(|v| materials.group(device, Some(v)))
+                })
+                .collect();
+        }
+
         let nodes_changed = read.nodes().iter().any(|n| n.changed > self.seen) || read.materials().iter().any(|m| m.changed > self.seen);
         // A new mesh only changes the frame if some node places it.
         let placed_fresh = !fresh.is_empty() && read.nodes().iter().any(|n| n.node.mesh.is_some_and(|m| fresh.contains(&m)));
-        out.changed = nodes_changed || placed_fresh;
+        out.changed = nodes_changed || placed_fresh || textures_arrived;
         if out.changed {
             self.rebuild_instances(device, queue, &limits, &read);
             self.generation += 1;
@@ -191,14 +256,15 @@ impl GpuScene {
     /// model streaming in doesn't allocate a new one every sync.
     fn rebuild_instances(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, limits: &wgpu::Limits, read: &SceneRead<'_>) {
         let world = read.world_transforms();
-        let mut placed: Vec<(MeshId, usize)> = read
+        let mut placed: Vec<(MeshId, Option<MaterialId>, usize)> = read
             .nodes()
             .iter()
             .enumerate()
-            .filter_map(|(i, n)| n.node.mesh.map(|m| (m, i)))
-            .filter(|(m, _)| self.meshes.get(m.index()).is_some_and(Option::is_some))
+            .filter_map(|(i, n)| n.node.mesh.map(|m| (m, n.node.material, i)))
+            .filter(|(m, _, _)| self.meshes.get(m.index()).is_some_and(Option::is_some))
             .collect();
-        placed.sort_by_key(|(m, _)| *m);
+        // One draw per (mesh, material): instances of a batch share the texture.
+        placed.sort_by_key(|&(m, mat, _)| (m, mat));
         let max = (limits.max_buffer_size / INSTANCE_BYTES) as usize;
         // Replace, not append: this runs on every rebuild while a model streams in.
         self.errors.retain(|(_, e)| !e.starts_with(TOO_MANY_INSTANCES));
@@ -209,7 +275,7 @@ impl GpuScene {
 
         let mut data: Vec<[f32; INSTANCE_FLOATS]> = Vec::with_capacity(placed.len());
         self.batches.clear();
-        for (mesh, node) in placed {
+        for (mesh, material, node) in placed {
             let m = world[node];
             let m3 = Mat3::from_mat4(m);
             let det = m3.determinant();
@@ -227,8 +293,8 @@ impl GpuScene {
 
             let index = data.len() as u32;
             match self.batches.last_mut() {
-                Some(b) if b.mesh == mesh => b.instances.end = index + 1,
-                _ => self.batches.push(Batch { mesh, instances: index..index + 1 }),
+                Some(b) if b.mesh == mesh && b.material == material => b.instances.end = index + 1,
+                _ => self.batches.push(Batch { mesh, material, instances: index..index + 1 }),
             }
             data.push(inst);
         }
@@ -283,6 +349,7 @@ fn upload_mesh(device: &wgpu::Device, limits: &wgpu::Limits, data: &MeshData, el
         }
     };
     let colors = data.colors.as_ref().map(|c| c.as_slice());
+    let uvs = data.uvs.as_ref().map(|c| c.as_slice());
     let (index_bytes, format): (&[u8], _) = match &data.indices {
         Indices::None => (&[], None),
         Indices::U16(s) => (bytemuck::cast_slice(s.as_slice()), Some(wgpu::IndexFormat::Uint16)),
@@ -292,6 +359,7 @@ fn upload_mesh(device: &wgpu::Device, limits: &wgpu::Limits, data: &MeshData, el
         ("positions", size_of_val(positions)),
         ("normals", size_of_val(normals)),
         ("colors", colors.map_or(0, size_of_val)),
+        ("uvs", uvs.map_or(0, size_of_val)),
         ("indices", index_bytes.len()),
     ];
     if let Some((what, size)) = sizes.iter().find(|(_, size)| *size as u64 > limits.max_buffer_size) {
@@ -306,6 +374,7 @@ fn upload_mesh(device: &wgpu::Device, limits: &wgpu::Limits, data: &MeshData, el
         positions: buffer("rendererx positions", bytemuck::cast_slice(positions), vertex),
         normals: buffer("rendererx normals", bytemuck::cast_slice(normals), vertex),
         colors: colors.map(|c| buffer("rendererx colors", bytemuck::cast_slice(c), vertex)),
+        uvs: uvs.map(|c| buffer("rendererx uvs", bytemuck::cast_slice(c), vertex)),
         indices: format.map(|f| (buffer("rendererx indices", index_bytes, wgpu::BufferUsages::INDEX), f)),
         elements,
         topology: data.topology,
@@ -315,6 +384,7 @@ fn upload_mesh(device: &wgpu::Device, limits: &wgpu::Limits, data: &MeshData, el
     let bytes = mesh.positions.size()
         + mesh.normals.size()
         + mesh.colors.as_ref().map_or(0, |b| b.size())
+        + mesh.uvs.as_ref().map_or(0, |b| b.size())
         + mesh.indices.as_ref().map_or(0, |(b, _)| b.size());
     Ok(Some(GpuMesh { bytes, ..mesh }))
 }
