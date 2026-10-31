@@ -1,5 +1,9 @@
+use std::sync::Arc;
+
 /// A field or attribute value. Scalars and small vectors keep full precision (f64);
-/// arrays, which can be huge (points, normals), are stored as f32/i32 like the files.
+/// arrays, which can be huge (points, normals), are stored as f32/i32 like the files,
+/// and shared: cloning one (composition does, per instance) copies a pointer, and two
+/// prims with the same `Arc` hold the same data.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     Bool(bool),
@@ -16,21 +20,23 @@ pub enum Value {
     Quat([f64; 4]),
     /// Row-major, as USD stores it (row vectors: translation in the last row).
     Matrix4([f64; 16]),
-    BoolArray(Vec<bool>),
-    IntArray(Vec<i32>),
-    Int64Array(Vec<i64>),
-    FloatArray(Vec<f32>),
-    DoubleArray(Vec<f64>),
-    Vec2Array(Vec<[f32; 2]>),
-    Vec3Array(Vec<[f32; 3]>),
-    Vec4Array(Vec<[f32; 4]>),
-    QuatArray(Vec<[f32; 4]>),
-    Matrix4Array(Vec<[f64; 16]>),
+    BoolArray(Arc<[bool]>),
+    IntArray(Arc<[i32]>),
+    Int64Array(Arc<[i64]>),
+    FloatArray(Arc<[f32]>),
+    DoubleArray(Arc<[f64]>),
+    Vec2Array(Arc<[[f32; 2]]>),
+    Vec3Array(Arc<[[f32; 3]]>),
+    Vec4Array(Arc<[[f32; 4]]>),
+    QuatArray(Arc<[[f32; 4]]>),
+    Matrix4Array(Arc<[[f64; 16]]>),
     TokenArray(Vec<String>),
     StringArray(Vec<String>),
     AssetArray(Vec<String>),
     /// Relationship targets, connections, path vectors.
     Paths(Vec<String>),
+    /// `references` and `payload`: what they bring in.
+    References(Vec<Reference>),
     Dictionary(Vec<(String, Value)>),
     /// (time, value), in time order.
     TimeSamples(Vec<(f64, Value)>),
@@ -39,6 +45,14 @@ pub enum Value {
     Blocked,
     /// A type this crate doesn't decode, by name.
     Other(&'static str),
+}
+
+/// A reference or payload: a layer (`asset`, empty for one in the same layer stack)
+/// and the prim in it (`None`: the layer's `defaultPrim`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Reference {
+    pub asset: String,
+    pub prim: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -109,7 +123,7 @@ impl Value {
     pub fn as_ints(&self) -> Option<Vec<i64>> {
         match self {
             Value::IntArray(v) => Some(v.iter().map(|&i| i as i64).collect()),
-            Value::Int64Array(v) => Some(v.clone()),
+            Value::Int64Array(v) => Some(v.to_vec()),
             _ => None,
         }
     }

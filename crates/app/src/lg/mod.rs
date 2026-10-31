@@ -44,6 +44,7 @@ pub trait Textures {
     fn settles(&self) -> bool {
         false
     }
+
     /// Draws a 3D scene from `camera` into a `size`-pixel frame (RendererX on the
     /// shared device) and returns the texture to show.
     fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d;

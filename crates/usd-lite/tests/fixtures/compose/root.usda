@@ -1,0 +1,97 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    metersPerUnit = 1
+    subLayers = [@sub.usda@]
+    upAxis = "Y"
+)
+
+def Xform "World"
+{
+    def "Car" (
+        prepend references = @parts/wheel.usda@</Wheel>
+    )
+    {
+        double3 xformOp:translate = (1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def "Car2" (
+        prepend references = @./parts/wheel.usda@
+        variants = {
+            string size = "big"
+        }
+    )
+    {
+        double3 xformOp:translate = (-1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+    }
+
+    def "Internal" (
+        prepend references = </World/Proto>
+    )
+    {
+        float radius = 5
+    }
+
+    def "Pay" (
+        prepend payload = @parts/box.usda@
+    )
+    {
+    }
+
+    def Mesh "Inherited" (
+        prepend inherits = </_class_Red>
+    )
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+    }
+
+    def Xform "Switch" (
+        variants = {
+            string shape = "tri"
+        }
+        prepend variantSets = "shape"
+    )
+    {
+        variantSet "shape" = {
+            "quad" {
+                def Mesh "Quad"
+                {
+                    int[] faceVertexCounts = [4]
+                    int[] faceVertexIndices = [0, 1, 2, 3]
+                    point3f[] points = [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)]
+                }
+            }
+            "tri" {
+                def Mesh "Tri"
+                {
+                    int[] faceVertexCounts = [3]
+                    int[] faceVertexIndices = [0, 1, 2]
+                    point3f[] points = [(0, 0, 0), (2, 0, 0), (0, 2, 0)]
+                }
+            }
+        }
+    }
+
+    def Mesh "Proto"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (0, 0, 1), (0, 1, 0)]
+        float radius = 1
+        rel material:binding = </World/Proto/Look>
+
+        def Material "Look"
+        {
+        }
+    }
+}
+
+class "_class_Red"
+{
+    color3f[] primvars:displayColor = [(1, 0, 0)]
+    float radius = 3
+}

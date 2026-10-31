@@ -43,7 +43,7 @@ fn same(a: &Value, b: &Value) -> bool {
         (Value::Vec2(x), Value::Vec2(y)) => x.iter().zip(y).all(|(p, q)| close(*p, *q)),
         (Value::Vec3(x), Value::Vec3(y)) => x.iter().zip(y).all(|(p, q)| close(*p, *q)),
         (Value::Vec4(x), Value::Vec4(y)) => x.iter().zip(y).all(|(p, q)| close(*p, *q)),
-        (Value::FloatArray(x), Value::FloatArray(y)) => x.len() == y.len() && x.iter().zip(y).all(|(p, q)| close(*p as f64, *q as f64)),
+        (Value::FloatArray(x), Value::FloatArray(y)) => x.len() == y.len() && x.iter().zip(y.iter()).all(|(p, q)| close(*p as f64, *q as f64)),
         (Value::Vec2Array(x), Value::Vec2Array(y)) => x.len() == y.len() && x.iter().flatten().zip(y.iter().flatten()).all(|(p, q)| close(*p as f64, *q as f64)),
         (Value::Vec3Array(x), Value::Vec3Array(y)) => x.len() == y.len() && x.iter().flatten().zip(y.iter().flatten()).all(|(p, q)| close(*p as f64, *q as f64)),
         (Value::Vec4Array(x), Value::Vec4Array(y)) => x.len() == y.len() && x.iter().flatten().zip(y.iter().flatten()).all(|(p, q)| close(*p as f64, *q as f64)),
@@ -106,4 +106,50 @@ fn usdc_reader_matches_usdcat() {
             assert!(matches!(surface.diffuse_color, geom::Input::Texture(_)), "{mat}: diffuse is a texture");
         }
     }
+}
+
+/// The composition fixtures with every layer converted to binary (same names), via
+/// usdcat: composing must give what the text layers give.
+#[test]
+fn composing_binary_layers_matches_text() {
+    let src = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/compose");
+    let tmp = std::env::temp_dir().join(format!("usd-lite-binary-{}", std::process::id()));
+    std::fs::create_dir_all(tmp.join("parts")).unwrap();
+    for f in ["root.usda", "sub.usda", "parts/wheel.usda", "parts/box.usda"] {
+        // usdcat only takes --usdFormat with a .usd name; rename after.
+        let out = tmp.join(f).with_extension("usd");
+        let ok = Command::new("usdcat").arg(src.join(f)).args(["--usdFormat", "usdc", "-o"]).arg(&out).status().is_ok_and(|s| s.success());
+        if !ok || std::fs::rename(&out, tmp.join(f)).is_err() {
+            eprintln!("usdcat not available; skipping");
+            return;
+        }
+        assert!(std::fs::read(tmp.join(f)).unwrap().starts_with(b"PXR-USDC"), "{f} is binary");
+    }
+    let compose_at = |dir: &Path| {
+        let root = dir.join("root.usda").canonicalize().unwrap();
+        let layer = read_layer(&std::fs::read(&root).unwrap(), &Limits::default()).unwrap();
+        usd_lite::compose(layer, &root.to_string_lossy(), &usd_lite::FsResolver::default(), &Limits::default())
+    };
+    let (text, binary) = (compose_at(&src), compose_at(&tmp));
+    assert!(binary.warnings.is_empty(), "{:?}", binary.warnings);
+    let mut a: Vec<_> = text.layer.specs.keys().collect();
+    let mut b: Vec<_> = binary.layer.specs.keys().collect();
+    a.sort();
+    b.sort();
+    assert_eq!(a, b);
+    for (path, spec) in &text.layer.specs {
+        let other = binary.layer.spec(path).unwrap();
+        for field in ["typeName", "default", "targetPaths", "connectionPaths", "primChildren"] {
+            if let (Some(x), Some(y)) = (spec.field(field), other.field(field)) {
+                let same = match (x, y) {
+                    // Different roots: compare the part below them.
+                    (Value::Asset(p), Value::Asset(q)) => p.rsplit("compose").next() == q.rsplit(tmp.file_name().unwrap().to_str().unwrap()).next(),
+                    (Value::Float(p), Value::Float(q)) => (p - q).abs() < 1e-6,
+                    _ => same(x, y),
+                };
+                assert!(same, "{path} {field}: text {x:?} vs binary {y:?}");
+            }
+        }
+    }
+    std::fs::remove_dir_all(tmp).unwrap();
 }

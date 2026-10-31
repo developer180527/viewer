@@ -64,7 +64,7 @@ impl ViewState {
 
 pub fn show(ui: &mut Ui, page: &mut Page, tex: &mut dyn Textures, dark: bool) -> Option<Action> {
     // State (scroll offsets, expanded nodes) is keyed by page, so going back restores it.
-    ui.with_key(page.id, |ui| match (&page.doc.content, &mut page.view) {
+    ui.with_key(page.id, |ui| match (&mut page.doc.content, &mut page.view) {
         (Content::Raster(r), ViewState::Raster(st)) => {
             raster(ui, r, st, tex);
             None
@@ -285,35 +285,53 @@ fn tree(ui: &mut Ui, root: &TreeNode, tv: &mut TreeView) {
 
 // --- Raster -------------------------------------------------------------------
 
+/// Images go to the GPU in tiles of this side, a few per frame (`UPLOAD_BUDGET`):
+/// staging memory stays small, the first tiles show sooner, and once the last is up
+/// the decoded copy is dropped.
+const TILE: u32 = 2048;
+const UPLOAD_BUDGET: usize = 48 << 20;
+
 #[derive(Default)]
 pub struct RasterState {
     tiles: Vec<(TextureId, Rect)>,
+    /// Tiles uploaded so far, in row-major order.
+    uploaded: usize,
     /// `None` means "fit to window".
     zoom: Option<f32>,
     offset: Vec2,
 }
 
-fn upload(tex: &mut dyn Textures, r: &Raster) -> Vec<(TextureId, Rect)> {
-    let tile = tex.max_side().max(256);
-    let mut tiles = Vec::new();
-    for ty in (0..r.height).step_by(tile as usize) {
-        for tx in (0..r.width).step_by(tile as usize) {
-            let (w, h) = (tile.min(r.width - tx), tile.min(r.height - ty));
-            let mut buf = Vec::with_capacity((w * h * 4) as usize);
-            for y in ty..ty + h {
-                let row = ((y * r.width + tx) * 4) as usize;
-                buf.extend_from_slice(&r.rgba[row..row + (w * 4) as usize]);
-            }
-            let id = tex.upload(w, h, &buf);
-            tiles.push((id, Rect::new(tx as f32, ty as f32, w as f32, h as f32)));
+/// Uploads the next tiles within the budget. Returns true when all are on the GPU.
+fn upload(tex: &mut dyn Textures, r: &Raster, st: &mut RasterState) -> bool {
+    let tile = TILE.min(tex.max_side().max(256));
+    let (cols, rows) = (r.width.div_ceil(tile), r.height.div_ceil(tile));
+    let total = (cols * rows) as usize;
+    let mut spent = 0;
+    while st.uploaded < total && (spent == 0 || spent < UPLOAD_BUDGET) {
+        let i = st.uploaded as u32;
+        let (tx, ty) = ((i % cols) * tile, (i / cols) * tile);
+        let (w, h) = (tile.min(r.width - tx), tile.min(r.height - ty));
+        let mut buf = Vec::with_capacity((w * h * 4) as usize);
+        for y in ty..ty + h {
+            let row = ((y * r.width + tx) * 4) as usize;
+            buf.extend_from_slice(&r.rgba[row..row + (w * 4) as usize]);
         }
+        let id = tex.upload(w, h, &buf);
+        st.tiles.push((id, Rect::new(tx as f32, ty as f32, w as f32, h as f32)));
+        st.uploaded += 1;
+        spent += buf.len();
     }
-    tiles
+    st.uploaded == total
 }
 
-fn raster(ui: &mut Ui, r: &Raster, st: &mut RasterState, tex: &mut dyn Textures) {
-    if st.tiles.is_empty() && r.width > 0 && r.height > 0 {
-        st.tiles = upload(tex, r);
+fn raster(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Textures) {
+    if !r.rgba.is_empty() && r.width > 0 && r.height > 0 {
+        if upload(tex, r, st) {
+            // Everything is on the GPU: the decoded copy isn't needed any more.
+            r.rgba = Vec::new();
+        } else {
+            ui.request_repaint();
+        }
     }
     let id = ui.make_id("raster");
     let resp = ui.interact_drag(id);

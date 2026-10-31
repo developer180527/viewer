@@ -6,13 +6,15 @@
 //! - [`geom`] reads what viewers need from a layer: prim hierarchy and transforms,
 //!   meshes with primvars and material subsets, and `UsdPreviewSurface` materials
 //!   with their texture inputs.
-//! - **No composition.** References, payloads, sublayers, inherits and variants are
-//!   left as the fields that describe them; [`Layer::composition_arcs`] says whether a
-//!   file uses any, so callers can warn that parts may be missing.
+//! - [`compose`] follows sublayers, references, payloads, inherits, variants and
+//!   specializes into one flattened [`Layer`], matching `usdcat --flatten` on what it
+//!   covers. A single [`read_layer`] is uncomposed; [`Layer::composition_arcs`] says
+//!   whether it uses any arcs.
 //! - **Safe on hostile files.** Every count is checked against the bytes present,
 //!   decompression and element counts are capped by [`Limits`], nesting is bounded,
 //!   and nothing panics on bad input.
 
+pub mod compose;
 mod crate_file;
 pub mod geom;
 mod layer;
@@ -21,10 +23,11 @@ mod text;
 mod usdz;
 mod value;
 
+pub use compose::{FsResolver, Resolver, Stage, anchored, compose};
 pub use layer::{Layer, Spec, SpecType, child_path, property_path, split_property};
 #[cfg(feature = "usdz")]
 pub use usdz::Package;
-pub use value::{Specifier, Value};
+pub use value::{Reference, Specifier, Value};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum Error {

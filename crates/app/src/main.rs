@@ -3,6 +3,13 @@
 //! Startup is ordered for speed (PLAN.md §7): the file is mapped and decoded on a
 //! background thread that starts before the window and GPU are initialised.
 
+#[cfg(unix)]
+mod alloc;
+
+#[cfg(unix)]
+#[global_allocator]
+static ALLOCATOR: alloc::Allocator = alloc::Allocator;
+
 mod formats;
 mod loading;
 mod startup;

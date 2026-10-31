@@ -350,8 +350,12 @@ impl Renderer {
             wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_SRC,
         );
         let pixels = width as u64 * height as u64;
+        // MSAA samples and depth live only within the frame's pass (cleared on load,
+        // discarded on store): on tile-based GPUs (Apple, most mobile) they need no
+        // memory at all; elsewhere this is a no-op.
+        let transient = wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TRANSIENT_ATTACHMENT;
         let msaa = self.encode.as_ref().filter(|_| samples > 1).map(|encode| {
-            let samples_tex = texture("rendererx msaa", LINEAR_FORMAT, samples, wgpu::TextureUsages::RENDER_ATTACHMENT);
+            let samples_tex = texture("rendererx msaa", LINEAR_FORMAT, samples, transient);
             let resolve_tex = texture(
                 "rendererx resolve",
                 LINEAR_FORMAT,
@@ -366,7 +370,7 @@ impl Renderer {
             });
             view::Msaa { samples: samples_tex.create_view(&Default::default()), resolve, encode }
         });
-        let depth = texture("rendererx depth", DEPTH_FORMAT, samples, wgpu::TextureUsages::RENDER_ATTACHMENT);
+        let depth = texture("rendererx depth", DEPTH_FORMAT, samples, transient);
         // Target, depth, and with MSAA the sample and resolve textures.
         let bytes = pixels * 4 + pixels * 4 * samples as u64 + msaa.as_ref().map_or(0, |_| pixels * 4 * (samples as u64 + 1));
         Targets { color_view: color.create_view(&Default::default()), color, msaa, depth: depth.create_view(&Default::default()), bytes }

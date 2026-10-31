@@ -1,0 +1,53 @@
+#usda 1.0
+(
+    defaultPrim = "Wheel"
+)
+
+def Xform "Wheel" (
+    variants = {
+        string size = "small"
+    }
+    prepend variantSets = "size"
+)
+{
+    def Mesh "Tire"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        rel material:binding = </Wheel/Looks/Rubber>
+    }
+
+    def Scope "Looks"
+    {
+        def Material "Rubber"
+        {
+            token outputs:surface.connect = </Wheel/Looks/Rubber/Surface.outputs:surface>
+
+            def Shader "Surface"
+            {
+                uniform token info:id = "UsdPreviewSurface"
+                color3f inputs:diffuseColor.connect = </Wheel/Looks/Rubber/Tex.outputs:rgb>
+                token outputs:surface
+            }
+
+            def Shader "Tex"
+            {
+                uniform token info:id = "UsdUVTexture"
+                asset inputs:file = @textures/rubber.png@
+                float3 outputs:rgb
+            }
+        }
+    }
+
+    variantSet "size" = {
+        "big" {
+            float3 xformOp:scale = (2, 2, 2)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+        }
+        "small" {
+            float3 xformOp:scale = (0.5, 0.5, 0.5)
+            uniform token[] xformOpOrder = ["xformOp:scale"]
+        }
+    }
+}

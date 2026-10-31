@@ -1,0 +1,15 @@
+# Memory budgets for bench/memory.sh --check, in MB: case, headless peak, settled.
+# Set 2026-11-01 from measurements on an M-series Mac plus ~15% headroom; only ever
+# lower them. "-" means not checked. 3D cases need test_3d_files/ (not in git).
+empty                              48    -
+gradient.png                       54    115
+main.rs                            62    125
+data.json                          48    115
+table.csv                          50    115
+bundle.zip                         48    115
+big.log                            70    135
+big.png                           430    335
+long_life_food_4k.fbx             490    240
+portable_generator_4k.usdc        495    245
+namaqualand_boulder_02_4k.usdc    500    290
+Mercedes+Benz+GLS+580.fbx         365    195

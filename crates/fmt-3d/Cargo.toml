@@ -16,6 +16,8 @@ usd-lite.workspace = true
 # Official bindings to ufbx, a single-file C loader for FBX (and OBJ/MTL).
 ufbx = "0.11"
 # Texture decoding; the same pure-Rust decoders viewer-fmt-image already builds.
+# JPEG decoded at 1/2–1/8 scale in the IDCT, so a 4K map never exists at full size.
+jpeg-decoder = { version = "0.3", default-features = false }
 # EXR read pixel by pixel, shrinking as it decodes (see textures.rs); the version `image` uses.
 exr = "1.74"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tga", "exr", "hdr"] }

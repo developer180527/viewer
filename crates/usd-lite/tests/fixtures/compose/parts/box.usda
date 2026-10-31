@@ -1,0 +1,11 @@
+#usda 1.0
+(
+    defaultPrim = "Box"
+)
+
+def Mesh "Box"
+{
+    int[] faceVertexCounts = [3]
+    int[] faceVertexIndices = [0, 1, 2]
+    point3f[] points = [(0, 0, 0), (3, 0, 0), (0, 3, 0)]
+}

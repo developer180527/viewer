@@ -6,6 +6,8 @@
 //! convention). USD writes row-major matrices for row vectors, which is the same 16
 //! numbers, so `matrix4d` values pass through unchanged.
 
+use std::sync::Arc;
+
 use crate::layer::split_property;
 use crate::{Layer, Value};
 
@@ -239,7 +241,7 @@ fn primvar<T: Clone>(layer: &Layer, prim: &str, name: &str, default: Interpolati
         Value::IntArray(i) => Some(i.clone()),
         _ => None,
     });
-    Some(Primvar { values, indices, interpolation: interpolation(layer, prim, name, default) })
+    Some(Primvar { values, indices: indices.map(|i: Arc<[i32]>| i.to_vec()), interpolation: interpolation(layer, prim, name, default) })
 }
 
 /// Reads a `Mesh` prim. `None` when it isn't one or has no points or faces.

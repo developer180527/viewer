@@ -1,9 +1,10 @@
 //! USD (`.usda`, `.usdc`, `.usd`, `.usdz`) through `usd-lite`, into a RendererX scene.
 //!
-//! One layer, uncomposed: references, payloads and variants aren't followed (a
-//! warning says so). Meshes are triangulated per material (GeomSubsets give per-face
-//! materials), UsdPreviewSurface becomes `pbr`, and the stage is converted to Y up and
-//! metres like every other format here.
+//! The stage is composed first (sublayers, references, payloads, variants, inherits),
+//! from files next to the model or inside the package. Meshes are triangulated per
+//! material (GeomSubsets give per-face materials), UsdPreviewSurface becomes `pbr`,
+//! and the stage is converted to Y up and metres like every other format here.
+//! Instances of one asset share their meshes and materials.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -13,7 +14,7 @@ use std::sync::atomic::AtomicUsize;
 use anyhow::anyhow;
 use rendererx_scene::glam::{DMat4, Mat4, Vec2, Vec3, Vec4};
 use rendererx_scene::{
-    AlphaMode, ColorSpace, CpuScene, Indices, Material, MaterialId, MeshData, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource, Slot, Stream,
+    AlphaMode, ColorSpace, CpuScene, Indices, Material, MaterialId, MeshData, MeshId, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource, Slot, Stream,
     TextureId,
 };
 use usd_lite::geom::{self, Channel, Input, TextureInput};
@@ -31,12 +32,25 @@ pub struct Loaded {
     pub textures: usize,
     pub pending: Arc<AtomicUsize>,
     pub format: &'static str,
+    /// Layers composed in besides the root.
+    pub layers: usize,
 }
 
-/// Where texture files come from: inside the package, or next to the layer file.
+/// Where texture files come from: inside the package, or next to the layers.
 enum Files<'a> {
     Package { package: usd_lite::Package<'a>, src: &'a FileSource },
-    Dir(Option<PathBuf>),
+    /// The model's folder, and the folders of every layer composed into the stage:
+    /// a texture path anchored in one of them is read as is.
+    Dir { root: Option<PathBuf>, layer_dirs: Vec<PathBuf> },
+}
+
+/// For a file with no folder (inside another archive): composes nothing external.
+struct NoFiles;
+
+impl usd_lite::Resolver for NoFiles {
+    fn resolve(&self, _: &str, _: &str) -> Option<(String, Vec<u8>)> {
+        None
+    }
 }
 
 impl Files<'_> {
@@ -54,10 +68,20 @@ impl Files<'_> {
                 let start = bytes.as_ptr() as usize - src.bytes().as_ptr() as usize;
                 Stream::from_bytes(src.shared_bytes(), start, bytes.len()).ok().map(ImageSource::Bytes)
             }
-            Files::Dir(dir) => {
-                let dir = dir.as_deref()?;
-                let relative = if Path::new(asset).is_absolute() { "" } else { asset.trim_start_matches("./") };
-                textures::find_file(dir, relative, asset).map(ImageSource::File)
+            Files::Dir { root, layer_dirs } => {
+                // Anchored to a layer we composed: inside that layer's folder.
+                let path = Path::new(asset);
+                if path.is_absolute()
+                    && let Ok(real) = path.canonicalize()
+                    && real.is_file()
+                    && layer_dirs.iter().any(|d| real.starts_with(d))
+                {
+                    return Some(ImageSource::File(real));
+                }
+                // Otherwise (a path from the exporting machine…): by name, near the model
+                // or near any layer composed into it.
+                let relative = if path.is_absolute() { "" } else { asset.trim_start_matches("./") };
+                root.iter().chain(layer_dirs).find_map(|dir| textures::find_file(dir, relative, asset)).map(ImageSource::File)
             }
         }
     }
@@ -67,23 +91,42 @@ pub fn load(src: &FileSource) -> Result<Loaded> {
     let limits = Limits::default();
     let bytes = src.bytes();
     let format = usd_lite::detect(bytes).ok_or_else(|| anyhow!("not a USD file"))?;
-    let (layer, files, label) = match format {
+    let (stage, files, label) = match format {
         Format::Usdz => {
             let package = usd_lite::Package::open(bytes, &limits)?;
-            let layer = package.layer.clone();
-            (layer, Files::Package { package, src }, "USDZ package")
+            let stage = usd_lite::compose(package.layer.clone(), &package.root.clone(), &package, &limits);
+            (stage, Files::Package { package, src }, "USDZ package")
         }
-        Format::Usdc => (usd_lite::read_layer(bytes, &limits)?, Files::Dir(src.path().and_then(Path::parent).map(PathBuf::from)), "USD (binary)"),
-        Format::Usda => (usd_lite::read_layer(bytes, &limits)?, Files::Dir(src.path().and_then(Path::parent).map(PathBuf::from)), "USD (text)"),
+        _ => {
+            let layer = usd_lite::read_layer(bytes, &limits)?;
+            let root_id = src.path().and_then(|p| p.canonicalize().ok());
+            let stage = match &root_id {
+                Some(id) => usd_lite::compose(layer, &id.to_string_lossy(), &usd_lite::FsResolver::default(), &limits),
+                None => usd_lite::compose(layer, src.name(), &NoFiles, &limits),
+            };
+            let layer_dirs = stage.layers.iter().filter_map(|l| Path::new(l).parent()).filter(|d| d.is_absolute()).map(PathBuf::from).collect();
+            let root = root_id.as_deref().and_then(Path::parent).map(PathBuf::from);
+            let label = if format == Format::Usdc { "USD (binary)" } else { "USD (text)" };
+            (stage, Files::Dir { root, layer_dirs }, label)
+        }
     };
-
-    let mut warnings = Vec::new();
-    let arcs = layer.composition_arcs();
-    if !arcs.is_empty() {
-        warnings.push(format!("uses {}, which aren't followed yet: parts may be missing", arcs.join(", ")));
-    }
+    let layer = stage.layer;
+    let mut warnings = stage.warnings;
+    let extra_layers = stage.layers.len() - 1;
     let (scene, mut builder) = CpuScene::new();
-    let mut c = Converter { layer: &layer, files: &files, b: &mut builder, materials: HashMap::new(), images: HashMap::new(), packed: HashMap::new(), jobs: Vec::new(), warnings: &mut warnings, missing_textures: 0 };
+    let mut c = Converter {
+        layer: &layer,
+        files: &files,
+        b: &mut builder,
+        materials: HashMap::new(),
+        surfaces: HashMap::new(),
+        instances: HashMap::new(),
+        images: HashMap::new(),
+        packed: HashMap::new(),
+        jobs: Vec::new(),
+        warnings: &mut warnings,
+        missing_textures: 0,
+    };
     c.convert();
     if c.missing_textures > 0 {
         let n = c.missing_textures;
@@ -93,14 +136,21 @@ pub fn load(src: &FileSource) -> Result<Loaded> {
     builder.finish();
     let textures = jobs.len();
     let pending = textures::spawn(builder.texture_sink(), jobs);
-    Ok(Loaded { scene, warnings, textures, pending, format: label })
+    Ok(Loaded { scene, warnings, textures, pending, format: label, layers: extra_layers })
 }
 
 struct Converter<'a, 'f> {
     layer: &'a Layer,
     files: &'a Files<'f>,
     b: &'a mut SceneBuilder,
+    /// By material prim path.
     materials: HashMap<String, Option<MaterialId>>,
+    /// By content: every referenced copy of an asset has its own material prims, all
+    /// alike.
+    surfaces: HashMap<String, Option<MaterialId>>,
+    /// Meshes already converted, by what makes them identical (shared arrays and
+    /// materials): instances reuse them.
+    instances: HashMap<Vec<usize>, Vec<(MeshId, Option<MaterialId>)>>,
     /// By (asset, sRGB).
     images: HashMap<(String, bool), Option<TextureId>>,
     /// Packed roughness + metalness by their sources.
@@ -146,7 +196,46 @@ impl Converter<'_, '_> {
         }
     }
 
+    /// What makes two mesh prims draw the same: their arrays (shared between instances
+    /// by composition) and the materials their faces resolve to.
+    fn instance_key(&mut self, prim: &str) -> Vec<usize> {
+        let ptr = |layer: &Layer, prim: &str, name: &str| match layer.attr(prim, name) {
+            Some(Value::Vec3Array(a)) => a.as_ptr() as usize,
+            Some(Value::Vec2Array(a)) => a.as_ptr() as usize,
+            Some(Value::IntArray(a)) => a.as_ptr() as usize,
+            Some(Value::Int64Array(a)) => a.as_ptr() as usize,
+            _ => 0,
+        };
+        let layer = self.layer;
+        let mut key: Vec<usize> = ["points", "faceVertexCounts", "faceVertexIndices", "normals", "primvars:normals", "primvars:st", "primvars:st:indices", "primvars:displayColor"]
+            .iter()
+            .map(|n| ptr(layer, prim, n))
+            .collect();
+        let material_key = |c: &mut Self, path: Option<String>| path.and_then(|p| c.material(&p)).map_or(0, |m| m.0 as usize + 1);
+        let binding = geom::bound_material(layer, prim, true);
+        key.push(material_key(self, binding));
+        for child in layer.children(prim).into_iter().filter(|c| layer.type_name(c) == Some("GeomSubset")) {
+            key.push(ptr(layer, &child, "indices"));
+            let m = geom::bound_material(layer, &child, false);
+            key.push(material_key(self, m));
+        }
+        key
+    }
+
     fn mesh(&mut self, prim: &str, world: DMat4) {
+        let transform = Mat4::from_cols_array(&world.to_cols_array().map(|v| v as f32));
+        let transform = if transform.is_finite() { transform } else { Mat4::IDENTITY };
+        // An instance of a mesh already converted: place it again.
+        let key = self.instance_key(prim);
+        let shared = key[0] != 0;
+        if shared && let Some(parts) = self.instances.get(&key).cloned() {
+            for (id, material) in parts {
+                if let Err(e) = self.b.add_node(Node::mesh(id, material, transform, None)) {
+                    self.warnings.push(format!("{prim}: {e}"));
+                }
+            }
+            return;
+        }
         let Some(mesh) = geom::mesh(self.layer, prim) else {
             self.warnings.push(format!("{prim}: not a readable mesh"));
             return;
@@ -179,8 +268,7 @@ impl Converter<'_, '_> {
         let mut groups: Vec<Option<&str>> = face_material.clone();
         groups.sort();
         groups.dedup();
-        let transform = Mat4::from_cols_array(&world.to_cols_array().map(|v| v as f32));
-        let transform = if transform.is_finite() { transform } else { Mat4::IDENTITY };
+        let mut parts = Vec::new();
         for group in groups {
             let Some(data) = self.part(&mesh, &starts, |f| face_material[f] == group) else { continue };
             let material = match group {
@@ -193,12 +281,16 @@ impl Converter<'_, '_> {
             };
             match self.b.add_mesh(data) {
                 Ok(id) => {
+                    parts.push((id, material));
                     if let Err(e) = self.b.add_node(Node::mesh(id, material, transform, None)) {
                         self.warnings.push(format!("{prim}: {e}"));
                     }
                 }
                 Err(e) => self.warnings.push(format!("{prim}: {e}")),
             }
+        }
+        if shared {
+            self.instances.insert(key, parts);
         }
     }
 
@@ -274,8 +366,16 @@ impl Converter<'_, '_> {
         }
         let id = match geom::preview_surface(self.layer, path) {
             Some(surface) => {
-                let m = self.preview_surface(path, &surface);
-                self.b.add_material(m).map_err(|e| self.warnings.push(format!("{path}: {e}"))).ok()
+                let content = format!("{surface:?}");
+                match self.surfaces.get(&content) {
+                    Some(id) => *id,
+                    None => {
+                        let m = self.preview_surface(path, &surface);
+                        let id = self.b.add_material(m).map_err(|e| self.warnings.push(format!("{path}: {e}"))).ok();
+                        self.surfaces.insert(content, id);
+                        id
+                    }
+                }
             }
             None => {
                 self.warnings.push(format!("{path}: no UsdPreviewSurface; drawn in clay"));

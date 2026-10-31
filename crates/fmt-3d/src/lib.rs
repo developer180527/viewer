@@ -139,7 +139,8 @@ impl FormatLoader for UsdLoader {
     fn open(&self, src: &FileSource) -> Result<Document> {
         let loaded = usd::load(src)?;
         let note = texture_note(loaded.textures);
-        Ok(scene_document(loaded.format, loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note))
+        let doc = scene_document(loaded.format, loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note);
+        Ok(if loaded.layers > 0 { doc.with_meta("Layers composed", loaded.layers + 1) } else { doc })
     }
 }
 
@@ -253,7 +254,8 @@ f 4 1 5 8
         let b = read.bounds().unwrap();
         assert!((b.center().x - 0.08).abs() < 0.05, "{b:?}");
         assert!(b.size().y.abs() < 1e-3, "flat quad: no height after Z-up → Y-up, {b:?}");
-        assert!(doc.metadata.iter().any(|(k, v)| k == "Warning" && v.contains("references")), "composition is reported");
+        // Its reference (../other.usda) doesn't exist: a warning, the rest still loads.
+        assert!(doc.metadata.iter().any(|(k, v)| k == "Warning" && v.contains("other.usda")), "{:?}", doc.metadata);
     }
 
     #[test]

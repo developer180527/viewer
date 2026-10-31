@@ -98,7 +98,7 @@ trait Document: Send {
 | FBX | `ufbx` — **done** |
 | DAE, 3DS, X, LWO, … | `russimp` (Assimp, C++), on demand |
 | STEP / IGES / BREP (CAD) | OpenCASCADE (FFI, `opencascade-rs`) or `truck` → tessellate |
-| USD / USDA / USDC / USDZ | `usd-lite` (our pure-Rust crate, reusable: Sdf-style layers from text, binary crate 0.4–0.10 and packages, plus geometry/preview-material helpers) — **done** for single layers; composition (references, payloads, variants) not yet |
+| USD / USDA / USDC / USDZ | `usd-lite` (our pure-Rust crate, reusable: Sdf-style layers from text, binary crate 0.4–0.10 and packages, plus geometry/preview-material helpers) — **done**, with composition (sublayers, references, payloads, inherits, variants, specializes; checked against `usdcat --flatten`); not yet: layer offsets/animation, relocates |
 | 3MF | `zip` + `quick-xml` |
 | LAS / LAZ | `las` |
 | Blend | Saved preview image (`TEST` block) — **done**; geometry: Blender headless → glTF (converter bridge) |
@@ -229,13 +229,16 @@ Nothing that serves a particular format runs before "app ready": no format modul
 - **Lazy UI.** Panels (metadata, tree, search) build on first open.
 
 ### Memory
-Measured and budgeted like startup, in the same CI job (peak RSS plus GPU bytes from wgpu's allocator report):
-- **Empty app** (one window, no file): budget to be set from the first measurement, then only allowed to go down.
-- **Per file type** (small text, 45 MP image, archive, glTF): peak and settled memory; closing the file returns to the empty-app number.
-- **No duplicate copies:** once pixels or geometry are on the GPU the CPU copy is freed, unless an editor needs it. Large images are shown from a screen-sized version and decode full resolution only for zoomed tiles.
-- **Shared, not per-window:** a file open in two windows is held once (§12.3); each window adds only its own window-sized buffers, and a hidden window frees them.
-- **Lazy fonts:** glyphs are rasterised when first drawn; fallback fonts load only when text needs them.
-- The resident agent (if ever shipped) has its own memory cap and is measured before it can be turned on.
+Measured by `bench/memory.sh` (footprint on macOS, which is what Activity Monitor shows; RSS elsewhere) and budgeted in `bench/memory-budgets.txt`: `--check` fails when a case goes over. Three numbers per case: headless peak (the budgeted one, most repeatable), windowed peak, and settled (what the open window holds).
+
+Rules, and what the first memory pass found (2026-11-01):
+- **Big frees go back to the OS.** macOS's allocator keeps freed large blocks and returns them only under memory pressure (`malloc_zone_pressure_relief` returns nothing), so the footprint stayed at every load's peak. The app's global allocator (`crates/app/src/alloc.rs`) maps blocks of 1 MB and up directly and unmaps them on free. Settled footprint for a 45 MP image: 799 → 290 MB; for a textured 3D model: 408 → 205 MB.
+- **No duplicate copies.** Images upload in 2048 px tiles within a per-frame budget (small staging, first tiles sooner), then the decoded copy is dropped. 3D meshes and textures drop their CPU copies after upload; instances share them.
+- **Window-sized GPU buffers cost nothing where possible.** 3D MSAA and depth targets are transient attachments: memoryless on Apple and mobile GPUs (−95 MB for a full-window 3D view).
+- **Decode small.** Textures are capped at 2048 px; JPEGs decode at 1/2–1/8 scale in the IDCT; EXRs stream into the reduced size; mips are generated from the reduced image.
+- **Not the app's:** a process's first render pass makes the Apple GPU driver take ~180 MB that it marks reclaimable straight after (a bare wgpu clear pass shows it). It inflates windowed peaks, not settled memory.
+- **Empty app** (headless): 42 MB. **Settled window** on a small file: ~100–110 MB (including ~40 MB of window surfaces).
+- Next: decode very large images straight into GPU tiles (rows streamed, never the whole image in RAM), lazy glyph rasterisation, and a resident-agent cap if one ships.
 
 ### Measurement
 - A `--trace-startup` flag records timestamps for process start → window → **app ready** → **file ready** → full quality.

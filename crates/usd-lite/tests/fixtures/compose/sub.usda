@@ -1,0 +1,15 @@
+#usda 1.0
+
+over "World"
+{
+    def Xform "FromSub"
+    {
+        float radius = 7
+    }
+
+    over "Internal"
+    {
+        float radius = 9
+        float height = 2
+    }
+}

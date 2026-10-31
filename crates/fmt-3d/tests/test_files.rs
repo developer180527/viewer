@@ -41,3 +41,24 @@ fn walk(dir: &std::path::Path) -> std::io::Result<Vec<std::path::PathBuf>> {
     out.sort();
     Ok(out)
 }
+
+/// `VIEWER_MODEL=path cargo test -p viewer-fmt-3d --test test_files model -- --nocapture`
+/// prints what a model loads as.
+#[test]
+fn model_from_env() {
+    let Ok(path) = std::env::var("VIEWER_MODEL") else { return };
+    let src = FileSource::open(&path).unwrap();
+    let loader = viewer_fmt_3d::LOADERS.iter().find(|l| l.probe(src.header(), src.ext().as_deref(), src.name()).0 > 0).expect("a 3D loader");
+    let t = std::time::Instant::now();
+    let doc = loader.open(&src).unwrap();
+    println!("{path}: {} in {:.1} ms", doc.format, t.elapsed().as_secs_f64() * 1000.0);
+    if let Content::Scene(scene) = &doc.content {
+        while scene.textures_pending.load(std::sync::atomic::Ordering::Acquire) > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        println!("  textures decoded after {:.1} ms, {} MB on the CPU", t.elapsed().as_secs_f64() * 1000.0, scene.scene.read().cpu_bytes() >> 20);
+    }
+    for (k, v) in &doc.metadata {
+        println!("  {k}: {v}");
+    }
+}

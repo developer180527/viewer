@@ -7,6 +7,8 @@
 //! Each spec is a path, a spec type and a set of fields; each field is a token name
 //! and a `ValueRep` (type, flags, and an inline value or a file offset).
 
+use std::sync::Arc;
+
 use crate::layer::{Layer, Spec, SpecType};
 use crate::value::half_to_f32;
 use crate::{Error, Limits, Result, Specifier, Value};
@@ -189,15 +191,22 @@ impl File<'_> {
             46 => self.time_samples(payload, depth)?,
             48 => {
                 let n = c.count(8, &self.limits)?;
-                Value::DoubleArray(f64s(&mut c, n)?)
+                Value::DoubleArray(f64s(&mut c, n)?.into())
             }
             50 => {
                 let n = c.count(4, &self.limits)?;
                 Value::StringArray((0..n).map(|_| self.string(c.u32()?)).collect::<Result<_>>()?)
             }
-            31 => Value::Other("dictionary"),
-            35 | 47 | 55 => Value::Other("reference or payload"),
-            45 => Value::Other("variant selection"),
+            31 => Value::Dictionary(self.dictionary(&mut c, depth)?),
+            35 => Value::References(self.list_op(&mut c, |f, c| f.reference(c, true, true, depth))?),
+            55 => Value::References(self.list_op(&mut c, |f, c| f.reference(c, f.version >= (0, 8, 0), false, depth))?),
+            47 => Value::References(vec![self.reference(&mut c, self.version >= (0, 8, 0), false, depth)?]),
+            // set → selection, as strings.
+            45 => {
+                let n = c.count(8, &self.limits)?;
+                let pairs = (0..n).map(|_| Ok((self.string(c.u32()?)?, Value::String(self.string(c.u32()?)?))));
+                Value::Dictionary(pairs.collect::<Result<_>>()?)
+            }
             _ => Value::Other("unsupported type"),
         })
     }
@@ -260,7 +269,7 @@ impl File<'_> {
                 } else {
                     (0..n).map(|_| c.u32().map(|v| v as i32)).collect::<Result<_>>()?
                 };
-                Value::IntArray(ints)
+                Value::IntArray(ints.into())
             }
             5 | 6 => {
                 let n = self.array_len(&mut c, if compressed { 0 } else { 8 })?;
@@ -269,7 +278,7 @@ impl File<'_> {
                 } else {
                     (0..n).map(|_| c.u64().map(|v| v as i64)).collect::<Result<_>>()?
                 };
-                Value::Int64Array(ints)
+                Value::Int64Array(ints.into())
             }
             7..=9 => {
                 let comp = match ty {
@@ -297,7 +306,7 @@ impl File<'_> {
                 } else {
                     (0..n).map(|_| comp.read(&mut c)).collect::<Result<_>>()?
                 };
-                if ty == 9 { Value::DoubleArray(values) } else { Value::FloatArray(values.into_iter().map(|v| v as f32).collect()) }
+                if ty == 9 { Value::DoubleArray(values.into()) } else { Value::FloatArray(values.into_iter().map(|v| v as f32).collect()) }
             }
             10 => {
                 let n = self.array_len(&mut c, 4)?;
@@ -357,6 +366,37 @@ impl File<'_> {
         Ok(out)
     }
 
+    /// A reference (asset, prim path, layer offset, custom data) or payload (asset, prim
+    /// path, and a layer offset from 0.8). Offsets and custom data aren't kept.
+    fn reference(&self, c: &mut Cursor<'_>, offset: bool, custom_data: bool, depth: u32) -> Result<crate::Reference> {
+        let asset = self.string(c.u32()?)?;
+        let path = self.path(c.u32()?).unwrap_or_default();
+        if offset {
+            c.take(16)?;
+        }
+        // Only references carry custom data.
+        if custom_data {
+            self.dictionary(c, depth + 1)?;
+        }
+        Ok(crate::Reference { asset, prim: (!path.is_empty() && path != "/").then_some(path) })
+    }
+
+    /// A count, then per entry a key (string index) and a value written elsewhere: an
+    /// i64 offset, relative to where it is stored, to the value's ValueRep.
+    fn dictionary(&self, c: &mut Cursor<'_>, depth: u32) -> Result<Vec<(String, Value)>> {
+        let n = c.count(12, &self.limits)?;
+        let mut out = Vec::with_capacity(n);
+        for _ in 0..n {
+            let key = self.string(c.u32()?)?;
+            let at = c.pos;
+            let jump = c.u64()? as i64;
+            let mut r = Cursor::new(self.bytes, (at as i64).wrapping_add(jump) as usize);
+            let value = self.value(r.u64()?, depth + 1)?;
+            out.push((key, value));
+        }
+        Ok(out)
+    }
+
     /// Time samples: a relative jump to the times (a ValueRep of doubles), then a jump
     /// to the value count and one ValueRep per sample.
     fn time_samples(&self, offset: u64, depth: u32) -> Result<Value> {
@@ -376,7 +416,7 @@ impl File<'_> {
         }
         let reps = (0..n).map(|_| c.u64()).collect::<Result<Vec<_>>>()?;
         let values = reps.into_iter().map(|r| self.value(r, depth + 1)).collect::<Result<Vec<_>>>()?;
-        Ok(Value::TimeSamples(times.into_iter().zip(values).collect()))
+        Ok(Value::TimeSamples(times.iter().copied().zip(values).collect()))
     }
 }
 
@@ -395,18 +435,18 @@ fn vector(v: &[f64]) -> Value {
 
 fn empty_array(ty: u8) -> Value {
     match ty {
-        1 => Value::BoolArray(Vec::new()),
-        2..=4 => Value::IntArray(Vec::new()),
-        5 | 6 => Value::Int64Array(Vec::new()),
-        9 => Value::DoubleArray(Vec::new()),
-        7 | 8 => Value::FloatArray(Vec::new()),
+        1 => Value::BoolArray(Arc::from([])),
+        2..=4 => Value::IntArray(Arc::from([])),
+        5 | 6 => Value::Int64Array(Arc::from([])),
+        9 => Value::DoubleArray(Arc::from([])),
+        7 | 8 => Value::FloatArray(Arc::from([])),
         10 => Value::StringArray(Vec::new()),
         11 => Value::TokenArray(Vec::new()),
         12 => Value::AssetArray(Vec::new()),
         _ => match vec_shape(ty).0 {
-            2 => Value::Vec2Array(Vec::new()),
-            3 => Value::Vec3Array(Vec::new()),
-            _ => Value::Vec4Array(Vec::new()),
+            2 => Value::Vec2Array(Arc::from([])),
+            3 => Value::Vec3Array(Arc::from([])),
+            _ => Value::Vec4Array(Arc::from([])),
         },
     }
 }

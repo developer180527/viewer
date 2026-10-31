@@ -1,0 +1,150 @@
+#usda 1.0
+(
+    defaultPrim = "World"
+    doc = """Generated from Composed Stage of root layer /Users/venugopal/Developer/Viewer/crates/usd-lite/tests/fixtures/compose/root.usda
+"""
+    metersPerUnit = 1
+    upAxis = "Y"
+)
+
+def Xform "World"
+{
+    def Xform "FromSub"
+    {
+        float radius = 7
+    }
+
+    def Mesh "Internal"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        float height = 2
+        rel material:binding = </World/Internal/Look>
+        point3f[] points = [(0, 0, 0), (0, 0, 1), (0, 1, 0)]
+        float radius = 5
+
+        def Material "Look"
+        {
+        }
+    }
+
+    def Xform "Car"
+    {
+        float3 xformOp:scale = (0.5, 0.5, 0.5)
+        double3 xformOp:translate = (1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Mesh "Tire"
+        {
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+            rel material:binding = </World/Car/Looks/Rubber>
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        }
+
+        def Scope "Looks"
+        {
+            def Material "Rubber"
+            {
+                token outputs:surface.connect = </World/Car/Looks/Rubber/Surface.outputs:surface>
+
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor.connect = </World/Car/Looks/Rubber/Tex.outputs:rgb>
+                    token outputs:surface
+                }
+
+                def Shader "Tex"
+                {
+                    uniform token info:id = "UsdUVTexture"
+                    asset inputs:file = @textures/rubber.png@
+                    float3 outputs:rgb
+                }
+            }
+        }
+    }
+
+    def Xform "Car2"
+    {
+        float3 xformOp:scale = (2, 2, 2)
+        double3 xformOp:translate = (-1, 0, 0)
+        uniform token[] xformOpOrder = ["xformOp:translate"]
+
+        def Mesh "Tire"
+        {
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+            rel material:binding = </World/Car2/Looks/Rubber>
+            point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        }
+
+        def Scope "Looks"
+        {
+            def Material "Rubber"
+            {
+                token outputs:surface.connect = </World/Car2/Looks/Rubber/Surface.outputs:surface>
+
+                def Shader "Surface"
+                {
+                    uniform token info:id = "UsdPreviewSurface"
+                    color3f inputs:diffuseColor.connect = </World/Car2/Looks/Rubber/Tex.outputs:rgb>
+                    token outputs:surface
+                }
+
+                def Shader "Tex"
+                {
+                    uniform token info:id = "UsdUVTexture"
+                    asset inputs:file = @textures/rubber.png@
+                    float3 outputs:rgb
+                }
+            }
+        }
+    }
+
+    def Mesh "Pay"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (3, 0, 0), (0, 3, 0)]
+    }
+
+    def Mesh "Inherited"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        point3f[] points = [(0, 0, 0), (1, 0, 0), (0, 1, 0)]
+        color3f[] primvars:displayColor = [(1, 0, 0)]
+        float radius = 3
+    }
+
+    def Xform "Switch"
+    {
+        def Mesh "Tri"
+        {
+            int[] faceVertexCounts = [3]
+            int[] faceVertexIndices = [0, 1, 2]
+            point3f[] points = [(0, 0, 0), (2, 0, 0), (0, 2, 0)]
+        }
+    }
+
+    def Mesh "Proto"
+    {
+        int[] faceVertexCounts = [3]
+        int[] faceVertexIndices = [0, 1, 2]
+        rel material:binding = </World/Proto/Look>
+        point3f[] points = [(0, 0, 0), (0, 0, 1), (0, 1, 0)]
+        float radius = 1
+
+        def Material "Look"
+        {
+        }
+    }
+}
+
+class "_class_Red"
+{
+    color3f[] primvars:displayColor = [(1, 0, 0)]
+    float radius = 3
+}
+

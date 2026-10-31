@@ -125,6 +125,11 @@ fn load(source: &ImageSource, color_space: ColorSpace) -> Option<image::RgbaImag
     {
         return Some(image);
     }
+    if bytes.starts_with(&[0xff, 0xd8])
+        && let Some(image) = load_jpeg(bytes)
+    {
+        return Some(image);
+    }
     let image = image::load_from_memory(bytes).ok()?;
     let image = if image.width().max(image.height()) > MAX_SIDE {
         // An integer box downscale straight into the output: the filtered resizers keep
@@ -134,6 +139,32 @@ fn load(source: &ImageSource, color_space: ColorSpace) -> Option<image::RgbaImag
         image
     };
     Some(image.into_rgba8())
+}
+
+/// Decodes a JPEG at the smallest of 1, 1/2, 1/4, 1/8 scale that still reaches
+/// [`MAX_SIDE`] (the IDCT does the scaling), then finishes with a box filter. A 4K map
+/// is decoded at 2K: a quarter of the memory and time.
+fn load_jpeg(bytes: &[u8]) -> Option<image::RgbaImage> {
+    let mut d = jpeg_decoder::Decoder::new(bytes);
+    d.read_info().ok()?;
+    let info = d.info()?;
+    let side = info.width.max(info.height) as u32;
+    if side > MAX_SIDE {
+        // `scale` picks the smallest IDCT size at least this large.
+        let k = MAX_SIDE as f32 / side as f32;
+        d.scale((info.width as f32 * k).ceil() as u16, (info.height as f32 * k).ceil() as u16).ok()?;
+    }
+    let pixels = d.decode().ok()?;
+    let info = d.info()?;
+    let (w, h) = (info.width as u32, info.height as u32);
+    let rgba: Vec<u8> = match info.pixel_format {
+        jpeg_decoder::PixelFormat::RGB24 => pixels.as_chunks::<3>().0.iter().flat_map(|&[r, g, b]| [r, g, b, 255]).collect(),
+        jpeg_decoder::PixelFormat::L8 => pixels.iter().flat_map(|&l| [l, l, l, 255]).collect(),
+        // CMYK and 16-bit greyscale: let `image` handle them.
+        _ => return None,
+    };
+    let image = image::RgbaImage::from_raw(w, h, rgba)?;
+    Some(if w.max(h) > MAX_SIDE { image::imageops::thumbnail(&image, (w * MAX_SIDE).div_ceil(w.max(h)), (h * MAX_SIDE).div_ceil(w.max(h))) } else { image })
 }
 
 /// Reads an EXR straight into the scaled-down result: each decoded pixel is added to

@@ -3,6 +3,8 @@
 //! `typeName`, `primChildren`, `properties`, `default`, `timeSamples`,
 //! `connectionPaths`, `targetPaths`, and authored metadata).
 
+use std::sync::Arc;
+
 use crate::layer::{Layer, Spec, SpecType, child_path, property_path};
 use crate::{Error, Limits, Result, Specifier, Value};
 
@@ -157,6 +159,8 @@ enum Raw {
     Str(String),
     Ident(String),
     Asset(String),
+    /// `@asset@</prim>`
+    Ref(String, String),
     Path(String),
     Tuple(Vec<Raw>),
     List(Vec<Raw>),
@@ -251,12 +255,27 @@ impl Parser<'_> {
                     }
                     self.expect(b'=')?;
                     let raw = self.value()?;
-                    // Sdf's field name for `doc`, as binary files store it.
-                    let key = if key == "doc" { "documentation".to_string() } else { key };
-                    let value = match untyped(raw) {
-                        // Metadata Sdf types as tokens, written as strings in text.
-                        Value::String(s) if TOKEN_METADATA.contains(&key.as_str()) => Value::Token(s),
-                        v => v,
+                    // Sdf's field names, as binary files store them.
+                    let key = match key.as_str() {
+                        "doc" => "documentation".to_string(),
+                        "inherits" => "inheritPaths".to_string(),
+                        "variants" => "variantSelection".to_string(),
+                        "variantSets" => "variantSetNames".to_string(),
+                        _ => key,
+                    };
+                    let value = match key.as_str() {
+                        "references" | "payload" => Value::References(references(raw)),
+                        "inheritPaths" | "specializes" => Value::Paths(paths(raw)),
+                        "variantSetNames" => Value::StringArray(match raw {
+                            Raw::Str(s) => vec![s],
+                            Raw::List(items) => items.into_iter().filter_map(|r| if let Raw::Str(s) = r { Some(s) } else { None }).collect(),
+                            _ => Vec::new(),
+                        }),
+                        _ => match untyped(raw) {
+                            // Metadata Sdf types as tokens, written as strings in text.
+                            Value::String(s) if TOKEN_METADATA.contains(&key.as_str()) => Value::Token(s),
+                            v => v,
+                        },
                     };
                     self.set(path, spec_type, &key, value);
                 }
@@ -459,13 +478,14 @@ impl Parser<'_> {
                 "nan" => Raw::Num(f64::NAN),
                 _ => Raw::Ident(s),
             },
-            Tok::Asset(a) => {
-                // A reference or payload: `@file.usd@</Prim>`; the prim part isn't kept.
-                if let Tok::Path(_) = self.lex.peek()? {
+            Tok::Asset(a) => match self.lex.peek()? {
+                // A reference or payload: `@file.usd@</Prim>`.
+                Tok::Path(p) => {
                     self.lex.next()?;
+                    Raw::Ref(a, p)
                 }
-                Raw::Asset(a)
-            }
+                _ => Raw::Asset(a),
+            },
             Tok::Path(p) => Raw::Path(p),
             Tok::Punct(b'(') => Raw::Tuple(self.items(b')')?),
             Tok::Punct(b'[') => self.list()?,
@@ -603,6 +623,20 @@ impl Parser<'_> {
     }
 }
 
+/// `@a.usd@</P>`, `@a.usd@`, `</Internal>`, or a list of them; `None` is empty.
+fn references(raw: Raw) -> Vec<crate::Reference> {
+    let one = |r: Raw| match r {
+        Raw::Ref(asset, prim) => Some(crate::Reference { asset, prim: Some(prim) }),
+        Raw::Asset(asset) => Some(crate::Reference { asset, prim: None }),
+        Raw::Path(prim) => Some(crate::Reference { asset: String::new(), prim: Some(prim) }),
+        _ => None,
+    };
+    match raw {
+        Raw::List(items) => items.into_iter().filter_map(one).collect(),
+        r => one(r).into_iter().collect(),
+    }
+}
+
 fn paths(raw: Raw) -> Vec<String> {
     match raw {
         Raw::Path(p) => vec![p],
@@ -623,6 +657,7 @@ fn untyped(raw: Raw) -> Value {
             _ => Value::Token(s),
         },
         Raw::Asset(a) => Value::Asset(a),
+        Raw::Ref(asset, prim) => Value::References(vec![crate::Reference { asset, prim: Some(prim) }]),
         Raw::Path(p) => Value::Paths(vec![p]),
         Raw::Tuple(items) => {
             let nums: Vec<f64> = items.iter().filter_map(|r| if let Raw::Num(n) = r { Some(*n) } else { None }).collect();
@@ -631,11 +666,14 @@ fn untyped(raw: Raw) -> Value {
         Raw::List(items) => {
             if items.iter().all(|r| matches!(r, Raw::Path(_))) && !items.is_empty() {
                 Value::Paths(paths(Raw::List(items)))
+            } else if items.iter().all(|r| matches!(r, Raw::Asset(_))) && !items.is_empty() {
+                // `subLayers = [@a.usda@, @b.usda@]`
+                Value::AssetArray(items.into_iter().filter_map(|r| if let Raw::Asset(a) = r { Some(a) } else { None }).collect())
             } else {
                 Value::StringArray(items.into_iter().filter_map(|r| if let Raw::Str(s) | Raw::Ident(s) = r { Some(s) } else { None }).collect())
             }
         }
-        Raw::Numbers { dims: 1, data } => Value::DoubleArray(data),
+        Raw::Numbers { dims: 1, data } => Value::DoubleArray(data.into()),
         Raw::Numbers { .. } => Value::Other("numeric array"),
         Raw::Dict(entries) => Value::Dictionary(entries.into_iter().map(|(k, v)| (k, untyped(v))).collect()),
         Raw::Samples(s) => Value::TimeSamples(s.into_iter().map(|(t, v)| (t, untyped(v))).collect()),
@@ -713,12 +751,12 @@ fn typed(type_name: &str, raw: Raw) -> Value {
         },
         ("int" | "uint" | "uchar", true) => match raw {
             Raw::Numbers { dims: 1, data } => Value::IntArray(data.iter().map(|&v| v as i32).collect()),
-            Raw::List(l) if l.is_empty() => Value::IntArray(Vec::new()),
+            Raw::List(l) if l.is_empty() => Value::IntArray(Arc::from([])),
             _ => Value::Other("int[]"),
         },
         ("int64" | "uint64", true) => match raw {
             Raw::Numbers { dims: 1, data } => Value::Int64Array(data.iter().map(|&v| v as i64).collect()),
-            _ => Value::Int64Array(Vec::new()),
+            _ => Value::Int64Array(Arc::from([])),
         },
         ("matrix4d" | "matrix3d" | "matrix2d", false) => match raw {
             Raw::Tuple(rows) => {
@@ -742,7 +780,7 @@ fn typed(type_name: &str, raw: Raw) -> Value {
         },
         ("matrix4d", true) => match raw {
             Raw::List(items) => Value::Matrix4Array(items.into_iter().filter_map(|r| typed("matrix4d", r).as_matrix4()).collect()),
-            _ => Value::Matrix4Array(Vec::new()),
+            _ => Value::Matrix4Array(Arc::from([])),
         },
         (q, false) if q.starts_with("quat") => match untyped(raw) {
             // Text order is (real, i, j, k).
@@ -751,7 +789,7 @@ fn typed(type_name: &str, raw: Raw) -> Value {
         },
         (q, true) if q.starts_with("quat") => match raw {
             Raw::Numbers { dims: 4, data } => Value::QuatArray(data.as_chunks::<4>().0.iter().map(|v| [v[1] as f32, v[2] as f32, v[3] as f32, v[0] as f32]).collect()),
-            _ => Value::QuatArray(Vec::new()),
+            _ => Value::QuatArray(Arc::from([])),
         },
         (b, false) if dims(b) > 1 => match raw {
             Raw::Tuple(items) => {
@@ -777,12 +815,12 @@ fn typed(type_name: &str, raw: Raw) -> Value {
             _ => Value::Other("float"),
         },
         ("double", true) => match raw {
-            Raw::Numbers { dims: 1, data } => Value::DoubleArray(data),
-            _ => Value::DoubleArray(Vec::new()),
+            Raw::Numbers { dims: 1, data } => Value::DoubleArray(data.into()),
+            _ => Value::DoubleArray(Arc::from([])),
         },
         (_, true) if is_float => match raw {
             Raw::Numbers { dims: 1, data } => Value::FloatArray(data.into_iter().map(|v| v as f32).collect()),
-            _ => Value::FloatArray(Vec::new()),
+            _ => Value::FloatArray(Arc::from([])),
         },
         _ => untyped(raw),
     }
