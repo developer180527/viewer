@@ -8,8 +8,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use libgui::*;
+use libgui_keymap::{Chord, Keymap};
 use viewer_core::{Document, FileSource};
-use viewer_picker::Picked;
+use libfilepicker::Picked;
 
 use super::Textures;
 use super::views::{self, Action, ViewState};
@@ -67,6 +68,14 @@ impl WidthClass {
     }
 }
 
+/// What the keyboard can do, bound per platform by [`ViewerApp::keymap`].
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Command {
+    Open,
+    Back,
+    ToggleInfo,
+}
+
 /// Below this height (a phone sideways) the status bar goes, to leave the content room.
 const SHORT: f32 = 480.0;
 /// The info panel's width, beside the content or as a drawer over it.
@@ -92,6 +101,7 @@ pub struct ViewerApp {
     picked: Rc<RefCell<Option<Picked>>>,
     /// The file last picked, held so it stays readable (see [`Picked`]).
     reading: Option<Picked>,
+    keys: Keymap<Command>,
 }
 
 impl ViewerApp {
@@ -110,7 +120,17 @@ impl ViewerApp {
             retired: Vec::new(),
             picked: Rc::default(),
             reading: None,
+            keys: Self::keymap(),
         }
+    }
+
+    fn keymap() -> Keymap<Command> {
+        let mut keys = Keymap::for_current_platform();
+        keys.bind(Chord::primary(Key::O), Command::Open)
+            .bind(Chord::key(Key::ArrowLeft).alt(), Command::Back)
+            .bind(Key::Backspace, Command::Back)
+            .bind(Key::I, Command::ToggleInfo);
+        keys
     }
 
     /// The file (or the error opening it) is what is on screen, not a spinner.
@@ -132,7 +152,7 @@ impl ViewerApp {
 
     fn open_dialog(&mut self) {
         let slot = Rc::clone(&self.picked);
-        viewer_picker::pick(move |picked| {
+        libfilepicker::pick(move |picked| {
             if picked.is_some() {
                 *slot.borrow_mut() = picked;
                 if let Some(wake) = crate::loading::WAKE.get() {
@@ -271,14 +291,13 @@ impl ViewerApp {
         }
 
         // Global shortcuts last, so focused widgets get the first chance at a chord.
-        let cmd = if cfg!(target_os = "macos") { Shortcut::plain(Key::O).logo() } else { Shortcut::plain(Key::O).ctrl() };
-        if ui.consume_shortcut(cmd) {
+        if self.keys.triggered(ui, Command::Open) {
             self.open_dialog();
         }
-        if ui.consume_shortcut(Shortcut::plain(Key::ArrowLeft).alt()) || ui.consume_shortcut(Shortcut::plain(Key::Backspace)) {
+        if self.keys.triggered(ui, Command::Back) {
             self.back();
         }
-        if ui.consume_shortcut(Shortcut::plain(Key::I)) {
+        if self.keys.triggered(ui, Command::ToggleInfo) {
             self.show_info = !self.show_info;
         }
     }
@@ -345,7 +364,7 @@ impl ViewerApp {
         let frame = Frame { fill: pal.bg_panel, border: pal.border, border_width: 1.0, ..Frame::none() };
         ui.container_id(Id::from_name("toolbar"), layout, frame, |ui| {
             let open = ui.button("Open…");
-            ui.tooltip(&open, if cfg!(target_os = "macos") { "Open a file (⌘O)" } else { "Open a file (Ctrl+O)" });
+            ui.tooltip(&open, &format!("Open a file ({})", self.keys.label(Command::Open)));
             if open.clicked {
                 self.open_dialog();
             }
@@ -458,8 +477,8 @@ impl ViewerApp {
                 if self.job.is_none() {
                     let muted = ui.theme.palette.text_muted;
                     ui.container(Layout::column().align(Align::Center, Align::Center), Frame::none(), |ui| {
-                        let hint = if cfg!(target_os = "macos") { "Drop a file here, or press ⌘O" } else { "Drop a file here, or press Ctrl+O" };
-                        ui.text_with(hint, 18.0, muted);
+                        let hint = format!("Drop a file here, or press {}", self.keys.label(Command::Open));
+                        ui.text_with(&hint, 18.0, muted);
                     });
                 }
                 None
