@@ -8,10 +8,18 @@
 #include <mupdf/fitz.h>
 #include <string.h>
 
+/* Display lists of the last few pages rendered: a page is interpreted once, then
+ * each tile replays the list, culled to the tile. */
+#define LISTS 4
+
 typedef struct vw_doc {
 	fz_context *ctx;
 	fz_stream *stm;
 	fz_document *doc;
+	int list_page[LISTS];
+	fz_rect list_bounds[LISTS];
+	fz_display_list *lists[LISTS];
+	int next_list;
 } vw_doc;
 
 static void set_err(char *err, size_t len, const char *msg) {
@@ -50,6 +58,7 @@ vw_doc *vw_open(const unsigned char *data, size_t len, const char *magic, size_t
 		return NULL;
 	}
 	d->ctx = ctx;
+	for (int i = 0; i < LISTS; i++) d->list_page[i] = -1;
 	fz_set_warning_callback(ctx, quiet, NULL);
 	fz_set_error_callback(ctx, quiet, NULL);
 	fz_try(ctx) {
@@ -69,6 +78,7 @@ vw_doc *vw_open(const unsigned char *data, size_t len, const char *magic, size_t
 
 void vw_close(vw_doc *d) {
 	if (!d) return;
+	for (int i = 0; i < LISTS; i++) fz_drop_display_list(d->ctx, d->lists[i]);
 	fz_drop_document(d->ctx, d->doc);
 	fz_drop_stream(d->ctx, d->stm);
 	fz_drop_context(d->ctx);
@@ -113,33 +123,58 @@ int vw_page_bounds(vw_doc *d, int index, float out[4], char *err, size_t err_len
 	return 0;
 }
 
+/* The display list of page `index` and its bounds, from the cache or made now.
+ * Throws on failure. */
+static fz_display_list *page_list(vw_doc *d, int index, fz_rect *bounds) {
+	fz_page *page = NULL;
+	fz_display_list *list = NULL;
+	int slot;
+	for (int i = 0; i < LISTS; i++) {
+		if (d->list_page[i] == index) {
+			*bounds = d->list_bounds[i];
+			return d->lists[i];
+		}
+	}
+	fz_var(page);
+	fz_try(d->ctx) {
+		page = fz_load_page(d->ctx, d->doc, index);
+		*bounds = fz_bound_page(d->ctx, page);
+		list = fz_new_display_list_from_page(d->ctx, page);
+	}
+	fz_always(d->ctx) fz_drop_page(d->ctx, page);
+	fz_catch(d->ctx) fz_rethrow(d->ctx);
+	slot = d->next_list;
+	d->next_list = (slot + 1) % LISTS;
+	fz_drop_display_list(d->ctx, d->lists[slot]);
+	d->lists[slot] = list;
+	d->list_page[slot] = index;
+	d->list_bounds[slot] = *bounds;
+	return list;
+}
+
 /* Renders the region (x, y) .. (x + w/scale, y + h/scale) of page `index`, in
  * points from the page's bounds' top left, into `rgba` (w * h * 4 bytes, opaque,
  * on white). */
 int vw_render(vw_doc *d, int index, float scale, float x, float y, int w, int h, unsigned char *rgba, char *err, size_t err_len) {
-	fz_page *page = NULL;
 	fz_pixmap *pix = NULL;
 	fz_device *dev = NULL;
-	fz_var(page);
 	fz_var(pix);
 	fz_var(dev);
 	fz_try(d->ctx) {
 		fz_rect b;
 		fz_matrix ctm;
-		page = fz_load_page(d->ctx, d->doc, index);
-		b = fz_bound_page(d->ctx, page);
+		fz_display_list *list = page_list(d, index, &b);
 		pix = fz_new_pixmap_with_data(d->ctx, fz_device_rgb(d->ctx), w, h, NULL, 1, w * 4, rgba);
 		fz_clear_pixmap_with_value(d->ctx, pix, 255);
 		/* Page space -> pixels: move the region's corner to the origin, then scale. */
 		ctm = fz_concat(fz_translate(-(b.x0 + x), -(b.y0 + y)), fz_scale(scale, scale));
-		dev = fz_new_draw_device(d->ctx, ctm, pix);
-		fz_run_page(d->ctx, page, dev, fz_identity, NULL);
+		dev = fz_new_draw_device(d->ctx, fz_identity, pix);
+		fz_run_display_list(d->ctx, list, dev, ctm, fz_make_rect(0, 0, (float)w, (float)h), NULL);
 		fz_close_device(d->ctx, dev);
 	}
 	fz_always(d->ctx) {
 		fz_drop_device(d->ctx, dev);
 		fz_drop_pixmap(d->ctx, pix);
-		fz_drop_page(d->ctx, page);
 	}
 	fz_catch(d->ctx) {
 		caught(d->ctx, err, err_len);

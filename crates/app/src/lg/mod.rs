@@ -6,6 +6,7 @@
 //! applies what the UI asks for (cursor, title, textures to free).
 
 mod app;
+mod pages;
 mod views;
 
 use std::path::Path;
@@ -47,6 +48,8 @@ pub trait Textures {
     /// the GPU once, so wgpu frees the upload staging now (it frees it only when a
     /// later submit finds the GPU done, and an idle window makes none).
     fn uploads_done(&mut self) {}
+    /// Frees a texture this view uploaded and no longer draws (from this frame on).
+    fn free(&mut self, id: TextureId);
 
     /// Draws a 3D scene from `camera` into a `size`-pixel frame (RendererX on the
     /// shared device) and returns the texture to show.
@@ -285,6 +288,10 @@ impl Textures for Headless {
         HEADLESS_SCALE
     }
 
+    fn free(&mut self, id: TextureId) {
+        self.soft.unregister_texture(id);
+    }
+
     fn settles(&self) -> bool {
         true
     }
@@ -417,6 +424,8 @@ struct Gpu<'a> {
     scale: f32,
     /// Set by `uploads_done`.
     settle: &'a mut bool,
+    /// Textures views freed this frame; unregistered once the frame is prepared.
+    freed: &'a mut Vec<TextureId>,
 }
 
 impl Textures for Gpu<'_> {
@@ -452,6 +461,10 @@ impl Textures for Gpu<'_> {
 
     fn uploads_done(&mut self) {
         *self.settle = true;
+    }
+
+    fn free(&mut self, id: TextureId) {
+        self.freed.push(id);
     }
 
     fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
@@ -610,11 +623,12 @@ impl Host {
         }
         let mut platform = PlatformOutput::default();
         let mut settle = false;
+        let mut freed = Vec::new();
         if std::mem::take(&mut w.stale) || w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed };
             app.ui(&mut w.ui, &mut gpu);
             let out = w.ui.end_frame();
             if self.content_frames == 0 { startup::mark(&format!("  frame built in {:.2} ms", t.elapsed().as_secs_f64() * 1000.0)); }
@@ -624,7 +638,7 @@ impl Host {
             if self.content_frames == 0 { startup::mark("  prepared"); }
             w.batches.clear();
             w.batches.extend_from_slice(&out.draw.batches);
-            for id in app.retired.drain(..) {
+            for id in app.retired.drain(..).chain(freed) {
                 w.renderer.unregister_texture(id);
             }
             if let Some(title) = app.title.take() {

@@ -1,6 +1,6 @@
 # PDF in Viewer
 
-Status: both backends in, behind `PageSource`; the app shows page 1 as an interim view (§10). Roadmap step 2 (PLAN.md §11), the first document format.
+Status: both backends in, behind `PageSource`, and the page view (§7) built (`crates/app/src/lg/pages.rs`). See §10 for what's left. Roadmap step 2 (PLAN.md §11), the first document format.
 
 ## 1. Goals
 
@@ -100,21 +100,22 @@ Neither backend is used from more than one thread at a time:
 - **MuPDF:** one `fz_context` per document, cloned per thread with MuPDF's lock callbacks if we add more render threads later. v1 uses one.
 - **PDFKit:** `PDFDocument`/`PDFPage` aren't documented as thread-safe; one thread owns them.
 
-So there is one **page-render thread** that owns every open document:
+So each open document has one **page-render thread** (the backend serialises access itself, so documents never block each other):
 
 - The view sends requests `(document, page, scale, tile)` with a priority: visible tiles first, then the pages just above and below, then thumbnails.
-- Each request carries the view's generation; when the user scrolls or zooms, stale requests are dropped before they render.
-- MuPDF requests also carry a cookie (`fz_cookie`) so a slow page in progress can be aborted.
+- The view publishes the whole list of tiles it wants each time it changes, and the new list replaces the old, so tiles scrolled past are never rendered. Idle time measures page sizes. (Later: an `fz_cookie` to abort a slow tile in progress.)
+- MuPDF keeps display lists of the last 4 pages rendered, so a page is interpreted once and each tile replays its list culled to the tile.
 - Finished tiles come back over a channel and wake the UI, as decoded 3D textures do.
 - Closing a page drops its document on that thread.
 
 ## 7. The view
 
 - **Continuous vertical scroll** of all pages, laid out from their sizes (no rendering needed), with a gap between pages.
-- **Zoom:** fit width (default on phones), fit page, and free zoom by pinch / scroll. While zooming, the last render is scaled; a sharp re-render follows when it settles.
-- **Tiles:** pages render in tiles of at most 2048 px, so a poster page at high zoom renders only what's on screen. Tiles upload through the same texture path as images.
+- **Zoom:** by default the widest page fills the window's width, but on a wide window no more than 100% or a whole page, whichever is larger. Pinch, Ctrl/Cmd-scroll, `+`/`-`, `1` (100%), `0` and double-click (back to fit) zoom about the pointer. Render scales are rounded to quarter octaves; tiles at other scales are drawn stretched until the sharp ones arrive.
+- **Scroll position** is a page plus an offset into it, so pages above that turn out a different size (sizes are measured in the background; unmeasured pages take page 1's size) never move what's on screen.
+- **Tiles:** pages render in tiles of 1024 px, edges snapped to pixels, so a poster page at high zoom renders only what's on screen. Tiles upload through the same texture path as images.
 - **Cache:** rendered tiles are kept in an LRU within a budget (desktop 256 MB, mobile 96 MB of RGBA), counted against the app's memory budgets (`bench/memory-budgets.txt`).
-- **Chrome:** page counter ("12 / 340"), jump to page, previous/next keys (`PageUp`/`PageDown`, `Home`/`End`), and a thumbnail strip on expanded-width windows.
+- **Chrome:** page counter and zoom ("12 / 340 · 100%"); `PageUp`/`PageDown`/`Space`/`Shift-Space`, arrows, `Home`/`End`. ⬜ Jump to page and a thumbnail strip on expanded-width windows.
 - **Dark mode:** pages stay as printed (white). An optional "invert" may come later.
 
 ## 8. Errors, security and tests
@@ -140,8 +141,8 @@ So there is one **page-render thread** that owns every open document:
 1. ✅ **MuPDF from source on macOS:** submodule at 1.28.6, `build.rs` (~20 s clean, incremental after), a C shim catching MuPDF's errors. A 22-page, 2.2 MB textbook chapter: open 4 ms, page 1 at 2× on screen in 111 ms.
 2. ✅ **PDFKit** through `objc2-pdf-kit`, tested on macOS: open 53 ms, page 1 in 122 ms; renders match MuPDF. ⬜ Measure on the iPhone and iPad.
 3. ✅ `viewer-core`: `Content::Pages` + `PageSource` (+ hand-written test PDFs in `viewer_core::testing`).
-4. ✅ `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` behind the trait; `viewer-fmt-pdf` loader (`VIEWER_PDF_BACKEND=pdfkit` on macOS). The iOS dependency tree has no MuPDF. ⬜ The page-render thread (comes with the view).
-5. The view: layout, tiles, zoom, cache, chrome.
+4. ✅ `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` behind the trait; `viewer-fmt-pdf` loader (`VIEWER_PDF_BACKEND=pdfkit` on macOS). The iOS dependency tree has no MuPDF. The page-render thread came with the view (5).
+5. ✅ The view: layout, tiles, zoom, cache, page counter, keys, its render thread. ⬜ Jump to page, thumbnails, momentum after a touch fling, aborting a slow tile.
 6. The PDF corpus and its runner; both backends passing it.
 7. Builds: Windows (MSVC), Linux, Android NDK, BSD; CI with the iOS dependency check; README and licence notes.
 8. Then §9.

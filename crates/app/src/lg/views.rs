@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use libgui::*;
-use viewer_core::{Band, Container, Content, Next, PageRect, PageSource, Pixels, Raster, SceneDoc, Table, TextDoc, TreeNode};
+use viewer_core::{Band, Container, Content, Next, Pixels, Raster, SceneDoc, Table, TextDoc, TreeNode};
 
 use super::{SceneGpu, Textures};
 use super::app::Page;
@@ -30,7 +30,7 @@ pub enum ViewState {
     Tree(TreeView),
     Table(TableState),
     Scene(Box<SceneView>),
-    Pages(Box<PagesView>),
+    Pages(Box<super::pages::PagesView>),
 }
 
 impl ViewState {
@@ -65,7 +65,7 @@ impl ViewState {
         match self {
             Self::Raster(st) => st.tiles.iter().map(|(t, _)| *t).collect(),
             Self::Scene(st) => st.gpu.texture().into_iter().collect(),
-            Self::Pages(st) => st.raster.tiles.iter().map(|(t, _)| *t).collect(),
+            Self::Pages(st) => st.textures(),
             _ => Vec::new(),
         }
     }
@@ -108,7 +108,7 @@ pub fn show(ui: &mut Ui, page: &mut Page, tex: &mut dyn Textures, dark: bool) ->
             None
         }
         (Content::Pages(src), ViewState::Pages(st)) => {
-            pages(ui, src.as_ref(), st, tex);
+            super::pages::show(ui, src, st, tex);
             None
         }
         _ => unreachable!("every page gets the view state its content needs"),
@@ -410,36 +410,6 @@ fn feed(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Texture
         // Everything is on the GPU (or the stream ended): no CPU copy is kept.
         r.pixels = Pixels::Released;
         tex.uploads_done();
-    }
-}
-
-/// Interim paged view: page 1 rendered once, shown like an image. The real view
-/// (scrolling, tiles, a render thread) is docs/pdf.md §7.
-#[derive(Default)]
-pub struct PagesView {
-    first: Option<Result<Raster, String>>,
-    raster: RasterState,
-}
-
-/// Page 1 is rendered at twice its size, for sharpness on high-density screens.
-const PAGE_SCALE: f32 = 2.0;
-
-fn pages(ui: &mut Ui, src: &dyn PageSource, st: &mut PagesView, tex: &mut dyn Textures) {
-    let first = st.first.get_or_insert_with(|| {
-        if src.page_count() == 0 {
-            return Err("This document has no pages.".into());
-        }
-        let size = src.page_size(0).map_err(|e| format!("{e:#}"))?;
-        let side = size.width.max(size.height).max(1.0);
-        let scale = PAGE_SCALE.min(viewer_core::MAX_RENDER_SIDE as f32 / side);
-        let img = src.render(0, scale, PageRect::whole(size)).map_err(|e| format!("{e:#}"))?;
-        Ok(Raster::full(img.width, img.height, img.rgba))
-    });
-    match first {
-        Ok(r) => raster(ui, r, &mut st.raster, tex),
-        Err(e) => {
-            ui.label(e.as_str());
-        }
     }
 }
 
