@@ -15,7 +15,8 @@ viewer-fmt-doc = { path = "crates/fmt-doc" }
 viewer-fmt-data = { path = "crates/fmt-data" }
 viewer-fmt-archive = { path = "crates/fmt-archive" }
 viewer-fmt-3d = { path = "crates/fmt-3d" }
-viewer-picker = { path = "crates/picker" }
+# Pre-1.0, pinned to a commit like libgui.
+libfilepicker = { git = "https://github.com/developer180527/libfilepicker.git", rev = "129d036284ba685497b983a2ae4be85946583ab5" }
 rendererx-scene = { path = "crates/rendererx-scene" }
 rendererx = { path = "crates/rendererx" }
 rendererx-gltf = { path = "crates/rendererx-gltf" }

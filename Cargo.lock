@@ -1314,6 +1314,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "libfilepicker"
+version = "0.1.0"
+source = "git+https://github.com/developer180527/libfilepicker.git?rev=129d036284ba685497b983a2ae4be85946583ab5#129d036284ba685497b983a2ae4be85946583ab5"
+dependencies = [
+ "rfd",
+]
+
+[[package]]
 name = "libfuzzer-sys"
 version = "0.4.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3353,6 +3361,7 @@ dependencies = [
  "anyhow",
  "image",
  "libc",
+ "libfilepicker",
  "libgui",
  "libgui_keymap",
  "libgui_markdown",
@@ -3370,7 +3379,6 @@ dependencies = [
  "viewer-fmt-data",
  "viewer-fmt-doc",
  "viewer-fmt-image",
- "viewer-picker",
  "wgpu",
  "winit",
 ]
@@ -3441,13 +3449,6 @@ dependencies = [
  "png",
  "resvg",
  "viewer-core",
-]
-
-[[package]]
-name = "viewer-picker"
-version = "0.1.0"
-dependencies = [
- "rfd",
 ]
 
 [[package]]
