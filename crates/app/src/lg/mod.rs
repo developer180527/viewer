@@ -747,7 +747,7 @@ impl ApplicationHandler for Host {
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(w) = self.live.as_mut() else { return };
         // A finger that lands and lifts between two frames is shown to widgets as a
-        // press in one frame and the release in the next; libgui (7c8252f) forgets
+        // press in one frame and the release in the next; libgui (2709ad4) forgets
         // where that finger was by the release frame and judges the release at the
         // previous pointer position, so a tap on a menu item misses it. Moving the
         // pointer there too keeps them together.

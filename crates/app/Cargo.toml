@@ -25,13 +25,13 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 
 # libgui is pre-1.0 and expects to be pinned to a commit (its CHANGELOG.md lists
 # what to change when moving the pin).
-libgui = { git = "https://github.com/developer180527/libgui.git", rev = "7c8252f1187be772e07ab4cadf99625ff92851c8" }
-libgui_keymap = { git = "https://github.com/developer180527/libgui.git", rev = "7c8252f1187be772e07ab4cadf99625ff92851c8" }
-libgui_wgpu = { git = "https://github.com/developer180527/libgui.git", rev = "7c8252f1187be772e07ab4cadf99625ff92851c8" }
-libgui_winit = { git = "https://github.com/developer180527/libgui.git", rev = "7c8252f1187be772e07ab4cadf99625ff92851c8" }
-libgui_soft = { git = "https://github.com/developer180527/libgui.git", rev = "7c8252f1187be772e07ab4cadf99625ff92851c8" }
-libgui_sysfonts = { git = "https://github.com/developer180527/libgui.git", rev = "7c8252f1187be772e07ab4cadf99625ff92851c8" }
-libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev = "7c8252f1187be772e07ab4cadf99625ff92851c8" }
+libgui = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+libgui_keymap = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+libgui_wgpu = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+libgui_winit = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+libgui_soft = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+libgui_sysfonts = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
 wgpu = { version = "30" }
 winit = { version = "0.30" }
 pollster = { version = "1" }
