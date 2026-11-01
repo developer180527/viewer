@@ -24,4 +24,7 @@ xcrun devicectl device install app --device "$device" "$app"
 # The samples ship inside the app; the app reads argv as on the desktop.
 bundle=$(xcrun devicectl device info apps --device "$device" --bundle-id "$id" --json-output /dev/stdout 2>/dev/null \
     | python3 -c 'import json,sys; print(json.load(sys.stdin)["result"]["apps"][0]["url"].removeprefix("file://").rstrip("/"))')
-xcrun devicectl device process launch --terminate-existing --device "$device" "$id" "$bundle/samples/$sample"
+# MTL_HUD_ENABLED=0: no Metal performance HUD over the app, even with the device's
+# Settings → Developer → Graphics HUD switched on.
+DEVICECTL_CHILD_MTL_HUD_ENABLED=0 \
+    xcrun devicectl device process launch --terminate-existing --device "$device" "$id" "$bundle/samples/$sample"
