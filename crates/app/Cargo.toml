@@ -9,17 +9,6 @@ license.workspace = true
 name = "viewer"
 path = "src/main.rs"
 
-# Two UI frontends share the loaders and the loading thread. egui is the default;
-# the libgui frontend is a trial (`--no-default-features --features libgui`).
-# If both are enabled, libgui wins.
-[features]
-default = ["egui"]
-egui = ["dep:eframe", "dep:egui", "dep:egui_extras", "dep:egui_commonmark"]
-libgui = [
-    "dep:libgui", "dep:libgui_keymap", "dep:libgui_wgpu", "dep:libgui_winit", "dep:libgui_soft",
-    "dep:libgui_sysfonts", "dep:libgui_markdown", "dep:wgpu", "dep:winit", "dep:pollster", "dep:rendererx",
-]
-
 [dependencies]
 viewer-core.workspace = true
 viewer-fmt-image.workspace = true
@@ -33,26 +22,20 @@ rfd = "0.17"
 image = { version = "0.25", default-features = false, features = ["png"] }
 
 
-eframe = { version = "0.37", optional = true, default-features = false, features = [
-    "wgpu", "accesskit", "default_fonts", "clipboard", "links", "wayland", "x11",
-] }
-egui = { version = "0.37", optional = true, default-features = false, features = ["monochrome_emoji_fonts"] }
-egui_extras = { version = "0.37", optional = true, default-features = false }
-egui_commonmark = { version = "0.26", optional = true, default-features = false, features = ["pulldown_cmark"] }
 
 # libgui is pre-1.0 and expects to be pinned to a commit (its CHANGELOG.md lists
 # what to change when moving the pin).
-libgui = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18", optional = true }
-libgui_keymap = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18", optional = true }
-libgui_wgpu = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18", optional = true }
-libgui_winit = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18", optional = true }
-libgui_soft = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18", optional = true }
-libgui_sysfonts = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18", optional = true }
-libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18", optional = true }
-wgpu = { version = "30", optional = true }
-winit = { version = "0.30", optional = true }
-pollster = { version = "1", optional = true }
-rendererx = { workspace = true, optional = true, features = ["controls"] }
+libgui = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18" }
+libgui_keymap = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18" }
+libgui_wgpu = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18" }
+libgui_winit = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18" }
+libgui_soft = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18" }
+libgui_sysfonts = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18" }
+libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev = "ab3ded28ca9d015501fdc800ef85f9332356cc18" }
+wgpu = { version = "30" }
+winit = { version = "0.30" }
+pollster = { version = "1" }
+rendererx = { workspace = true, features = ["controls"] }
 
 [target.'cfg(unix)'.dependencies]
 # mmap for the global allocator's big blocks (src/alloc.rs).

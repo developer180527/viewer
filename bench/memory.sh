@@ -25,7 +25,7 @@
 #             holds while you look at the file, as Activity Monitor shows it.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-cargo build --release -q --no-default-features --features libgui -p viewer
+cargo build --release -q -p viewer
 bin=target/release/viewer
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT

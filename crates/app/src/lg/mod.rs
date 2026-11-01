@@ -1,4 +1,4 @@
-//! The libgui frontend (trial): a winit window drawn by wgpu, or, for
+//! The UI: a winit window drawn by wgpu with libgui, or, for
 //! `--screenshot`, no window at all and libgui's CPU renderer.
 //!
 //! libgui owns no window, clock or clipboard, so this file is the host: it turns

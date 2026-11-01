@@ -15,14 +15,6 @@ mod loading;
 mod startup;
 mod util;
 
-// The egui frontend (default).
-#[cfg(not(feature = "libgui"))]
-mod app;
-#[cfg(not(feature = "libgui"))]
-mod views;
-
-// The libgui frontend (trial).
-#[cfg(feature = "libgui")]
 mod lg;
 
 use std::path::PathBuf;
@@ -108,7 +100,6 @@ fn main() {
     });
 
     // The font list, wanted only once a character Inter lacks is drawn.
-    #[cfg(feature = "libgui")]
     lg::scan_system_fonts();
     // Kick off decoding before the window exists; it overlaps GPU initialisation.
     let job = args
@@ -129,32 +120,8 @@ fn window_title(args: &Args) -> String {
         .map_or("Viewer".into(), |n| n.to_string_lossy().into_owned())
 }
 
-#[cfg(feature = "libgui")]
 fn run(args: Args, job: Option<loading::Job>) -> anyhow::Result<()> {
     lg::run(window_title(&args), args, job)
-}
-
-#[cfg(not(feature = "libgui"))]
-fn run(args: Args, job: Option<loading::Job>) -> anyhow::Result<()> {
-    let options = eframe::NativeOptions {
-        viewport: eframe::egui::ViewportBuilder::default()
-            .with_title(window_title(&args))
-            .with_app_id("viewer")
-            .with_inner_size([1100.0, 760.0])
-            .with_min_inner_size([360.0, 240.0])
-            .with_drag_and_drop(true),
-        ..Default::default()
-    };
-    startup::mark("window requested");
-    eframe::run_native(
-        "Viewer",
-        options,
-        Box::new(move |cc| {
-            startup::mark("window + GPU ready");
-            Ok(Box::new(app::ViewerApp::new(cc, args, job)))
-        }),
-    )
-    .map_err(|e| anyhow::anyhow!("{e}"))
 }
 
 /// Writes `--screenshot` output.

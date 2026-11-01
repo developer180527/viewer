@@ -48,7 +48,7 @@ crates/fmt-image     image + SVG loaders
 crates/fmt-doc       text / code / Markdown loaders
 crates/fmt-data      JSON / TOML / CSV loaders
 crates/fmt-archive   zip / tar / gzip containers
-crates/app           egui + wgpu shell and renderers
+crates/app           libgui + wgpu shell and views
 bench/               sample generator, startup benchmark
 samples/             one small file per supported format
 ```

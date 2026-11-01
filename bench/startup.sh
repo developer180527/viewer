@@ -3,8 +3,7 @@
 # Uses hyperfine when installed; otherwise prints the app's own --benchmark trace.
 set -euo pipefail
 cd "$(dirname "$0")/.."
-# The libgui frontend: the one the app is moving to (PLAN.md §5).
-cargo build --release -q --no-default-features --features libgui
+cargo build --release -q
 bin=target/release/viewer
 files=(samples/gradient.png samples/main.rs samples/data.json samples/table.csv samples/bundle.zip)
 [[ -d bench/out ]] && files+=(bench/out/big.log bench/out/big.png)

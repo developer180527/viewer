@@ -317,7 +317,7 @@ These are the decisions that are expensive to change later. Everything else (mic
 
 ### 12.1 One UI: libgui everywhere
 - libgui on desktop, mobile, BSD and HarmonyOS, styled the same everywhere. No per-platform native UI shells.
-- The egui frontend is deleted once the libgui one reaches parity. Until then it is not extended.
+- The egui frontend is deleted (done: libgui reached parity, and only it shows 3D).
 - Rules out: SwiftUI / Compose / ArkTS UIs. (HarmonyOS still needs a thin ArkTS wrapper that hosts the `XComponent` surface; it contains no UI.)
 
 ### 12.2 One GPU device, shared
@@ -392,7 +392,10 @@ Editing is **deliberately basic**, using the operation model (§12.5) and the sa
 - Out of scope: timelines, multiple clips, transitions, effects, colour grading, subtitle editing.
 
 ### 12.7 Startup is a constraint, not a phase
-Every decision above is measured against §7: the startup benchmark runs in CI, and a change that makes "first frame showing the file" slower fails the build. Today's numbers (libgui frontend, warm, M-series Mac): ~190 ms. Known cheap fixes: subset the UI font / rasterise lazily (~20 ms), avoid the first surface being reported occluded (~40 ms), tidy event-loop setup. Target ≤ 120 ms, then the §7 target.
+Every decision above is measured against §7: the startup benchmark runs in CI, and a change that makes "first frame showing the file" slower fails the build. Today's numbers (warm, M-series Mac): ~165 ms. The system font list and the GPU device are set up on threads. What's left is mostly the OS: building the event loop (~30 ms), creating the window (~50 ms) and macOS putting it on screen (~45 ms). Target ≤ 120 ms, then the §7 target.
 
-### 12.8 Still open
+### 12.8 One layout for every screen size
+The chrome adapts to width classes and input kind, not to the platform: see docs/responsive-ui.md.
+
+### 12.9 Still open
 - Whether the resident agent (§7) should ship on by default on desktop.
