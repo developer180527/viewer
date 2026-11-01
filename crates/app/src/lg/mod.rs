@@ -453,8 +453,6 @@ struct Live {
     idle: f32,
     batches: Vec<Batch>,
     clear: Color,
-    /// Frames still to draw after a finger lifted (see `window_event`).
-    release_frames: u8,
     rx: Option<Rx>,
 }
 
@@ -467,6 +465,8 @@ struct Host {
     content_frames: u32,
     first_frame_done: bool,
     error: Option<anyhow::Error>,
+    /// The last frame asked for another straight away (see `about_to_wait`).
+    again: bool,
     /// The GPU thread `run` started, until `start` joins it.
     gpu: Option<std::thread::JoinHandle<anyhow::Result<GpuParts>>>,
 }
@@ -530,7 +530,6 @@ impl Host {
             last: Instant::now(),
             idle: 0.0,
             batches: Vec::new(),
-            release_frames: 0,
             rx: None,
         });
         Ok(())
@@ -564,9 +563,7 @@ impl Host {
         }
         let mut platform = PlatformOutput::default();
         let mut settle = false;
-        let releasing = w.release_frames > 0;
-        w.release_frames = w.release_frames.saturating_sub(1);
-        if w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 || releasing {
+        if w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
@@ -647,11 +644,11 @@ impl Host {
             }
         }
 
-        // Sleep until libgui, input or a loader thread needs us.
+        // Sleep until libgui, input or a loader thread needs us. "Now" is asked for
+        // in `about_to_wait`: iOS drops a redraw requested while one is being drawn.
         match platform.repaint_after {
-            _ if self.content_frames < 3 && (app.shown() || app.loading()) => w.window.request_redraw(),
-            _ if w.release_frames > 0 => w.window.request_redraw(),
-            Some(t) if t <= 0.0 => w.window.request_redraw(),
+            _ if self.content_frames < 3 && (app.shown() || app.loading()) => self.again = true,
+            Some(t) if t <= 0.0 => self.again = true,
             Some(t) => el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_secs_f32(t))),
             None => el.set_control_flow(ControlFlow::Wait),
         }
@@ -676,6 +673,14 @@ impl ApplicationHandler for Host {
         }
     }
 
+    fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+        if std::mem::take(&mut self.again)
+            && let Some(w) = self.live.as_ref()
+        {
+            w.window.request_redraw();
+        }
+    }
+
     fn user_event(&mut self, _el: &ActiveEventLoop, _: ()) {
         // A loader thread finished, or a 3D scene gained something (a decoded texture):
         // build a frame so the view can pick it up.
@@ -687,16 +692,12 @@ impl ApplicationHandler for Host {
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(w) = self.live.as_mut() else { return };
-        // A finger that lands and lifts between two frames is shown to widgets as
-        // a press in one frame and the release in the next, and nothing else asks
-        // for that next frame: a quick tap would only highlight. Draw it.
+        // A finger that lands and lifts between two frames is shown to widgets as a
+        // press in one frame and the release in the next; libgui (ab3ded2) forgets
+        // where that finger was by the release frame and judges the release at the
+        // previous pointer position, so a tap on a menu item misses it. Moving the
+        // pointer there too keeps them together.
         if let WindowEvent::Touch(t) = &event {
-            if matches!(t.phase, winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled) {
-                w.release_frames = 2;
-            }
-            // libgui (ab3ded2) forgets where such a finger was by the release frame
-            // and judges the release at the previous pointer position, so a tap on a
-            // menu item misses it. Moving the pointer there too keeps them together.
             let s = w.window.scale_factor();
             let pos = Vec2::new((t.location.x / s) as f32, (t.location.y / s) as f32);
             w.ui.push(InputEvent::PointerMoved { pos });
