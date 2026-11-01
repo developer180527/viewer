@@ -20,7 +20,13 @@ pub static LOADERS: &[&dyn FormatLoader] = &[&GltfLoader, &FbxLoader, &ObjLoader
 /// The document for a loaded scene, with the counts the info panel shows. A scene
 /// with nothing to draw is an error, so a file that only looks like a model (a
 /// compiler's `.obj`) falls through to the next loader.
-fn scene_document(format: &str, scene: CpuScene, warnings: &[String], textures_pending: Arc<AtomicUsize>) -> Result<Document> {
+fn scene_document(
+    format: &str,
+    scene: CpuScene,
+    warnings: &[String],
+    textures_pending: Arc<AtomicUsize>,
+    unreadable: viewer_core::Unreadables,
+) -> Result<Document> {
     let mut doc = {
         let read = scene.read();
         let stats = Stats::of(&read);
@@ -34,6 +40,8 @@ fn scene_document(format: &str, scene: CpuScene, warnings: &[String], textures_p
             .with_meta("Vertices", stats.vertices)
             .with_meta("Materials", stats.materials)
     };
+    // Shared with the decoder threads, which add what they can't read.
+    doc.unreadable = unreadable;
     for w in warnings.iter().take(20) {
         doc = doc.with_meta("Warning", w);
     }
@@ -107,8 +115,16 @@ impl FormatLoader for GltfLoader {
             .map(|i| textures::ImageJob { texture: i.texture, source: textures::ImageSource::Bytes(i.data), color_space: i.color_space })
             .collect();
         let decoding = jobs.len();
-        let pending = textures::spawn(builder.texture_sink(), jobs);
-        Ok(scene_document(format, scene, &loaded.warnings, pending)?.with_meta("Textures", texture_note(decoding)))
+        let unreadable = viewer_core::Unreadables::default();
+        for (uri, kind) in &loaded.unreadable {
+            let reason = match kind {
+                rendererx_gltf::ResolveErrorKind::NotPermitted => viewer_core::Unreadable::Blocked,
+                _ => viewer_core::Unreadable::Missing,
+            };
+            unreadable.add(textures::report_name(uri, ""), reason);
+        }
+        let pending = textures::spawn(builder.texture_sink(), jobs, unreadable.clone());
+        Ok(scene_document(format, scene, &loaded.warnings, pending, unreadable)?.with_meta("Textures", texture_note(decoding)))
     }
 }
 
@@ -139,7 +155,7 @@ impl FormatLoader for UsdLoader {
     fn open(&self, src: &FileSource) -> Result<Document> {
         let loaded = usd::load(src)?;
         let note = texture_note(loaded.textures);
-        let doc = scene_document(loaded.format, loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note);
+        let doc = scene_document(loaded.format, loaded.scene, &loaded.warnings, loaded.pending, loaded.unreadable)?.with_meta("Textures", note);
         Ok(if loaded.layers > 0 { doc.with_meta("Layers composed", loaded.layers + 1) } else { doc })
     }
 }
@@ -171,7 +187,8 @@ impl FormatLoader for FbxLoader {
         let loaded = ufbx_scene::load(src, ufbx::FileFormat::Fbx)?;
         let binary = src.header().starts_with(b"Kaydara FBX Binary");
         let note = texture_note(loaded.textures);
-        Ok(scene_document(if binary { "FBX (binary)" } else { "FBX (ASCII)" }, loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note))
+        let format = if binary { "FBX (binary)" } else { "FBX (ASCII)" };
+        Ok(scene_document(format, loaded.scene, &loaded.warnings, loaded.pending, loaded.unreadable)?.with_meta("Textures", note))
     }
 }
 
@@ -195,7 +212,7 @@ impl FormatLoader for ObjLoader {
     fn open(&self, src: &FileSource) -> Result<Document> {
         let loaded = ufbx_scene::load(src, ufbx::FileFormat::Obj)?;
         let note = texture_note(loaded.textures);
-        Ok(scene_document("Wavefront OBJ", loaded.scene, &loaded.warnings, loaded.pending)?.with_meta("Textures", note))
+        Ok(scene_document("Wavefront OBJ", loaded.scene, &loaded.warnings, loaded.pending, loaded.unreadable)?.with_meta("Textures", note))
     }
 }
 

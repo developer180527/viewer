@@ -15,7 +15,7 @@ use rendererx_scene::{
     ColorSpace, CpuScene, Indices, Material, MaterialId, MeshData, MeshId, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource, Slot,
     Stream, TextureId,
 };
-use viewer_core::{FileSource, Result};
+use viewer_core::{FileSource, Result, Unreadables};
 
 use crate::textures::{self, ImageJob, ImageSource};
 
@@ -25,6 +25,8 @@ pub struct Loaded {
     /// Base colour maps queued for decoding.
     pub textures: usize,
     pub pending: Arc<AtomicUsize>,
+    /// Files the model names that couldn't be read (textures, an OBJ's .mtl).
+    pub unreadable: Unreadables,
 }
 
 pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<Loaded> {
@@ -50,12 +52,48 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<Loaded> {
         .map(|w| if w.count > 1 { format!("{} (×{})", w.description, w.count) } else { w.description.to_string() })
         .collect();
     let dir = src.path().and_then(|p| p.parent()).map(PathBuf::from);
-    let mut images = Images { dir, seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new() };
+    let unreadable = Unreadables::default();
+    if format == ufbx::FileFormat::Obj
+        && let Some(dir) = &dir
+    {
+        report_mtl_libraries(src.bytes(), dir, &unreadable);
+    }
+    let mut images = Images { dir, seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new(), unreadable: unreadable.clone() };
     convert(&root, &mut builder, &mut images, &mut warnings).context("building the scene")?;
     builder.finish();
     let textures = images.jobs.len();
-    let pending = textures::spawn(builder.texture_sink(), images.jobs);
-    Ok(Loaded { scene, warnings, textures, pending })
+    let pending = textures::spawn(builder.texture_sink(), images.jobs, unreadable.clone());
+    Ok(Loaded { scene, warnings, textures, pending, unreadable })
+}
+
+/// ufbx opens an OBJ's `.mtl` files itself and only says when one is missing, not
+/// why; check each `mtllib` the file names, so a refused one (iOS, a single picked
+/// file) is reported as such. Materials and their maps live in the `.mtl`.
+fn report_mtl_libraries(obj: &[u8], dir: &std::path::Path, report: &Unreadables) {
+    for line in obj.split(|&b| b == b'\n') {
+        // A byte test first: this walks every line of what can be a very large file.
+        if !line.trim_ascii_start().starts_with(b"mtllib") {
+            continue;
+        }
+        let line = String::from_utf8_lossy(line);
+        let Some(names) = line.trim_start().strip_prefix("mtllib") else { continue };
+        if !names.starts_with([' ', '\t']) {
+            continue;
+        }
+        // Names are space-separated, though some exporters write one name with
+        // spaces in it: the whole rest of the line is tried first.
+        let whole = names.trim().replace('\\', "/");
+        if whole.is_empty() || std::fs::File::open(dir.join(&whole)).is_ok() {
+            continue;
+        }
+        for name in whole.split_whitespace() {
+            let path = dir.join(name);
+            // Open, not just stat: file modes (and some sandboxes) allow one, not the other.
+            if let Err(e) = std::fs::File::open(&path) {
+                report.add_io(&path, &e);
+            }
+        }
+    }
 }
 
 /// Texture images found while converting materials, each queued once.
@@ -67,6 +105,8 @@ struct Images {
     /// Packed roughness + metalness, by the two source textures.
     packed: HashMap<(Option<u32>, Option<u32>), Option<TextureId>>,
     jobs: Vec<ImageJob>,
+    /// Texture files that couldn't be found or read.
+    unreadable: Unreadables,
 }
 
 impl Images {
@@ -79,7 +119,16 @@ impl Images {
             return Some(ImageSource::Bytes(Stream::from(file.content.to_vec())));
         }
         let dir = self.dir.as_deref()?;
-        textures::find_file(dir, &file.relative_filename, &file.absolute_filename).map(ImageSource::File)
+        match textures::find_file(dir, &file.relative_filename, &file.absolute_filename) {
+            Ok(path) => Some(ImageSource::File(path)),
+            Err(reason) => {
+                let name = textures::report_name(&file.relative_filename, &file.absolute_filename);
+                if !name.is_empty() {
+                    self.unreadable.add(name, reason);
+                }
+                None
+            }
+        }
     }
 
     fn queue(&mut self, source: ImageSource, color_space: ColorSpace, b: &mut SceneBuilder) -> Option<TextureId> {

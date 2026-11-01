@@ -235,37 +235,64 @@ const MAX_FOLDER_FILES: usize = 50_000;
 /// Entries open from their real paths, so a model inside still finds the textures
 /// next to it. Hidden files (`.DS_Store`, `.git`) are left out, and symlinks are not
 /// followed, so a link to `/` or a loop cannot run the listing away.
+///
+/// Only the folder itself must be readable. Subfolders that can't be read (a
+/// privacy-protected folder on macOS, one outside an iOS grant) are skipped and
+/// counted, and a folder with more than [`MAX_FOLDER_FILES`] files lists the first
+/// ones, so one corner of a big tree never hides the rest.
 pub fn open_folder(root: &Path) -> Result<Document> {
     let mut entries = Vec::new();
+    let mut skipped: Vec<String> = Vec::new();
+    let mut truncated = false;
     let mut dirs = vec![PathBuf::new()];
-    while let Some(rel) = dirs.pop() {
-        let listing = std::fs::read_dir(root.join(&rel)).with_context(|| format!("reading {}", root.join(&rel).display()))?;
+    'walk: while let Some(rel) = dirs.pop() {
+        let listing = match std::fs::read_dir(root.join(&rel)) {
+            Ok(listing) => listing,
+            Err(e) if rel.as_os_str().is_empty() => return Err(e).with_context(|| format!("reading {}", root.display())),
+            Err(_) => {
+                skipped.push(slash_path(&rel));
+                continue;
+            }
+        };
         for item in listing {
-            let item = item?;
+            // One unreadable item (a broken entry, a racing delete) doesn't end the listing.
+            let Ok(item) = item else { continue };
             let name = item.file_name();
             if name.to_string_lossy().starts_with('.') {
                 continue;
             }
-            let kind = item.file_type()?;
+            let Ok(kind) = item.file_type() else { continue };
             let path = rel.join(&name);
             if kind.is_dir() {
                 dirs.push(path);
             } else if kind.is_file() {
                 if entries.len() == MAX_FOLDER_FILES {
-                    bail!("more than {MAX_FOLDER_FILES} files; open a folder inside it");
+                    truncated = true;
+                    break 'walk;
                 }
-                let size = item.metadata()?.len();
-                let path = path.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
-                entries.push(Entry { path, size, compressed_size: None, is_dir: false });
+                let size = item.metadata().map_or(0, |m| m.len());
+                entries.push(Entry { path: slash_path(&path), size, compressed_size: None, is_dir: false });
             }
         }
     }
     entries.sort_by(|a, b| a.path.cmp(&b.path));
+    skipped.sort();
     let total: u64 = entries.iter().map(|e| e.size).sum();
     let files = entries.len();
-    Ok(Document::new("Folder", Content::Container(Arc::new(FolderContainer { root: root.into(), entries })))
-        .with_meta("Files", files)
-        .with_meta("Total size", format!("{total} bytes")))
+    let mut doc = Document::new("Folder", Content::Container(Arc::new(FolderContainer { root: root.into(), entries })))
+        .with_meta("Files", if truncated { format!("{files} (the first {MAX_FOLDER_FILES}; open a folder inside it for the rest)") } else { files.to_string() })
+        .with_meta("Total size", format!("{total} bytes"));
+    if !skipped.is_empty() {
+        let shown: Vec<&str> = skipped.iter().take(5).map(String::as_str).collect();
+        let more = if skipped.len() > shown.len() { format!(" and {} more", skipped.len() - shown.len()) } else { String::new() };
+        doc = doc.with_meta("Not readable", format!("{} folder(s) skipped: {}{more}", skipped.len(), shown.join(", ")));
+    }
+    Ok(doc)
+}
+
+/// A relative path with `/` separators, as entries are named.
+fn slash_path(p: &Path) -> String {
+    p.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/")
 }
 
 struct FolderContainer {
@@ -346,6 +373,30 @@ mod tests {
         assert_eq!(src.bytes(), b"png");
         // A real path, so a loader can find the files next to it.
         assert_eq!(src.path(), Some(root.join("textures/albedo.png").as_path()));
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn unreadable_subfolders_are_skipped_not_fatal() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = std::env::temp_dir().join(format!("viewer-folder-locked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("locked")).unwrap();
+        std::fs::write(root.join("model.obj"), b"v 0 0 0").unwrap();
+        std::fs::write(root.join("locked/secret.png"), b"x").unwrap();
+        std::fs::set_permissions(root.join("locked"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let doc = open_folder(&root);
+        std::fs::set_permissions(root.join("locked"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        let doc = doc.unwrap();
+        let note = doc.metadata.iter().find(|(k, _)| k == "Not readable").map(|(_, v)| v.clone());
+        let c = container(doc);
+        let paths: Vec<&str> = c.entries().iter().map(|e| e.path.as_str()).collect();
+        // Root runs this as root on some CI images, where nothing is unreadable.
+        if paths.len() == 1 {
+            assert_eq!(paths, ["model.obj"]);
+            assert!(note.unwrap().contains("locked"));
+        }
         std::fs::remove_dir_all(&root).unwrap();
     }
 }

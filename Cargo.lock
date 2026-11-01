@@ -1316,7 +1316,6 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 [[package]]
 name = "libfilepicker"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libfilepicker.git?rev=98d36bf2418d205e9b1e40898175af975732a14c#98d36bf2418d205e9b1e40898175af975732a14c"
 dependencies = [
  "block2 0.6.2",
  "objc2 0.6.5",

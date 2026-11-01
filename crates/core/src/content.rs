@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use crate::{FileSource, Result};
 
@@ -10,6 +10,9 @@ pub struct Document {
     pub content: Content,
     /// Key/value pairs shown in the info panel.
     pub metadata: Vec<(String, String)>,
+    /// Files this one refers to (textures, layers, buffers) that couldn't be read.
+    /// Shared with the loader's background work, so it can grow after loading.
+    pub unreadable: Unreadables,
 }
 
 impl Document {
@@ -18,12 +21,78 @@ impl Document {
             format: format.into(),
             content,
             metadata: Vec::new(),
+            unreadable: Unreadables::default(),
         }
     }
 
     pub fn with_meta(mut self, key: impl Into<String>, value: impl ToString) -> Self {
         self.metadata.push((key.into(), value.to_string()));
         self
+    }
+}
+
+/// Why a file a document refers to couldn't be read.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Unreadable {
+    /// It may well be there, but Viewer isn't allowed to read it: on iOS the user
+    /// picked a single file, and its neighbours are outside that grant. Opening the
+    /// folder fixes it.
+    Blocked,
+    /// It isn't there (or isn't a file): the model names a texture that wasn't
+    /// copied along. Opening the folder won't help.
+    Missing,
+}
+
+impl Unreadable {
+    /// Classifies a failed open, read or stat of the file.
+    pub fn of(e: &std::io::Error) -> Self {
+        match e.kind() {
+            // EPERM (the iOS sandbox, macOS privacy) and EACCES (file modes).
+            std::io::ErrorKind::PermissionDenied => Unreadable::Blocked,
+            _ => Unreadable::Missing,
+        }
+    }
+}
+
+/// One file a document couldn't read: its name as the document gave it, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct UnreadableFile {
+    pub name: String,
+    pub reason: Unreadable,
+}
+
+/// The files a document couldn't read. Cheap to clone; every clone is the same list,
+/// so a loader can hand one to its decoder threads and the page sees what they add.
+#[derive(Clone, Default, Debug)]
+pub struct Unreadables(Arc<Mutex<Vec<UnreadableFile>>>);
+
+impl Unreadables {
+    /// Records `name` (once; a later report for the same name is ignored).
+    pub fn add(&self, name: impl Into<String>, reason: Unreadable) {
+        let name = name.into();
+        let mut list = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if !list.iter().any(|f| f.name == name) {
+            list.push(UnreadableFile { name, reason });
+        }
+    }
+
+    /// Records a failed read of `path` from its error, under the path's file name.
+    pub fn add_io(&self, path: &std::path::Path, e: &std::io::Error) {
+        let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into_owned());
+        self.add(name, Unreadable::of(e));
+    }
+
+    pub fn list(&self) -> Vec<UnreadableFile> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// The names that failed for `reason`.
+    pub fn names(&self, reason: Unreadable) -> Vec<String> {
+        self.list().into_iter().filter(|f| f.reason == reason).map(|f| f.name).collect()
+    }
+
+    pub fn count(&self, reason: Unreadable) -> usize {
+        self.0.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|f| f.reason == reason).count()
     }
 }
 

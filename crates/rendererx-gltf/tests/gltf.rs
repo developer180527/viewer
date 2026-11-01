@@ -139,7 +139,7 @@ fn gltf_text_with_data_uris_strips_quantized_colours_and_images() {
 
     struct Images;
     impl Resolver for Images {
-        fn resolve(&self, uri: &str) -> std::result::Result<Bytes, String> {
+        fn resolve(&self, uri: &str) -> std::result::Result<Bytes, rendererx_gltf::ResolveError> {
             assert_eq!(uri, "albedo%20map.png");
             Ok(Arc::new(b"\x89PNG fake".to_vec()))
         }
@@ -254,14 +254,17 @@ fn external_files_stay_inside_the_models_folder() {
     {
         // A symlink inside the folder that points out of it.
         std::os::unix::fs::symlink("/etc/hosts", dir.join("link.bin")).unwrap();
-        assert!(r.resolve("link.bin").err().unwrap().contains("leaves"), "symlinks can't escape");
+        assert!(r.resolve("link.bin").err().unwrap().message.contains("leaves"), "symlinks can't escape");
         // Not a regular file: refused instead of blocking on read.
         std::fs::create_dir(dir.join("sub")).unwrap();
-        assert!(r.resolve("sub").err().unwrap().contains("not a regular file"));
+        assert!(r.resolve("sub").err().unwrap().message.contains("not a regular file"));
     }
+    // Missing and refused files say which they are, so a host can tell the user.
+    assert_eq!(r.resolve("gone.bin").err().unwrap().kind, rendererx_gltf::ResolveErrorKind::NotFound);
+    assert_eq!(r.resolve("../x.bin").err().unwrap().kind, rendererx_gltf::ResolveErrorKind::Refused);
     let mut capped = resolver_for(&dir.join("model.gltf"));
     capped.max_bytes = 2;
-    assert!(capped.resolve("a%20b.bin").err().unwrap().contains("limit"));
+    assert!(capped.resolve("a%20b.bin").err().unwrap().message.contains("limit"));
     std::fs::remove_dir_all(dir).unwrap();
 }
 
@@ -290,4 +293,37 @@ fn loaded_model_renders_in_its_material_colour() {
     let pixels = view.read_pixels(&device, &queue).unwrap();
     let c = &pixels[(32 * 64 + 32) * 4..][..4];
     assert!(c[0] > 2 * c[1] && c[0] > 2 * c[2], "centre should be red, got {c:?}");
+}
+
+#[cfg(unix)]
+#[test]
+fn external_files_that_cant_be_read_are_reported_by_kind() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = std::env::temp_dir().join(format!("rendererx-gltf-blocked-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("locked")).unwrap();
+    std::fs::write(dir.join("locked/mesh.bin"), [0u8; 36]).unwrap();
+    let file = text(json!({
+        "asset": {"version": "2.0"},
+        "buffers": [{"byteLength": 36, "uri": "locked/mesh.bin"}, {"byteLength": 4, "uri": "absent.bin"}],
+        "images": [{"uri": "locked/albedo.png"}],
+        "textures": [{"source": 0}],
+        "materials": [{"pbrMetallicRoughness": {"baseColorTexture": {"index": 0}}}],
+        "bufferViews": [{"buffer": 0, "byteLength": 36}],
+        "accessors": [{"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3"}],
+        "meshes": [{"primitives": [{"attributes": {"POSITION": 0}, "material": 0}]}],
+        "nodes": [{"mesh": 0}]
+    }));
+    std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o000)).unwrap();
+    let (_s, mut b) = CpuScene::new();
+    let loaded = load(file, &resolver_for(&dir.join("model.gltf")), &mut b);
+    std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    let loaded = loaded.unwrap();
+    use rendererx_gltf::ResolveErrorKind::*;
+    assert!(loaded.unreadable.contains(&("absent.bin".into(), NotFound)), "{:?}", loaded.unreadable);
+    // Root (some CI images) can read the locked folder anyway.
+    if loaded.unreadable.len() > 1 {
+        assert!(loaded.unreadable.contains(&("locked/mesh.bin".into(), NotPermitted)), "{:?}", loaded.unreadable);
+    }
+    std::fs::remove_dir_all(dir).unwrap();
 }

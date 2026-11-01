@@ -10,6 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rendererx_scene::{ColorSpace, Stream, TextureData, TextureId, TextureSink};
+use viewer_core::{Unreadable, Unreadables};
 
 /// Longest side kept. A 4K base colour map is 64 MB as RGBA8 (85 MB with mips); for a
 /// viewer 2048 (21 MB) is sharp enough and a quarter of the memory.
@@ -41,7 +42,10 @@ pub struct ImageJob {
 /// it is dropped (its page closed), they stop before the next image instead of
 /// decoding a whole model's textures nobody will see, which also lets the scene and
 /// its decoded images be freed.
-pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
+///
+/// Image files that can't be read (not allowed, or gone since they were found) are
+/// added to `report`, the document's list.
+pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, report: Unreadables) -> Arc<AtomicUsize> {
     let pending = Arc::new(AtomicUsize::new(jobs.len()));
     if jobs.is_empty() {
         return pending;
@@ -61,7 +65,7 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
                                 return; // The document is gone.
                             }
                             // A failed image leaves its material untextured.
-                            if let Some(data) = decode(&job.source, job.color_space) {
+                            if let Some(data) = decode(&job.source, job.color_space, &report) {
                                 let _ = sink.set_texture(job.texture, data);
                             }
                             if let Some(left) = left.upgrade() {
@@ -76,23 +80,27 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>) -> Arc<AtomicUsize> {
     pending
 }
 
-fn decode(source: &ImageSource, color_space: ColorSpace) -> Option<TextureData> {
+fn decode(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -> Option<TextureData> {
     if let ImageSource::MetalRough { roughness, metalness } = source {
-        return metal_rough(roughness.as_ref(), metalness.as_ref());
+        return metal_rough(roughness.as_ref(), metalness.as_ref(), report);
     }
-    let rgba = load(source, color_space)?;
+    let rgba = load(source, color_space, report)?;
     let (w, h) = rgba.dimensions();
     Some(with_mips(w, h, rgba.into_raw(), color_space))
 }
 
 /// One channel from each image, at the size of the larger, packed as
 /// (1, roughness, metalness, 1).
-fn metal_rough(roughness: Option<&(Box<ImageSource>, usize)>, metalness: Option<&(Box<ImageSource>, usize)>) -> Option<TextureData> {
+fn metal_rough(
+    roughness: Option<&(Box<ImageSource>, usize)>,
+    metalness: Option<&(Box<ImageSource>, usize)>,
+    report: &Unreadables,
+) -> Option<TextureData> {
     // Decoded one after the other and reduced to one channel each, so only one full
     // image is in memory at a time.
     let channel = |src: Option<&(Box<ImageSource>, usize)>| {
         let (src, c) = src?;
-        let rgba = load(src, ColorSpace::Linear)?;
+        let rgba = load(src, ColorSpace::Linear, report)?;
         let (w, h) = rgba.dimensions();
         let c = (*c).min(3);
         image::GrayImage::from_raw(w, h, rgba.as_raw().iter().skip(c).step_by(4).copied().collect())
@@ -117,15 +125,21 @@ fn metal_rough(roughness: Option<&(Box<ImageSource>, usize)>, metalness: Option<
 
 /// Decodes and scales one image to at most [`MAX_SIDE`]. `color_space` says how to
 /// store float (EXR) data: sRGB-encoded for colour maps, as-is for data maps.
-fn load(source: &ImageSource, color_space: ColorSpace) -> Option<image::RgbaImage> {
+fn load(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -> Option<image::RgbaImage> {
     let file;
     let bytes: &[u8] = match source {
         ImageSource::Bytes(s) => s.as_slice(),
         ImageSource::File(path) => {
-            if std::fs::metadata(path).ok()?.len() > MAX_FILE {
-                return None;
-            }
-            file = std::fs::read(path).ok()?;
+            // Found earlier, but a sandbox can allow the stat and refuse the read.
+            let read = std::fs::metadata(path).and_then(|m| if m.len() > MAX_FILE { Ok(None) } else { std::fs::read(path).map(Some) });
+            file = match read {
+                Ok(Some(bytes)) => bytes,
+                Ok(None) => return None,
+                Err(e) => {
+                    report.add_io(path, &e);
+                    return None;
+                }
+            };
             &file
         }
         ImageSource::MetalRough { .. } => return None,
@@ -417,8 +431,12 @@ fn linear_to_srgb(c: f32) -> f32 {
 /// next to the model and in a `textures/` folder (where exporters and asset libraries
 /// usually put them). Only files inside the model's folder are used, so a model can't
 /// make the viewer read elsewhere.
-pub fn find_file(dir: &Path, relative: &str, absolute: &str) -> Option<PathBuf> {
-    let root = dir.canonicalize().ok()?;
+///
+/// Not found: [`Unreadable::Blocked`] when a place it could be couldn't be looked at
+/// (the folder, or a candidate, refused with "not permitted": on iOS, the user picked
+/// the model alone), else [`Unreadable::Missing`].
+pub fn find_file(dir: &Path, relative: &str, absolute: &str) -> Result<PathBuf, Unreadable> {
+    let root = dir.canonicalize().map_err(|e| Unreadable::of(&e))?;
     let name = |p: &str| Path::new(&p.replace('\\', "/")).file_name().map(PathBuf::from);
     let mut candidates: Vec<PathBuf> = Vec::new();
     let rel = PathBuf::from(relative.replace('\\', "/"));
@@ -429,10 +447,23 @@ pub fn find_file(dir: &Path, relative: &str, absolute: &str) -> Option<PathBuf> 
         candidates.push(file.clone());
         candidates.push(Path::new("textures").join(&file));
     }
-    candidates.into_iter().find_map(|c| {
-        let real = root.join(c).canonicalize().ok()?;
-        (real.starts_with(&root) && real.is_file()).then_some(real)
-    })
+    let mut blocked = false;
+    for c in candidates {
+        // A refusal anywhere means the file may be there, just out of reach.
+        let found = root.join(c).canonicalize().and_then(|real| real.metadata().map(|m| (real, m)));
+        match found {
+            Ok((real, meta)) if real.starts_with(&root) && meta.is_file() => return Ok(real),
+            Ok(_) => {}
+            Err(e) => blocked |= Unreadable::of(&e) == Unreadable::Blocked,
+        }
+    }
+    Err(if blocked { Unreadable::Blocked } else { Unreadable::Missing })
+}
+
+/// The name to report a texture under: the file name it was stored with.
+pub fn report_name(relative: &str, absolute: &str) -> String {
+    let pick = if relative.is_empty() { absolute } else { relative };
+    pick.rsplit(['/', '\\']).next().unwrap_or(pick).to_string()
 }
 
 #[cfg(test)]
@@ -507,7 +538,7 @@ mod tests {
         let jobs: Vec<ImageJob> = (0..200)
             .map(|i| ImageJob { texture: b.reserve_texture().unwrap(), source: ImageSource::Bytes(png(i as u8).into()), color_space: ColorSpace::Srgb })
             .collect();
-        let pending = spawn(b.texture_sink(), jobs);
+        let pending = spawn(b.texture_sink(), jobs, Unreadables::default());
         drop(pending);
         // The workers notice before the next image; give them time to finish one each.
         std::thread::sleep(std::time::Duration::from_millis(300));
@@ -523,11 +554,11 @@ mod tests {
             Box::new(ImageSource::Bytes(out.into()))
         };
         // Different sizes: packed at the larger.
-        let t = decode(&ImageSource::MetalRough { roughness: Some((png(200, 4), 0)), metalness: Some((png(30, 2), 0)) }, ColorSpace::Linear).unwrap();
+        let t = decode(&ImageSource::MetalRough { roughness: Some((png(200, 4), 0)), metalness: Some((png(30, 2), 0)) }, ColorSpace::Linear, &Unreadables::default()).unwrap();
         assert_eq!((t.width, t.height, t.color_space), (4, 4, ColorSpace::Linear));
         assert_eq!(&t.levels[0].as_slice()[..4], [255, 200, 30, 255]);
         // Only roughness: metal is white, so the metallic factor alone applies.
-        let t = decode(&ImageSource::MetalRough { roughness: Some((png(90, 2), 0)), metalness: None }, ColorSpace::Linear).unwrap();
+        let t = decode(&ImageSource::MetalRough { roughness: Some((png(90, 2), 0)), metalness: None }, ColorSpace::Linear, &Unreadables::default()).unwrap();
         assert_eq!(&t.levels[0].as_slice()[..4], [255, 90, 255, 255]);
     }
 
@@ -538,8 +569,34 @@ mod tests {
         std::fs::write(dir.join("textures/wood.jpg"), b"x").unwrap();
         let found = find_file(&dir, "", r"C:\Users\artist\Desktop\wood.jpg").unwrap();
         assert!(found.ends_with("textures/wood.jpg"));
-        assert!(find_file(&dir, "../outside.jpg", "").is_none());
-        assert!(find_file(&dir, "missing.png", "").is_none());
+        assert_eq!(find_file(&dir, "../outside.jpg", ""), Err(Unreadable::Missing));
+        assert_eq!(find_file(&dir, "missing.png", ""), Err(Unreadable::Missing));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// What iOS does to the files next to a model the user picked alone: a refusal.
+    /// Here a folder with no permissions stands in for it.
+    #[cfg(unix)]
+    #[test]
+    fn textures_in_a_folder_that_cant_be_read_are_blocked_not_missing() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = std::env::temp_dir().join(format!("viewer-fmt-3d-blocked-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("textures")).unwrap();
+        std::fs::write(dir.join("textures/wood.png"), b"x").unwrap();
+        std::fs::set_permissions(dir.join("textures"), std::fs::Permissions::from_mode(0o000)).unwrap();
+        let found = find_file(&dir, "textures/wood.png", "");
+        let decoded_report = Unreadables::default();
+        let decoded = load(&ImageSource::File(dir.join("textures/wood.png")), ColorSpace::Srgb, &decoded_report);
+        std::fs::set_permissions(dir.join("textures"), std::fs::Permissions::from_mode(0o755)).unwrap();
+        // Root (some CI images) can read anything; there is nothing to test then.
+        if found.is_err() {
+            assert_eq!(found, Err(Unreadable::Blocked));
+            assert!(decoded.is_none());
+            assert_eq!(decoded_report.names(Unreadable::Blocked), ["wood.png"], "a refused read is reported, not just skipped");
+        }
+        // Absent is missing.
+        assert_eq!(find_file(&dir, "textures/stone.png", ""), Err(Unreadable::Missing));
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

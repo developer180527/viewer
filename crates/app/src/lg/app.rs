@@ -2,15 +2,15 @@
 //! Knows nothing about winit or the GPU; the host in `mod.rs` drives it.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use libgui::*;
 use libgui_keymap::{Chord, Keymap};
-use viewer_core::{Document, FileSource};
-use libfilepicker::Picked;
+use libfilepicker::{PickOptions, Picked};
+use viewer_core::{Document, FileSource, Unreadable};
 
 use super::Textures;
 use super::views::{self, Action, ViewState};
@@ -27,6 +27,18 @@ pub struct Page {
     pub attempts: Vec<(&'static str, String)>,
     pub load_time: Duration,
     pub view: ViewState,
+    /// The picked file or folder this page reads through, kept as long as the page is
+    /// open (see [`Picked`]): a root page owns it, pages opened from it share it.
+    /// Dropped with the page on Back or when a new file replaces it, never earlier.
+    access: Option<Rc<Picked>>,
+}
+
+/// An answer from the file picker, and what it was for.
+struct Pick {
+    picked: Picked,
+    /// Open Folder… on a model whose neighbours were blocked: reopen this model
+    /// from inside the picked folder, if it is in there.
+    reopen: Option<PathBuf>,
 }
 
 /// How wide the window is, which decides where the chrome goes
@@ -98,9 +110,10 @@ pub struct ViewerApp {
     /// Textures of closed pages, for the host to free.
     pub retired: Vec<TextureId>,
     /// Where the file picker leaves its answer, which can come after `pick` returns.
-    picked: Rc<RefCell<Option<Picked>>>,
-    /// The file last picked, held so it stays readable (see [`Picked`]).
-    reading: Option<Picked>,
+    picked: Rc<RefCell<Option<Pick>>>,
+    /// Access for the root page the current job will open, handed to that page when
+    /// it loads. A failed load drops it and leaves the pages on screen as they were.
+    pending_access: Option<Rc<Picked>>,
     keys: Keymap<Command>,
 }
 
@@ -119,7 +132,7 @@ impl ViewerApp {
             title: None,
             retired: Vec::new(),
             picked: Rc::default(),
-            reading: None,
+            pending_access: None,
             keys: Self::keymap(),
         }
     }
@@ -148,29 +161,33 @@ impl ViewerApp {
 
     fn open_path(&mut self, path: PathBuf) {
         self.job = Some(Job::open_path(path, None));
+        self.pending_access = None;
     }
 
     fn open_dialog(&mut self) {
         let slot = Rc::clone(&self.picked);
-        libfilepicker::pick(move |picked| {
-            if picked.is_some() {
-                *slot.borrow_mut() = picked;
-                if let Some(wake) = crate::loading::WAKE.get() {
-                    wake();
-                }
-            }
-        });
+        libfilepicker::pick(move |picked| deliver(&slot, picked, None));
+    }
+
+    /// Open Folder…: asks for the folder `model` is in (the picker opens there, so it
+    /// is one tap), then reopens the model from inside it.
+    fn open_folder_for(&mut self, model: PathBuf) {
+        let slot = Rc::clone(&self.picked);
+        let opts = PickOptions { folders: true, start_in: model.parent().map(Path::to_path_buf) };
+        libfilepicker::pick_with(opts, move |picked| deliver(&slot, picked, Some(model)));
     }
 
     fn open_entry(&mut self, container: Arc<dyn viewer_core::Container>, index: usize) {
         let name = container.entries()[index].path.clone();
         self.job = Some(Job::spawn(name, Target::Push, None, move || container.open_entry(index)));
+        self.pending_access = None;
     }
 
     fn view_as(&mut self, loader: &'static str) {
         let Some(page) = self.stack.last() else { return };
         let src = page.src.clone();
         self.job = Some(Job::spawn(src.name().into(), Target::ReplaceTop, Some(loader.into()), move || Ok(src)));
+        self.pending_access = None;
     }
 
     fn close_page(&mut self, page: Page) {
@@ -188,21 +205,35 @@ impl ViewerApp {
     /// Starts loading a file the picker chose, or takes in a finished load. Returns
     /// true when a file started or finished loading (successfully or not).
     pub fn poll_job(&mut self) -> bool {
-        let picked = self.picked.borrow_mut().take();
-        if let Some(picked) = picked {
-            self.open_path(picked.path().to_path_buf());
-            self.reading = Some(picked);
+        let pick = self.picked.borrow_mut().take();
+        if let Some(Pick { picked, reopen }) = pick {
+            let access = Rc::new(picked);
+            // Granted the model's folder (or one above it): open the model itself, now
+            // readable with its neighbours. Any other folder lists as usual.
+            let path = match reopen {
+                Some(model) if inside(&model, access.path()) => model,
+                _ => access.path().to_path_buf(),
+            };
+            self.open_path(path);
+            self.pending_access = Some(access);
             return true;
         }
         let Some(job) = &self.job else { return false };
         let Some(result) = job.poll() else { return false };
         let target = job.target;
         self.job = None;
+        // A root page owns what was picked for it; others read through the page they
+        // were opened from (or replace).
+        let access = match target {
+            Target::Root => self.pending_access.take(),
+            Target::Push | Target::ReplaceTop => self.stack.last().and_then(|p| p.access.clone()),
+        };
+        self.pending_access = None;
         match result {
             Ok(Loaded { src, doc, loader, attempts, load_time }) => {
                 self.error = None;
                 let view = ViewState::new(&doc.content);
-                let page = Page { id: self.next_page_id, src, doc, loader, attempts, load_time, view };
+                let page = Page { id: self.next_page_id, src, doc, loader, attempts, load_time, view, access };
                 self.next_page_id += 1;
                 match target {
                     Target::Root => {
@@ -463,6 +494,17 @@ impl ViewerApp {
             for (k, v) in &page.doc.metadata {
                 row(ui, k, v);
             }
+            // Files the document refers to but couldn't read. Blocked ones also get the
+            // banner over the content; missing ones only this quiet note, since no
+            // permission brings them back.
+            for (reason, title) in [(Unreadable::Missing, "Not found"), (Unreadable::Blocked, "Not allowed to read")] {
+                let names = page.doc.unreadable.names(reason);
+                if !names.is_empty() {
+                    ui.space(8.0);
+                    ui.section(&format!("{title} ({})", names.len()));
+                    ui.paragraph(&name_list(&names, 12));
+                }
+            }
             if !page.attempts.is_empty() {
                 ui.space(8.0);
                 ui.section("Loaders that failed first");
@@ -479,6 +521,9 @@ impl ViewerApp {
             ui.container(Layout::row().padding(Insets::all(8.0)), Frame::none(), |ui| {
                 ui.text_with(&format!("Couldn't open: {err}"), 14.0, danger);
             });
+        }
+        if let Some(model) = self.blocked_banner(ui) {
+            self.open_folder_for(model);
         }
         let dark = self.dark;
         match self.stack.last_mut() {
@@ -497,9 +542,93 @@ impl ViewerApp {
     }
 }
 
+impl ViewerApp {
+    /// When the page's file names files Viewer isn't allowed to read (on iOS: the user
+    /// picked the model alone, so its textures are out of reach), a banner over the
+    /// content says so and offers the fix. Returns the model to reopen when its
+    /// Open Folder… is pressed. The model stays usable underneath.
+    fn blocked_banner(&self, ui: &mut Ui) -> Option<PathBuf> {
+        let page = self.stack.last()?;
+        let blocked = page.doc.unreadable.count(Unreadable::Blocked);
+        let model = page.src.path().filter(|_| blocked > 0 && !page.src.is_folder())?.to_path_buf();
+        let pal = ui.theme.palette;
+        let files = if blocked == 1 { "1 file isn't shown.".to_string() } else { format!("{blocked} files aren't shown.") };
+        let why = if cfg!(target_os = "ios") {
+            "iOS only lets Viewer open the file you picked, not the files next to it. Open its folder to show them."
+        } else {
+            "Viewer isn't allowed to read the folder this file is in. Open the folder to grant it."
+        };
+        let frame = Frame { fill: pal.surface, border: pal.warning, border_width: 1.0, ..Frame::none() };
+        let mut open = false;
+        ui.container_id(Id::from_name("blocked banner"), Layout::row().padding(Insets::xy(12.0, 8.0)).gap(12.0).align(Align::Start, Align::Center), frame, |ui| {
+            ui.container(Layout::column().width(Size::Grow(1.0)), Frame::none(), |ui| {
+                ui.paragraph(&format!("{files} {why}"));
+            });
+            open = ui.button("Open Folder…").clicked;
+        });
+        open.then_some(model)
+    }
+}
+
+/// Hands a picker's answer to the app and wakes it (the answer can come after the
+/// frame that asked, on phones). A cancelled pick changes nothing.
+fn deliver(slot: &Rc<RefCell<Option<Pick>>>, picked: Option<Picked>, reopen: Option<PathBuf>) {
+    let Some(picked) = picked else { return };
+    *slot.borrow_mut() = Some(Pick { picked, reopen });
+    if let Some(wake) = crate::loading::WAKE.get() {
+        wake();
+    }
+}
+
+/// `path` is `folder` or somewhere under it. Compared as real paths: iOS mixes
+/// `/var/…` and `/private/var/…` for the same place, and a picked folder may be
+/// reached through a link.
+fn inside(path: &Path, folder: &Path) -> bool {
+    let real = |p: &Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    real(path).starts_with(real(folder))
+}
+
+/// Up to `max` names, then how many more.
+fn name_list(names: &[String], max: usize) -> String {
+    let shown = names.iter().take(max).map(String::as_str).collect::<Vec<_>>().join(", ");
+    match names.len().saturating_sub(max) {
+        0 => shown,
+        more => format!("{shown} and {more} more"),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::WidthClass::{self, *};
+
+    #[test]
+    fn a_model_is_inside_its_own_folder_and_its_parents() {
+        let dir = std::env::temp_dir().join(format!("viewer-inside-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("car/textures")).unwrap();
+        std::fs::write(dir.join("car/car.usdz"), b"").unwrap();
+        let model = dir.join("car/car.usdz");
+        assert!(super::inside(&model, &dir.join("car")));
+        assert!(super::inside(&model, &dir), "a parent folder grants it too");
+        assert!(!super::inside(&model, &dir.join("car/textures")), "a folder inside the model's doesn't");
+        assert!(!super::inside(&model, &std::env::temp_dir().join("elsewhere")));
+        // Through a link to the same place (iOS's /var and /private/var).
+        #[cfg(unix)]
+        {
+            let link = std::env::temp_dir().join(format!("viewer-inside-link-{}", std::process::id()));
+            let _ = std::fs::remove_file(&link);
+            std::os::unix::fs::symlink(&dir, &link).unwrap();
+            assert!(super::inside(&link.join("car/car.usdz"), &dir.join("car")));
+            std::fs::remove_file(link).unwrap();
+        }
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn long_name_lists_are_cut() {
+        let names: Vec<String> = (1..=5).map(|i| format!("t{i}.png")).collect();
+        assert_eq!(super::name_list(&names, 3), "t1.png, t2.png, t3.png and 2 more");
+        assert_eq!(super::name_list(&names[..2], 3), "t1.png, t2.png");
+    }
 
     #[test]
     fn width_classes() {

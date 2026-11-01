@@ -171,7 +171,7 @@ The renderer doesn't parse files, but its input types are shaped so loaders can 
 `rendererx-gltf` (implemented) follows these rules:
 - Its own reader for the glTF subset we use (serde_json), not the `gltf` crate, which copies the GLB binary chunk. Every offset, stride and count is checked against its buffer view and buffer.
 - Images aren't decoded by the adapter: it reserves a `TextureId` per (image, colour space) and returns the encoded bytes (`PendingImage`) for the host's decoders and threads.
-- External files go through a `Resolver`. `DirResolver` refuses absolute paths, URI schemes, `..` and symlinks leading out of the folder, so a model can't make the app read outside its folder; it reads only regular files, up to `max_bytes`.
+- External files go through a `Resolver`. `DirResolver` refuses absolute paths, URI schemes, `..` and symlinks leading out of the folder, so a model can't make the app read outside its folder; it reads only regular files, up to `max_bytes`. Its errors carry a kind (`NotPermitted`, `NotFound`, `Refused`, `Other`), and `Loaded::unreadable` lists the buffers and images that were missing or not permitted, so a host can tell the user whether granting the folder would help (on iOS, picking a single file grants that file alone).
 - Draco and meshopt compression are refused up front (`Error::Unsupported`). Any other unknown required extension, a broken primitive or a missing file becomes a warning, and the rest of the model still loads.
 
 Shading as authored, per format (the adapters fill `Material::shading`):

@@ -38,3 +38,8 @@ strip = true
 # Decoders are unusably slow unoptimised; keep our own crates debuggable.
 [profile.dev.package."*"]
 opt-level = 2
+
+# TEMPORARY, do not commit: the local libfilepicker with `PickOptions` / `pick_with`.
+# Once that is committed and pushed there, bump `rev` above and delete this block.
+[patch."https://github.com/developer180527/libfilepicker.git"]
+libfilepicker = { path = "../libfilepicker" }

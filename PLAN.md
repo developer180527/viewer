@@ -157,7 +157,7 @@ The fallback is always Hex.
 | UI | **libgui** on every platform, one shell (decided, §12.1). The egui frontend from the MVP is removed |
 | CPU fallback renderer | `softbuffer` + `tiny-skia` (instant first frame, no-GPU machines, old BSD boxes) |
 | Async / threads | `rayon` pool + small `tokio` runtime only where I/O needs it |
-| File dialogs / clipboard | `rfd`, `arboard` (desktop); platform pickers on mobile |
+| File dialogs / clipboard | `libfilepicker` (`rfd` on desktop, `UIDocumentPickerViewController` on iOS), `arboard` |
 | Fonts | `fontdb`, which loads system fonts lazily (CJK fonts are not bundled) |
 
 ---
@@ -399,3 +399,17 @@ The chrome adapts to width classes and input kind, not to the platform: see docs
 
 ### 12.9 Still open
 - Whether the resident agent (§7) should ship on by default on desktop.
+
+
+### Folder access (iOS, sandboxed macOS)
+
+A picked folder grants everything under it; a picked file grants that file alone,
+and nothing reaches upward. Loaders report every referenced file they couldn't
+read on `Document::unreadable`, as *blocked* (not permitted) or *missing*. Blocked
+files show a banner with **Open Folder…**, which opens the picker in the model's
+folder and reopens the model inside the grant; missing ones are listed in the info
+panel. Each root page holds its own `Picked`, released when the page goes.
+Later, with a Recents list: security-scoped bookmarks (`bookmarkData` on iOS, with
+`startAccessingSecurityScopedResource` after resolving, and re-saving stale ones),
+and `CFBundleDocumentTypes` + `LSSupportsOpeningDocumentsInPlace` so files tapped
+in the Files app open in Viewer (those URLs are single-file grants too).

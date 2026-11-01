@@ -19,7 +19,7 @@ use rendererx_scene::{
 };
 use usd_lite::geom::{self, Channel, Input, TextureInput};
 use usd_lite::{Format, Layer, Limits, Value};
-use viewer_core::{FileSource, Result};
+use viewer_core::{FileSource, Result, Unreadable, Unreadables};
 
 use crate::textures::{self, ImageJob, ImageSource};
 
@@ -34,6 +34,8 @@ pub struct Loaded {
     pub format: &'static str,
     /// Layers composed in besides the root.
     pub layers: usize,
+    /// Files the stage names that couldn't be read: layers and textures.
+    pub unreadable: Unreadables,
 }
 
 /// Where texture files come from: inside the package, or next to the layers.
@@ -53,35 +55,70 @@ impl usd_lite::Resolver for NoFiles {
     }
 }
 
+/// `usd-lite`'s file resolver, plus a note of each layer it couldn't read and why:
+/// a sublayer or reference outside an iOS grant drops part of the stage, and the
+/// user should hear that opening the folder brings it back.
+struct ReportingResolver {
+    inner: usd_lite::FsResolver,
+    report: Unreadables,
+}
+
+impl usd_lite::Resolver for ReportingResolver {
+    fn resolve(&self, asset: &str, anchor: &str) -> Option<(String, Vec<u8>)> {
+        let found = self.inner.resolve(asset, anchor);
+        if found.is_none() && !asset.contains("://") && !asset.contains('<') {
+            let path = PathBuf::from(usd_lite::anchored(anchor, asset));
+            // Only what FsResolver would have read: USD files on disk.
+            let usd = path.extension().and_then(|e| e.to_str()).is_some_and(|e| matches!(e.to_ascii_lowercase().as_str(), "usd" | "usda" | "usdc"));
+            if usd && let Err(e) = std::fs::metadata(&path).and_then(|_| std::fs::File::open(&path).map(drop)) {
+                self.report.add_io(&path, &e);
+            }
+        }
+        found
+    }
+}
+
 impl Files<'_> {
-    fn source(&self, asset: &str) -> Option<ImageSource> {
+    /// Where `asset` is, or why not: `Err(None)` for what isn't a file problem
+    /// (UDIM sets aren't read yet).
+    fn source(&self, asset: &str) -> std::result::Result<ImageSource, Option<Unreadable>> {
         if asset.contains("<UDIM>") {
-            return None;
+            return Err(None);
         }
         match self {
             Files::Package { package, src } => {
                 // Exporters often record the path on their machine: fall back to the
                 // file name, at the package root or in `textures/`.
                 let name = asset.rsplit(['/', '\\']).next().unwrap_or(asset);
-                let bytes = [asset.to_string(), name.to_string(), format!("textures/{name}")].iter().find_map(|a| package.file(a))?;
+                let missing = Err(Some(Unreadable::Missing));
+                let Some(bytes) = [asset.to_string(), name.to_string(), format!("textures/{name}")].iter().find_map(|a| package.file(a)) else {
+                    return missing;
+                };
                 // A slice of the mapped file: shared, not copied.
                 let start = bytes.as_ptr() as usize - src.bytes().as_ptr() as usize;
-                Stream::from_bytes(src.shared_bytes(), start, bytes.len()).ok().map(ImageSource::Bytes)
+                Stream::from_bytes(src.shared_bytes(), start, bytes.len()).map(ImageSource::Bytes).or(missing)
             }
             Files::Dir { root, layer_dirs } => {
                 // Anchored to a layer we composed: inside that layer's folder.
                 let path = Path::new(asset);
-                if path.is_absolute()
-                    && let Ok(real) = path.canonicalize()
-                    && real.is_file()
-                    && layer_dirs.iter().any(|d| real.starts_with(d))
-                {
-                    return Some(ImageSource::File(real));
+                let mut blocked = false;
+                if path.is_absolute() {
+                    match path.canonicalize() {
+                        Ok(real) if real.is_file() && layer_dirs.iter().any(|d| real.starts_with(d)) => return Ok(ImageSource::File(real)),
+                        Ok(_) => {}
+                        Err(e) => blocked = Unreadable::of(&e) == Unreadable::Blocked,
+                    }
                 }
                 // Otherwise (a path from the exporting machine…): by name, near the model
                 // or near any layer composed into it.
                 let relative = if path.is_absolute() { "" } else { asset.trim_start_matches("./") };
-                root.iter().chain(layer_dirs).find_map(|dir| textures::find_file(dir, relative, asset)).map(ImageSource::File)
+                for dir in root.iter().chain(layer_dirs) {
+                    match textures::find_file(dir, relative, asset) {
+                        Ok(found) => return Ok(ImageSource::File(found)),
+                        Err(reason) => blocked |= reason == Unreadable::Blocked,
+                    }
+                }
+                Err(Some(if blocked { Unreadable::Blocked } else { Unreadable::Missing }))
             }
         }
     }
@@ -91,6 +128,7 @@ pub fn load(src: &FileSource) -> Result<Loaded> {
     let limits = Limits::default();
     let bytes = src.bytes();
     let format = usd_lite::detect(bytes).ok_or_else(|| anyhow!("not a USD file"))?;
+    let unreadable = Unreadables::default();
     let (stage, files, label) = match format {
         Format::Usdz => {
             let package = usd_lite::Package::open(bytes, &limits)?;
@@ -100,8 +138,9 @@ pub fn load(src: &FileSource) -> Result<Loaded> {
         _ => {
             let layer = usd_lite::read_layer(bytes, &limits)?;
             let root_id = src.path().and_then(|p| p.canonicalize().ok());
+            let resolver = ReportingResolver { inner: usd_lite::FsResolver::default(), report: unreadable.clone() };
             let stage = match &root_id {
-                Some(id) => usd_lite::compose(layer, &id.to_string_lossy(), &usd_lite::FsResolver::default(), &limits),
+                Some(id) => usd_lite::compose(layer, &id.to_string_lossy(), &resolver, &limits),
                 None => usd_lite::compose(layer, src.name(), &NoFiles, &limits),
             };
             let layer_dirs = stage.layers.iter().filter_map(|l| Path::new(l).parent()).filter(|d| d.is_absolute()).map(PathBuf::from).collect();
@@ -126,17 +165,18 @@ pub fn load(src: &FileSource) -> Result<Loaded> {
         jobs: Vec::new(),
         warnings: &mut warnings,
         missing_textures: 0,
+        unreadable: unreadable.clone(),
     };
     c.convert();
     if c.missing_textures > 0 {
         let n = c.missing_textures;
-        c.warnings.push(format!("{n} texture file(s) not found next to the model"));
+        c.warnings.push(format!("{n} texture file(s) couldn't be read"));
     }
     let jobs = std::mem::take(&mut c.jobs);
     builder.finish();
     let textures = jobs.len();
-    let pending = textures::spawn(builder.texture_sink(), jobs);
-    Ok(Loaded { scene, warnings, textures, pending, format: label, layers: extra_layers })
+    let pending = textures::spawn(builder.texture_sink(), jobs, unreadable.clone());
+    Ok(Loaded { scene, warnings, textures, pending, format: label, layers: extra_layers, unreadable })
 }
 
 struct Converter<'a, 'f> {
@@ -158,6 +198,7 @@ struct Converter<'a, 'f> {
     jobs: Vec<ImageJob>,
     warnings: &'a mut Vec<String>,
     missing_textures: usize,
+    unreadable: Unreadables,
 }
 
 /// Prim types whose subtrees hold no geometry to draw.
@@ -460,11 +501,12 @@ impl Converter<'_, '_> {
             return *id;
         }
         let id = match self.files.source(&t.file) {
-            Some(source) => self.b.reserve_texture().ok().inspect(|&texture| {
+            Ok(source) => self.b.reserve_texture().ok().inspect(|&texture| {
                 self.jobs.push(ImageJob { texture, source, color_space: if srgb { ColorSpace::Srgb } else { ColorSpace::Linear } });
             }),
-            None => {
+            Err(reason) => {
                 self.missing_textures += 1;
+                self.note(&t.file, reason);
                 None
             }
         };
@@ -480,8 +522,15 @@ impl Converter<'_, '_> {
         if let Some(id) = self.packed.get(&key) {
             return *id;
         }
-        let find = |s: &Option<(String, usize)>| s.as_ref().and_then(|(file, c)| self.files.source(file).map(|src| (Box::new(src), *c)));
+        let mut failed = Vec::new();
+        let mut find = |s: &Option<(String, usize)>| {
+            let (file, c) = s.as_ref()?;
+            self.files.source(file).map(|src| (Box::new(src), *c)).map_err(|reason| failed.push((file.clone(), reason))).ok()
+        };
         let (r, m) = (find(&rough), find(&metal));
+        for (file, reason) in failed {
+            self.note(&file, reason);
+        }
         let id = if r.is_none() && m.is_none() {
             self.missing_textures += 1;
             None
@@ -492,6 +541,15 @@ impl Converter<'_, '_> {
         };
         self.packed.insert(key, id);
         id
+    }
+}
+
+impl Converter<'_, '_> {
+    /// Adds a texture that couldn't be read to the document's list, by file name.
+    fn note(&self, asset: &str, reason: Option<Unreadable>) {
+        if let Some(reason) = reason {
+            self.unreadable.add(textures::report_name(asset, ""), reason);
+        }
     }
 }
 

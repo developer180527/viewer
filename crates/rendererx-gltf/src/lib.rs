@@ -38,15 +38,56 @@ pub enum Error {
 
 /// Loads the external files a `.gltf` refers to (`.bin` buffers, images).
 pub trait Resolver {
-    fn resolve(&self, uri: &str) -> Result<Bytes, String>;
+    fn resolve(&self, uri: &str) -> Result<Bytes, ResolveError>;
+}
+
+/// Why an external file couldn't be loaded. The kind lets a host tell the user what
+/// would help: [`NotPermitted`](ResolveErrorKind::NotPermitted) (grant the folder)
+/// from [`NotFound`](ResolveErrorKind::NotFound) (the file wasn't copied along).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResolveError {
+    pub kind: ResolveErrorKind,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ResolveErrorKind {
+    /// It may be there, but reading it isn't allowed (a sandbox, file modes).
+    NotPermitted,
+    NotFound,
+    /// Not looked for: outside the model's folder, a URL, too big, not a file.
+    Refused,
+    /// A malformed data URI, or another I/O failure.
+    Other,
+}
+
+impl ResolveError {
+    pub fn new(kind: ResolveErrorKind, message: impl Into<String>) -> Self {
+        Self { kind, message: message.into() }
+    }
+
+    fn io(path: &Path, e: &std::io::Error) -> Self {
+        let kind = match e.kind() {
+            std::io::ErrorKind::PermissionDenied => ResolveErrorKind::NotPermitted,
+            std::io::ErrorKind::NotFound => ResolveErrorKind::NotFound,
+            _ => ResolveErrorKind::Other,
+        };
+        Self::new(kind, format!("{}: {e}", path.display()))
+    }
+}
+
+impl std::fmt::Display for ResolveError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.message)
+    }
 }
 
 /// For GLB files and other sources with nowhere to look for external files.
 pub struct NoResolver;
 
 impl Resolver for NoResolver {
-    fn resolve(&self, uri: &str) -> Result<Bytes, String> {
-        Err(format!("can't open external file {uri:?}"))
+    fn resolve(&self, uri: &str) -> Result<Bytes, ResolveError> {
+        Err(ResolveError::new(ResolveErrorKind::Refused, format!("can't open external file {uri:?}")))
     }
 }
 
@@ -65,36 +106,38 @@ impl DirResolver {
         Self { dir: dir.into(), max_bytes: rendererx_scene::SceneLimits::default().max_bytes }
     }
 
-    fn path(&self, uri: &str) -> Result<PathBuf, String> {
+    fn path(&self, uri: &str) -> Result<PathBuf, ResolveError> {
+        let refused = |why: &str| ResolveError::new(ResolveErrorKind::Refused, format!("{uri:?}: {why}"));
         if uri.contains(':') {
-            return Err(format!("{uri:?}: only relative paths are allowed"));
+            return Err(refused("only relative paths are allowed"));
         }
         let rel = PathBuf::from(percent_decode(uri));
         if !rel.components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir)) {
-            return Err(format!("{uri:?}: path leaves the model's folder"));
+            return Err(refused("path leaves the model's folder"));
         }
         let path = self.dir.join(rel);
         // Follow symlinks, then check the real file is still inside the real folder.
         let (real, root) = (path.canonicalize(), self.dir.canonicalize());
         match (real, root) {
             (Ok(real), Ok(root)) if real.starts_with(&root) => Ok(real),
-            (Ok(_), Ok(_)) => Err(format!("{uri:?}: path leaves the model's folder")),
-            (Err(e), _) | (_, Err(e)) => Err(format!("{}: {e}", path.display())),
+            (Ok(_), Ok(_)) => Err(refused("path leaves the model's folder")),
+            (Err(e), _) | (_, Err(e)) => Err(ResolveError::io(&path, &e)),
         }
     }
 }
 
 impl Resolver for DirResolver {
-    fn resolve(&self, uri: &str) -> Result<Bytes, String> {
+    fn resolve(&self, uri: &str) -> Result<Bytes, ResolveError> {
         use std::io::Read;
         let path = self.path(uri)?;
-        let fail = |e: std::io::Error| format!("{}: {e}", path.display());
+        let fail = |e: std::io::Error| ResolveError::io(&path, &e);
         let meta = std::fs::metadata(&path).map_err(fail)?;
         if !meta.is_file() {
-            return Err(format!("{}: not a regular file", path.display()));
+            return Err(ResolveError::new(ResolveErrorKind::Refused, format!("{}: not a regular file", path.display())));
         }
         if meta.len() > self.max_bytes {
-            return Err(format!("{}: {} bytes is over the {}-byte limit", path.display(), meta.len(), self.max_bytes));
+            let why = format!("{}: {} bytes is over the {}-byte limit", path.display(), meta.len(), self.max_bytes);
+            return Err(ResolveError::new(ResolveErrorKind::Refused, why));
         }
         // `take` also caps a file that grows after the size check.
         let mut data = Vec::with_capacity(meta.len() as usize);
@@ -116,6 +159,10 @@ pub struct Loaded {
     pub images: Vec<PendingImage>,
     /// Things that were skipped or approximated, for the host's info panel.
     pub warnings: Vec<String>,
+    /// External files (buffers, images) that couldn't be read because they are
+    /// missing or not permitted, by URI as the file gives it. A blocked buffer loses
+    /// geometry, not only a texture.
+    pub unreadable: Vec<(String, ResolveErrorKind)>,
 }
 
 /// Extensions that change what the data means and can't be skipped.
@@ -142,6 +189,7 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
         }
     }
 
+    let mut unreadable = Vec::new();
     let buffers: Vec<Option<BufferData>> = root
         .buffers
         .iter()
@@ -149,8 +197,8 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
         .map(|(i, b)| {
             let loaded = match (&b.uri, i, &bin) {
                 (None, 0, Some(range)) => Ok(BufferData { bytes: file.clone(), start: range.start, len: range.len() }),
-                (None, _, _) => Err("has no data".to_string()),
-                (Some(uri), _, _) => load_uri(uri, resolver).map(BufferData::whole),
+                (None, _, _) => Err(ResolveError::new(ResolveErrorKind::Other, "has no data")),
+                (Some(uri), _, _) => load_uri(uri, resolver).map(BufferData::whole).inspect_err(|e| note(&mut unreadable, uri, e)),
             };
             loaded.map_err(|e| warnings.push(format!("buffer {i}: {e}"))).ok()
         })
@@ -165,12 +213,13 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
         textures: Vec::new(),
         images: Vec::new(),
         warnings,
+        unreadable,
     };
     let placed = loader.placements();
     loader.set_bounds(&placed);
     loader.add_nodes(&placed);
     loader.builder.finish();
-    Ok(Loaded { images: loader.images, warnings: loader.warnings })
+    Ok(Loaded { images: loader.images, warnings: loader.warnings, unreadable: loader.unreadable })
 }
 
 /// JSON range, and the BIN chunk's range for GLB.
@@ -201,14 +250,22 @@ fn split_container(file: &Bytes) -> Result<(std::ops::Range<usize>, Option<std::
     Ok((json.ok_or_else(|| bad("has no JSON chunk"))?, bin))
 }
 
-fn load_uri(uri: &str, resolver: &dyn Resolver) -> Result<Bytes, String> {
+fn load_uri(uri: &str, resolver: &dyn Resolver) -> Result<Bytes, ResolveError> {
     let Some(rest) = uri.strip_prefix("data:") else { return resolver.resolve(uri) };
-    let (meta, payload) = rest.split_once(',').ok_or("malformed data URI")?;
+    let other = |m: &str| ResolveError::new(ResolveErrorKind::Other, m);
+    let (meta, payload) = rest.split_once(',').ok_or_else(|| other("malformed data URI"))?;
     if !meta.ends_with(";base64") {
-        return Err("only base64 data URIs are supported".into());
+        return Err(other("only base64 data URIs are supported"));
     }
-    let data = base64::engine::general_purpose::STANDARD.decode(payload.trim()).map_err(|e| e.to_string())?;
+    let data = base64::engine::general_purpose::STANDARD.decode(payload.trim()).map_err(|e| other(&e.to_string()))?;
     Ok(Arc::new(data))
+}
+
+/// Keeps the URIs that failed because they're missing or not permitted.
+fn note(unreadable: &mut Vec<(String, ResolveErrorKind)>, uri: &str, e: &ResolveError) {
+    if matches!(e.kind, ResolveErrorKind::NotPermitted | ResolveErrorKind::NotFound) && !unreadable.iter().any(|(u, _)| u == uri) {
+        unreadable.push((uri.to_string(), e.kind));
+    }
 }
 
 fn percent_decode(s: &str) -> String {
@@ -244,6 +301,7 @@ type Primitives = Vec<(MeshId, Option<MaterialId>)>;
 type Convert = fn(&[u32]) -> Vec<u32>;
 
 struct Loader<'a> {
+    unreadable: Vec<(String, ResolveErrorKind)>,
     reader: Reader<'a>,
     resolver: &'a dyn Resolver,
     builder: &'a mut SceneBuilder,
@@ -477,7 +535,10 @@ impl<'a> Loader<'a> {
         let data = match (&img.buffer_view, &img.uri) {
             (Some(view), _) => self.reader.view_bytes(*view).map_err(|e| e.to_string())?,
             (None, Some(uri)) => {
-                let bytes = load_uri(uri, self.resolver)?;
+                let bytes = load_uri(uri, self.resolver).map_err(|e| {
+                    note(&mut self.unreadable, uri, &e);
+                    e.to_string()
+                })?;
                 let len = (*bytes).as_ref().len();
                 Stream::from_bytes(bytes, 0, len).map_err(|e| e.to_string())?
             }
