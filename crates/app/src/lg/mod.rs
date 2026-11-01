@@ -491,6 +491,10 @@ struct Live {
     last: Instant,
     /// Time since the last frame that was actually built.
     idle: f32,
+    /// Something outside libgui changed what the UI shows (a load finished, a
+    /// file was picked, a texture decoded), so the next frame must be built.
+    /// `Ui::request_repaint` can't say this: it only counts during a frame.
+    stale: bool,
     batches: Vec<Batch>,
     clear: Color,
     rx: Option<Rx>,
@@ -571,6 +575,7 @@ impl Host {
             files: libgui_winit::FileDrop::default(),
             last: Instant::now(),
             idle: 0.0,
+            stale: false,
             batches: Vec::new(),
             rx: None,
         });
@@ -601,11 +606,11 @@ impl Host {
         };
 
         if app.poll_job() {
-            w.ui.request_repaint();
+            w.stale = true;
         }
         let mut platform = PlatformOutput::default();
         let mut settle = false;
-        if w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 {
+        if std::mem::take(&mut w.stale) || w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
@@ -730,11 +735,12 @@ impl ApplicationHandler for Host {
     }
 
     fn user_event(&mut self, _el: &ActiveEventLoop, _: ()) {
-        // A loader thread finished, or a 3D scene gained something (a decoded texture):
-        // build a frame so the view can pick it up.
+        // A loader thread finished, a file was picked, or a 3D scene gained something
+        // (a decoded texture): build a frame so the view can pick it up. Asked for in
+        // `about_to_wait`, like every redraw (see the end of `draw`).
         if let Some(w) = self.live.as_mut() {
-            w.ui.request_repaint();
-            w.window.request_redraw();
+            w.stale = true;
+            self.again = true;
         }
     }
 
@@ -757,7 +763,7 @@ impl ApplicationHandler for Host {
             WindowEvent::CloseRequested => el.exit(),
             WindowEvent::RedrawRequested => self.draw(el),
             // Anything else may have changed what the UI shows; `draw` asks libgui.
-            _ => w.window.request_redraw(),
+            _ => self.again = true,
         }
     }
 }
