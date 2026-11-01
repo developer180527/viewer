@@ -30,6 +30,7 @@ OPTIONS:
     --trace-startup         Print startup timings to stderr
     --benchmark             Trace startup and exit after the first frame showing the file
     --screenshot <PNG>      Save a screenshot once the file is shown, then exit
+    --size <WxH>            Window size in points for --screenshot (default 1100x760)
     --list-loaders          Print the available loaders
     -h, --help              Show this help
     -V, --version           Show version
@@ -41,6 +42,7 @@ pub struct Args {
     pub view_as: Option<String>,
     pub benchmark: bool,
     pub screenshot: Option<PathBuf>,
+    pub size: Option<(f32, f32)>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -75,10 +77,22 @@ fn parse_args() -> Result<Args, String> {
             Some("--screenshot") => {
                 args.screenshot = Some(it.next().ok_or("--screenshot needs a path")?.into());
             }
+            Some("--size") => {
+                let v = it.next().ok_or("--size needs WxH")?;
+                let v = v.to_string_lossy();
+                let parsed = v.split_once('x').and_then(|(w, h)| Some((w.parse::<f32>().ok()?, h.parse::<f32>().ok()?)));
+                match parsed {
+                    Some((w, h)) if w >= 1.0 && h >= 1.0 => args.size = Some((w, h)),
+                    _ => return Err(format!("--size wants WxH, like 390x844, not {v}")),
+                }
+            }
             Some(s) if s.starts_with("--") => return Err(format!("unknown option {s}")),
             _ if args.path.is_none() => args.path = Some(arg.into()),
             _ => return Err("only one file can be opened at a time".into()),
         }
+    }
+    if args.size.is_some() && args.screenshot.is_none() {
+        return Err("--size is for --screenshot".into());
     }
     if args.view_as.is_some() && args.path.is_none() {
         return Err("--view-as needs a file to open".into());

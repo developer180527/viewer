@@ -152,7 +152,7 @@ impl FontSource for LazySystemFonts {
 
 pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
     if let Some(path) = &args.screenshot {
-        return headless(path, job);
+        return headless(path, args.size.unwrap_or(SIZE), job);
     }
     let el = EventLoop::<()>::with_user_event().build().context("creating the event loop")?;
     startup::mark("event loop created");
@@ -262,7 +262,7 @@ const HEADLESS_SCALE: f32 = 2.0;
 
 /// `--screenshot`: wait for the file, draw it on the CPU at 2× and save the
 /// pixels. No window, no GPU, so it runs anywhere (CI included).
-fn headless(path: &Path, job: Option<Job>) -> anyhow::Result<()> {
+fn headless(path: &Path, size: (f32, f32), job: Option<Job>) -> anyhow::Result<()> {
     let mut app = ViewerApp::new(job, true);
     while app.loading() && !app.poll_job() {
         std::thread::sleep(Duration::from_millis(1));
@@ -274,8 +274,8 @@ fn headless(path: &Path, job: Option<Job>) -> anyhow::Result<()> {
     startup::mark("ui created");
     let mut tex = Headless { soft: libgui_soft::SoftRenderer::new(), gpu: None };
     let scale = HEADLESS_SCALE;
-    let info = FrameInfo { screen_size: Vec2::new(SIZE.0, SIZE.1), scale, dt: 1.0 / 60.0 };
-    let (w, h) = ((SIZE.0 * scale) as u32, (SIZE.1 * scale) as u32);
+    let info = FrameInfo { screen_size: Vec2::new(size.0, size.1), scale, dt: 1.0 / 60.0 };
+    let (w, h) = ((size.0 * scale) as u32, (size.1 * scale) as u32);
     // Rects are a frame late (fit-to-window zoom, table widths), so settle first.
     for frame in 1..=3 {
         let t = Instant::now();
@@ -447,7 +447,7 @@ impl Host {
         let attrs = Window::default_attributes()
             .with_title(&self.title)
             .with_inner_size(LogicalSize::new(SIZE.0, SIZE.1))
-            .with_min_inner_size(LogicalSize::new(360.0, 240.0));
+            .with_min_inner_size(LogicalSize::new(320.0, 240.0));
         let window = Arc::new(el.create_window(attrs).context("creating the window")?);
         startup::mark("window created");
 

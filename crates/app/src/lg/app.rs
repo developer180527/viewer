@@ -25,7 +25,52 @@ pub struct Page {
     pub view: ViewState,
 }
 
+/// How wide the window is, which decides where the chrome goes
+/// (docs/responsive-ui.md §1). Width only: a narrow desktop window gets the phone layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum WidthClass {
+    /// Under 600: a phone upright, a narrow window.
+    Compact,
+    /// 600–1023: a phone sideways, a tablet upright, half a desktop screen.
+    Medium,
+    /// 1024 and up.
+    Expanded,
+}
+
+impl WidthClass {
+    const MEDIUM: f32 = 600.0;
+    const EXPANDED: f32 = 1024.0;
+    /// Switching down waits this far below a threshold, so dragging a window
+    /// edge across one doesn't flicker between layouts.
+    const HYSTERESIS: f32 = 24.0;
+
+    /// The class for `width`, given the class shown last frame.
+    pub fn for_width(width: f32, last: Option<WidthClass>) -> WidthClass {
+        let up = |w: f32| {
+            if w >= Self::EXPANDED {
+                WidthClass::Expanded
+            } else if w >= Self::MEDIUM {
+                WidthClass::Medium
+            } else {
+                WidthClass::Compact
+            }
+        };
+        let fresh = up(width);
+        match last {
+            // Growing switches at the threshold; shrinking only once clear of it.
+            Some(last) if fresh < last && up(width + Self::HYSTERESIS) >= last => last,
+            _ => fresh,
+        }
+    }
+}
+
+/// Below this height (a phone sideways) the status bar goes, to leave the content room.
+const SHORT: f32 = 480.0;
+/// The info panel's width, beside the content or as a drawer over it.
+const INFO_WIDTH: f32 = 300.0;
+
 pub struct ViewerApp {
+    width_class: Option<WidthClass>,
     stack: Vec<Page>,
     job: Option<Job>,
     error: Option<String>,
@@ -41,6 +86,7 @@ pub struct ViewerApp {
 impl ViewerApp {
     pub fn new(job: Option<Job>, dark: bool) -> Self {
         Self {
+            width_class: None,
             stack: Vec::new(),
             job,
             error: None,
@@ -134,6 +180,9 @@ impl ViewerApp {
 
     pub fn ui(&mut self, ui: &mut Ui, tex: &mut dyn Textures) {
         let pal = ui.theme.palette;
+        let screen = ui.screen_size();
+        let class = WidthClass::for_width(screen.x, self.width_class);
+        self.width_class = Some(class);
         let root = Id::from_name("root");
         let mut action = None;
         ui.container_id(root, Layout::column(), Frame { fill: pal.bg_app, ..Frame::none() }, |ui| {
@@ -151,19 +200,41 @@ impl ViewerApp {
                 });
             }
 
-            self.toolbar(ui);
+            if class == WidthClass::Compact {
+                self.top_bar(ui);
+            } else {
+                self.toolbar(ui, class);
+            }
+            let panel = Frame { fill: pal.bg_panel, border: pal.border, border_width: 1.0, ..Frame::none() };
+            let central = Id::from_name("central");
             ui.container(Layout::row().height(Size::Grow(1.0)), Frame::none(), |ui| {
-                ui.container_id(Id::from_name("central"), Layout::column(), Frame { clip: true, ..Frame::none() }, |ui| {
+                ui.container_id(central, Layout::column(), Frame { clip: true, ..Frame::none() }, |ui| {
                     action = self.central(ui, tex);
                 });
-                if self.show_info {
-                    let frame = Frame { fill: pal.bg_panel, border: pal.border, border_width: 1.0, ..Frame::none() };
-                    ui.container_id(Id::from_name("info"), Layout::column().width(Size::Fixed(300.0)), frame, |ui| {
+                // Expanded: beside the content, which narrows to make room.
+                if self.show_info && class == WidthClass::Expanded {
+                    ui.container_id(Id::from_name("info"), Layout::column().width(Size::Fixed(INFO_WIDTH)), panel, |ui| {
                         self.info_panel(ui);
                     });
                 }
             });
-            self.status_bar(ui);
+            // Narrower: a drawer over the content's right edge (all of it on compact),
+            // placed from last frame's layout like any layer.
+            if self.show_info
+                && class != WidthClass::Expanded
+                && let Some(area) = ui.rect_of(central)
+            {
+                let w = if class == WidthClass::Compact { area.w } else { INFO_WIDTH.min(area.w) };
+                let rect = Rect { x: area.right() - w, y: area.y, w, h: area.h };
+                ui.layer(Id::from_name("info drawer"), rect, panel, |ui| self.info_panel(ui));
+                if ui.key_pressed(Key::Escape) {
+                    self.show_info = false;
+                }
+            }
+            // Compact and short windows keep the status bar only to show loading.
+            if (class != WidthClass::Compact && screen.y >= SHORT) || self.job.is_some() {
+                self.status_bar(ui);
+            }
         });
         if let Some(Action::OpenEntry(container, index)) = action {
             self.open_entry(container, index);
@@ -182,7 +253,62 @@ impl ViewerApp {
         }
     }
 
-    fn toolbar(&mut self, ui: &mut Ui) {
+    /// The compact top bar: Back, the current file's name, and a "⋯" menu with
+    /// everything the full toolbar has.
+    fn top_bar(&mut self, ui: &mut Ui) {
+        let pal = ui.theme.palette;
+        let layout = Layout::row().padding(Insets::xy(8.0, 6.0)).gap(8.0);
+        let frame = Frame { fill: pal.bg_panel, border: pal.border, border_width: 1.0, ..Frame::none() };
+        ui.container_id(Id::from_name("toolbar"), layout, frame, |ui| {
+            if self.stack.len() > 1 && ui.button("‹ Back").clicked {
+                self.back();
+            }
+            ui.label(self.stack.last().map_or("Viewer", |p| p.src.name()));
+            ui.flex();
+            let mut pick = None;
+            ui.menu_button("⋯", |ui| {
+                if ui.menu_item("Open…").clicked {
+                    self.open_dialog();
+                }
+                if self.stack.last().is_some() {
+                    if ui.menu_item(if self.show_info { "Hide info" } else { "Show info" }).clicked {
+                        self.show_info = !self.show_info;
+                    }
+                    ui.menu_separator();
+                    let (ids, current) = self.view_as_choices();
+                    for id in ids {
+                        let name = registry().get(id).map_or(id, |l| l.name());
+                        let label = format!("View as {name}");
+                        if ui.menu_item_ex(&label, None, id != current).clicked {
+                            pick = Some(id);
+                        }
+                    }
+                }
+            });
+            if let Some(id) = pick {
+                self.view_as(id);
+            }
+        });
+    }
+
+    /// The loaders the current page can be shown with, and the one it is shown with.
+    fn view_as_choices(&self) -> (Vec<&'static str>, &'static str) {
+        let Some(page) = self.stack.last() else { return (Vec::new(), "") };
+        let current = page.loader;
+        let mut ids: Vec<&'static str> = registry().candidates(&page.src).iter().map(|(_, l)| l.id()).collect();
+        // Text is always worth offering, even for files that don't sniff as text.
+        if !ids.contains(&"text") {
+            ids.push("text");
+        }
+        // A loader forced with --view-as may not claim the file; list it anyway,
+        // or the combo would fall back to entry 0 and re-open the file every frame.
+        if !ids.contains(&current) {
+            ids.push(current);
+        }
+        (ids, current)
+    }
+
+    fn toolbar(&mut self, ui: &mut Ui, class: WidthClass) {
         let pal = ui.theme.palette;
         let layout = Layout::row().padding(Insets::xy(8.0, 6.0)).gap(8.0);
         let frame = Frame { fill: pal.bg_panel, border: pal.border, border_width: 1.0, ..Frame::none() };
@@ -199,26 +325,25 @@ impl ViewerApp {
                     self.back();
                 }
             }
-            let crumbs = self.stack.iter().map(|p| p.src.name()).collect::<Vec<_>>().join("  ›  ");
-            ui.label(&crumbs);
+            // Medium keeps the last two levels: the current file stays readable.
+            let keep = if class == WidthClass::Medium { 2 } else { usize::MAX };
+            let skip = self.stack.len().saturating_sub(keep);
+            let mut crumbs: Vec<&str> = self.stack[skip..].iter().map(|p| p.src.name()).collect();
+            if skip > 0 {
+                crumbs.insert(0, "…");
+            }
+            ui.label(&crumbs.join("  ›  "));
             ui.flex();
 
-            if let Some(page) = self.stack.last() {
-                let current = page.loader;
-                let mut ids: Vec<&'static str> = registry().candidates(&page.src).iter().map(|(_, l)| l.id()).collect();
-                // Text is always worth offering, even for files that don't sniff as text.
-                if !ids.contains(&"text") {
-                    ids.push("text");
-                }
-                // A loader forced with --view-as may not claim the file; list it anyway,
-                // or the combo would fall back to entry 0 and re-open the file every frame.
-                if !ids.contains(&current) {
-                    ids.push(current);
-                }
+            if !self.stack.is_empty() {
+                let (ids, current) = self.view_as_choices();
                 let names: Vec<&str> = ids.iter().map(|id| registry().get(id).map_or(*id, |l| l.name())).collect();
                 let mut selected = ids.iter().position(|id| *id == current).expect("current loader is listed");
-                ui.label_muted("View as");
-                ui.container(Layout::row().width(Size::Fixed(200.0)), Frame::none(), |ui| {
+                if class == WidthClass::Expanded {
+                    ui.label_muted("View as");
+                }
+                let combo = if class == WidthClass::Expanded { 200.0 } else { 140.0 };
+                ui.container(Layout::row().width(Size::Fixed(combo)), Frame::none(), |ui| {
                     ui.combo("view_as", &mut selected, &names);
                 });
                 if ids[selected] != current {
@@ -307,5 +432,32 @@ impl ViewerApp {
                 None
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WidthClass::{self, *};
+
+    #[test]
+    fn width_classes() {
+        assert_eq!(WidthClass::for_width(390.0, None), Compact);
+        assert_eq!(WidthClass::for_width(600.0, None), Medium);
+        assert_eq!(WidthClass::for_width(1023.0, None), Medium);
+        assert_eq!(WidthClass::for_width(1024.0, None), Expanded);
+    }
+
+    #[test]
+    fn shrinking_waits_past_the_threshold() {
+        // Growing switches at the threshold.
+        assert_eq!(WidthClass::for_width(600.0, Some(Compact)), Medium);
+        // Shrinking holds until 24 px below it.
+        assert_eq!(WidthClass::for_width(590.0, Some(Medium)), Medium);
+        assert_eq!(WidthClass::for_width(576.0, Some(Medium)), Medium);
+        assert_eq!(WidthClass::for_width(575.0, Some(Medium)), Compact);
+        assert_eq!(WidthClass::for_width(1010.0, Some(Expanded)), Expanded);
+        assert_eq!(WidthClass::for_width(990.0, Some(Expanded)), Medium);
+        // A big jump goes straight to the right class.
+        assert_eq!(WidthClass::for_width(320.0, Some(Expanded)), Compact);
     }
 }
