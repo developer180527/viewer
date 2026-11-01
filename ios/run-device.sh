@@ -12,6 +12,9 @@ id=dev.venugopal.viewer
 
 cargo build -q --target aarch64-apple-ios -p viewer
 xcodegen -q --spec ios/project.yml --project ios
+# Xcode doesn't see the Rust binary as an input to signing: an incremental build
+# copies the new binary in and leaves the old signature, which the device rejects.
+rm -rf target/ios-device/Build/Products/Debug-iphoneos/Viewer.app
 xcodebuild -quiet -project ios/Viewer.xcodeproj -scheme Viewer -configuration Debug \
     -destination generic/platform=iOS -derivedDataPath target/ios-device \
     -allowProvisioningUpdates DEVELOPMENT_TEAM="$team" build
