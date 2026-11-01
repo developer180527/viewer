@@ -1,8 +1,10 @@
 //! 3D models. Each loader fills a RendererX CPU scene ([`Content::Scene`]); the app's
-//! 3D view uploads and draws it. Textures aren't shown yet: models draw in clay with
-//! their material colours.
+//! 3D view uploads and draws it. glTF, FBX/OBJ (ufbx), STL, PLY and USD, with their
+//! textures decoded off-thread; `.blend` files show their saved preview image.
 
 mod blend;
+mod ply;
+mod stl;
 mod textures;
 mod ufbx_scene;
 mod usd;
@@ -15,7 +17,7 @@ use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Resul
 
 pub use blend::BlendLoader;
 
-pub static LOADERS: &[&dyn FormatLoader] = &[&GltfLoader, &FbxLoader, &ObjLoader, &UsdLoader, &BlendLoader];
+pub static LOADERS: &[&dyn FormatLoader] = &[&GltfLoader, &FbxLoader, &ObjLoader, &StlLoader, &PlyLoader, &UsdLoader, &BlendLoader];
 
 /// The document for a loaded scene, with the counts the info panel shows. A scene
 /// with nothing to draw is an error, so a file that only looks like a model (a
@@ -213,6 +215,68 @@ impl FormatLoader for ObjLoader {
         let loaded = ufbx_scene::load(src, ufbx::FileFormat::Obj)?;
         let note = texture_note(loaded.textures);
         Ok(scene_document("Wavefront OBJ", loaded.scene, &loaded.warnings, loaded.pending, loaded.unreadable)?.with_meta("Textures", note))
+    }
+}
+
+// ---------------------------------------------------------------- STL / PLY
+
+pub struct StlLoader;
+
+impl FormatLoader for StlLoader {
+    fn id(&self) -> &'static str {
+        "stl"
+    }
+
+    fn name(&self) -> &'static str {
+        "STL model"
+    }
+
+    fn probe(&self, header: &[u8], ext: Option<&str>, _: &str) -> Confidence {
+        // Binary STL has no magic number; ASCII starts with `solid` (as do some
+        // binary headers, so the size check in `stl::load` decides).
+        match ext {
+            Some("stl") => Confidence::EXTENSION,
+            _ if stl::looks_ascii(header) => Confidence::LIKELY,
+            _ => Confidence::NONE,
+        }
+    }
+
+    fn open(&self, src: &FileSource) -> Result<Document> {
+        let loaded = stl::load(src.bytes())?;
+        let format = if loaded.binary { "STL (binary)" } else { "STL (ASCII)" };
+        let doc = scene_document(format, loaded.scene, &[], Arc::default(), viewer_core::Unreadables::default())?;
+        Ok(match loaded.name {
+            Some(name) => doc.with_meta("Name", name),
+            None => doc,
+        })
+    }
+}
+
+pub struct PlyLoader;
+
+impl FormatLoader for PlyLoader {
+    fn id(&self) -> &'static str {
+        "ply"
+    }
+
+    fn name(&self) -> &'static str {
+        "PLY model"
+    }
+
+    fn probe(&self, header: &[u8], ext: Option<&str>, _: &str) -> Confidence {
+        if ply::is_ply(header) {
+            Confidence::MAGIC
+        } else if ext == Some("ply") {
+            Confidence::EXTENSION
+        } else {
+            Confidence::NONE
+        }
+    }
+
+    fn open(&self, src: &FileSource) -> Result<Document> {
+        let loaded = ply::load(src.bytes())?;
+        let doc = scene_document(loaded.format, loaded.scene, &loaded.warnings, Arc::default(), viewer_core::Unreadables::default())?;
+        Ok(if loaded.points { doc.with_meta("Kind", "point cloud") } else { doc })
     }
 }
 

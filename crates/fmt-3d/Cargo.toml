@@ -1,6 +1,6 @@
 [package]
 name = "viewer-fmt-3d"
-description = "3D models: glTF/GLB, FBX and OBJ into RendererX scenes; .blend preview images."
+description = "3D models: glTF/GLB, FBX, OBJ, STL, PLY and USD into RendererX scenes; .blend preview images."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

@@ -303,7 +303,7 @@ viewer/
 
 1. ✅ **MVP (desktop):** shell, detection, Hex, images, text/code, Markdown, JSON tree, CSV, zip. Startup tracing and benchmark from day 1. Since then: folders as containers, image streaming in bands, memory budgets in CI.
 2. ⬜ **Documents:** PDF (PDFium), EPUB, XLSX, comics. *Not started; next up.* DOCX/XLSX/EPUB/CBZ only open as zip listings today.
-3. 🟡 **3D:** done: RendererX (wgpu, clay/PBR/unlit, textures, streaming, off-thread pipelines), glTF/GLB/VRM, FBX and OBJ via ufbx (in place of Assimp), USD/USDZ with composition via `usd-lite`, `.blend` preview, blocked/missing file reporting. Left: STL, PLY, MToon shading, animation playback (v2).
+3. 🟡 **3D:** done: RendererX (wgpu, clay/PBR/unlit, textures, streaming, off-thread pipelines), glTF/GLB/VRM, FBX and OBJ via ufbx (in place of Assimp), USD/USDZ with composition via `usd-lite`, `.blend` preview, blocked/missing file reporting. STL (welded, Z-up turned Y-up) and PLY (ASCII/binary, meshes and point clouds, colours). Left: MToon shading, Gaussian splats drawn as splats (they show as coloured points), animation playback (v2).
 4. ⬜ **Media:** libmpv (desktop), platform decoders (mobile); trim and gain editors (§12.6).
 5. 🟡 **Mobile:** iOS/iPadOS runs (libfilepicker, folder grants, Open Folder…). Left: opening files tapped in the Files app (`CFBundleDocumentTypes`), bookmarks with a Recents list, then Android.
 6. ⬜ **Hardening:** worker sandbox, fuzzing, signing and packaging. (CI tests Linux, Windows and macOS already.)
