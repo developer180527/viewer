@@ -24,6 +24,7 @@ pub struct FileSource {
     name: Arc<str>,
     path: Option<Arc<Path>>,
     data: Arc<Data>,
+    folder: bool,
 }
 
 impl FileSource {
@@ -47,7 +48,19 @@ impl FileSource {
             name: name.into(),
             path: Some(path.into()),
             data: Arc::new(data),
+            folder: false,
         })
+    }
+
+    /// A folder on disk: a name and a path, no bytes. Its contents are listed by
+    /// `viewer_fmt_archive::open_folder`, not by format detection.
+    pub fn folder(path: impl AsRef<Path>) -> Self {
+        let path = path.as_ref();
+        let name = path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string());
+        Self { name: name.into(), path: Some(path.into()), data: Arc::new(Data::Owned(Vec::new())), folder: true }
     }
 
     /// An in-memory file, e.g. an entry extracted from an archive.
@@ -56,7 +69,12 @@ impl FileSource {
             name: name.into().into(),
             path: None,
             data: Arc::new(Data::Owned(bytes)),
+            folder: false,
         }
+    }
+
+    pub fn is_folder(&self) -> bool {
+        self.folder
     }
 
     pub fn name(&self) -> &str {

@@ -42,11 +42,17 @@ impl ViewState {
                 // Rows can be wider than the header (flexible CSV); give those cells a column too.
                 (0..t.columns).map(|c| Column::new(t.headers.get(c).map_or("", String::as_str)).width(160.0).unsortable()),
             )),
-            Content::Container(_) => Self::Table(TableState::new([
-                Column::new("Name").width(320.0).grow(1.0).unsortable(),
-                Column::new("Size").width(110.0).align(Align::End).unsortable(),
-                Column::new("Packed").width(110.0).align(Align::End).unsortable(),
-            ])),
+            Content::Container(c) => {
+                let mut columns = vec![
+                    Column::new("Name").width(320.0).grow(1.0).unsortable(),
+                    Column::new("Size").width(110.0).align(Align::End).unsortable(),
+                ];
+                // Only archives pack their entries; a folder's column would stay empty.
+                if c.entries().iter().any(|e| e.compressed_size.is_some()) {
+                    columns.push(Column::new("Packed").width(110.0).align(Align::End).unsortable());
+                }
+                Self::Table(TableState::new(columns))
+            }
             Content::Scene(_) => Self::Scene(Box::default()),
             _ => Self::None,
         }

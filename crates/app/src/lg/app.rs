@@ -324,8 +324,10 @@ impl ViewerApp {
                     if ui.menu_item(if self.show_info { "Hide info" } else { "Show info" }).clicked {
                         self.show_info = !self.show_info;
                     }
-                    ui.menu_separator();
                     let (ids, current) = self.view_as_choices();
+                    if !ids.is_empty() {
+                        ui.menu_separator();
+                    }
                     for id in ids {
                         let name = registry().get(id).map_or(id, |l| l.name());
                         let label = format!("View as {name}");
@@ -345,6 +347,10 @@ impl ViewerApp {
     fn view_as_choices(&self) -> (Vec<&'static str>, &'static str) {
         let Some(page) = self.stack.last() else { return (Vec::new(), "") };
         let current = page.loader;
+        // A folder is a list of files, not bytes: there is nothing else to view it as.
+        if page.src.is_folder() {
+            return (Vec::new(), current);
+        }
         let mut ids: Vec<&'static str> = registry().candidates(&page.src).iter().map(|(_, l)| l.id()).collect();
         // Text is always worth offering, even for files that don't sniff as text.
         if !ids.contains(&"text") {
@@ -385,8 +391,8 @@ impl ViewerApp {
             ui.label(&crumbs.join("  ›  "));
             ui.flex();
 
-            if !self.stack.is_empty() {
-                let (ids, current) = self.view_as_choices();
+            let (ids, current) = self.view_as_choices();
+            if !ids.is_empty() {
                 let names: Vec<&str> = ids.iter().map(|id| registry().get(id).map_or(*id, |l| l.name())).collect();
                 let mut selected = ids.iter().position(|id| *id == current).expect("current loader is listed");
                 if class == WidthClass::Expanded {
@@ -418,8 +424,10 @@ impl ViewerApp {
             } else if let Some(page) = self.stack.last() {
                 ui.label(&page.doc.format);
                 ui.label_muted("·");
-                ui.label(&human_bytes(page.src.len()));
-                ui.label_muted("·");
+                if !page.src.is_folder() {
+                    ui.label(&human_bytes(page.src.len()));
+                    ui.label_muted("·");
+                }
                 ui.label(&format!("{} view", page.doc.content.model_name()));
                 ui.flex();
                 if !self.stable {
@@ -447,7 +455,9 @@ impl ViewerApp {
             if let Some(p) = page.src.path() {
                 row(ui, "Path", &p.display().to_string());
             }
-            row(ui, "Size", &format!("{} ({} bytes)", human_bytes(page.src.len()), page.src.len()));
+            if !page.src.is_folder() {
+                row(ui, "Size", &format!("{} ({} bytes)", human_bytes(page.src.len()), page.src.len()));
+            }
             row(ui, "Format", &page.doc.format);
             row(ui, "Loader", page.loader);
             for (k, v) in &page.doc.metadata {

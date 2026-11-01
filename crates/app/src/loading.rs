@@ -42,6 +42,12 @@ pub struct Job {
 impl Job {
     pub fn open_path(path: PathBuf, view_as: Option<String>) -> Self {
         let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into());
+        if path.is_dir() {
+            return Self::run(name, Target::Root, move |started| {
+                let doc = viewer_fmt_archive::open_folder(&path).map_err(|e| format!("{}: {e:#}", path.display()))?;
+                Ok(Loaded { src: FileSource::folder(&path), doc, loader: "folder", attempts: Vec::new(), load_time: started.elapsed() })
+            });
+        }
         Self::spawn(name, Target::Root, view_as, move || {
             let src = FileSource::open(&path).map_err(|e| anyhow::anyhow!("{}: {e}", path.display()))?;
             startup::mark("file mapped");
@@ -55,12 +61,19 @@ impl Job {
         view_as: Option<String>,
         source: impl FnOnce() -> anyhow::Result<FileSource> + Send + 'static,
     ) -> Self {
+        Self::run(name, target, move |started| {
+            source().map_err(|e| format!("{e:#}")).and_then(|src| load(src, view_as.as_deref(), started))
+        })
+    }
+
+    /// Runs `work` on a loader thread, handing it the time it started.
+    fn run(name: String, target: Target, work: impl FnOnce(Instant) -> Result<Loaded, String> + Send + 'static) -> Self {
         let (tx, rx) = mpsc::channel();
         std::thread::Builder::new()
             .name("loader".into())
             .spawn(move || {
                 let started = Instant::now();
-                let result = source().map_err(|e| format!("{e:#}")).and_then(|src| load(src, view_as.as_deref(), started));
+                let result = work(started);
                 if let Ok(l) = &result {
                     startup::mark(&format!("document decoded by '{}'", l.loader));
                 }

@@ -1,6 +1,6 @@
 [package]
 name = "viewer-fmt-archive"
-description = "Archive containers: zip, tar, tar.gz, gz."
+description = "Containers: zip, tar, tar.gz, gz, and folders on disk."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

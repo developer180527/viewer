@@ -2,6 +2,7 @@
 //! a PNG inside a tar inside a gzip just works.
 
 use std::io::{Cursor, Read};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use anyhow::{Context, bail};
@@ -225,6 +226,64 @@ impl Container for GzipContainer {
     }
 }
 
+// ---------------------------------------------------------------- folder
+
+/// Most files a folder listing holds: past this, a folder is someone's whole disk.
+const MAX_FOLDER_FILES: usize = 50_000;
+
+/// A folder on disk as a container: every file under it, by path relative to it.
+/// Entries open from their real paths, so a model inside still finds the textures
+/// next to it. Hidden files (`.DS_Store`, `.git`) are left out, and symlinks are not
+/// followed, so a link to `/` or a loop cannot run the listing away.
+pub fn open_folder(root: &Path) -> Result<Document> {
+    let mut entries = Vec::new();
+    let mut dirs = vec![PathBuf::new()];
+    while let Some(rel) = dirs.pop() {
+        let listing = std::fs::read_dir(root.join(&rel)).with_context(|| format!("reading {}", root.join(&rel).display()))?;
+        for item in listing {
+            let item = item?;
+            let name = item.file_name();
+            if name.to_string_lossy().starts_with('.') {
+                continue;
+            }
+            let kind = item.file_type()?;
+            let path = rel.join(&name);
+            if kind.is_dir() {
+                dirs.push(path);
+            } else if kind.is_file() {
+                if entries.len() == MAX_FOLDER_FILES {
+                    bail!("more than {MAX_FOLDER_FILES} files; open a folder inside it");
+                }
+                let size = item.metadata()?.len();
+                let path = path.components().map(|c| c.as_os_str().to_string_lossy()).collect::<Vec<_>>().join("/");
+                entries.push(Entry { path, size, compressed_size: None, is_dir: false });
+            }
+        }
+    }
+    entries.sort_by(|a, b| a.path.cmp(&b.path));
+    let total: u64 = entries.iter().map(|e| e.size).sum();
+    let files = entries.len();
+    Ok(Document::new("Folder", Content::Container(Arc::new(FolderContainer { root: root.into(), entries })))
+        .with_meta("Files", files)
+        .with_meta("Total size", format!("{total} bytes")))
+}
+
+struct FolderContainer {
+    root: PathBuf,
+    entries: Vec<Entry>,
+}
+
+impl Container for FolderContainer {
+    fn entries(&self) -> &[Entry] {
+        &self.entries
+    }
+
+    fn open_entry(&self, index: usize) -> Result<FileSource> {
+        let path = self.root.join(&self.entries[index].path);
+        FileSource::open(&path).with_context(|| path.display().to_string())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,5 +326,26 @@ mod tests {
         let c = container(TarLoader.open(&src).unwrap());
         assert_eq!(c.entries()[0].path, "a/b.txt");
         assert_eq!(c.open_entry(0).unwrap().bytes(), b"abc");
+    }
+
+    #[test]
+    fn folder_lists_files_under_it_and_opens_them_from_disk() {
+        let root = std::env::temp_dir().join(format!("viewer-folder-test-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        std::fs::create_dir_all(root.join("textures")).unwrap();
+        std::fs::write(root.join("model.obj"), b"v 0 0 0").unwrap();
+        std::fs::write(root.join("textures/albedo.png"), b"png").unwrap();
+        std::fs::write(root.join(".DS_Store"), b"junk").unwrap();
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(root.join(".git/HEAD"), b"ref").unwrap();
+
+        let c = container(open_folder(&root).unwrap());
+        let paths: Vec<&str> = c.entries().iter().map(|e| e.path.as_str()).collect();
+        assert_eq!(paths, ["model.obj", "textures/albedo.png"]);
+        let src = c.open_entry(1).unwrap();
+        assert_eq!(src.bytes(), b"png");
+        // A real path, so a loader can find the files next to it.
+        assert_eq!(src.path(), Some(root.join("textures/albedo.png").as_path()));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }
