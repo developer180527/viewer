@@ -1,0 +1,133 @@
+# CI (PLAN.md §7, §12.7): every push builds and tests on Linux, Windows and macOS,
+# checks headless memory budgets, and builds the shared crates for Android and iOS.
+#
+# GPU tests run on software GPUs (hosted runners have no real one): lavapipe (Mesa's
+# Vulkan) on Linux, WARP on Windows, the runner's virtual Metal device on macOS. They
+# skip themselves when no adapter exists, so a missing driver shows as fewer tests,
+# not a failure.
+
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Linux packages (window system, file dialogs, software Vulkan)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgtk-3-dev mesa-vulkan-drivers libvulkan1
+
+      # Both frontends, warnings as errors.
+      - name: Clippy (libgui frontend)
+        run: cargo clippy --workspace --all-targets --no-default-features --features viewer/libgui -- -D warnings
+
+      - name: Clippy (egui frontend)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --workspace --all-features
+
+  memory:
+    name: Memory budgets (Linux, headless)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Linux packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            time libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
+            libgtk-3-dev mesa-vulkan-drivers libvulkan1
+
+      - name: Benchmark files
+        run: python3 bench/make-samples.py --big
+
+      # Headless only: no display here, and windowed numbers are too noisy on shared
+      # runners to budget. Fails when a case is over bench/memory-budgets-linux.txt.
+      - name: Measure and check
+        run: MEMORY_HEADLESS_ONLY=1 bench/memory.sh --check | tee memory.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: memory-linux
+          path: memory.txt
+
+  android:
+    name: Build (Android)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-ndk
+
+      # The shared crates (formats, renderer, USD); the app shell for Android comes
+      # with its own frontend later (PLAN.md §5).
+      - name: Build
+        env:
+          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
+        run: >
+          cargo ndk -t arm64-v8a build
+          -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
+          -p viewer-fmt-3d -p rendererx-scene -p rendererx -p rendererx-gltf -p usd-lite
+
+  ios:
+    name: Build (iOS)
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: >
+          cargo build --target aarch64-apple-ios
+          -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
+          -p viewer-fmt-3d -p rendererx-scene -p rendererx -p rendererx-gltf -p usd-lite

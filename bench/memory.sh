@@ -6,8 +6,13 @@
 # (a 156 MB log is ~220 MB of RSS but ~60 MB of footprint). Elsewhere it is peak RSS.
 #
 #   bench/memory.sh            measure and print a table
-#   bench/memory.sh --check    also compare with bench/memory-budgets.txt; exit 1 on
+#   bench/memory.sh --check    also compare with the budgets for this OS
+#                              (bench/memory-budgets.txt on macOS,
+#                              bench/memory-budgets-linux.txt on Linux); exit 1 on
 #                              any case over its budget
+#
+# MEMORY_HEADLESS_ONLY=1 skips the window and settled columns: for CI, which has no
+# display, and whose shared runners make windowed numbers too noisy to budget.
 #
 # Columns:
 #   headless  peak of --screenshot: the whole load, textures included, drawn on the CPU
@@ -63,12 +68,19 @@ settled_mb() { # file → footprint of the running window after 6 s, in MB
     kill "$pid" 2>/dev/null; wait "$pid" 2>/dev/null || true
 }
 
-budgets=bench/memory-budgets.txt
+# Footprint (macOS) and RSS (elsewhere) differ, so each OS has its own budgets.
+if [[ "$(uname)" == Darwin ]]; then budgets=bench/memory-budgets.txt; else budgets=bench/memory-budgets-linux.txt; fi
+if [[ "${1:-}" == --check && ! -f $budgets ]]; then
+    echo "note: no $budgets yet; measuring only (copy the headless column into it to start checking)"
+fi
 status=0
 printf '%-40s %10s %10s %10s\n' case headless window settled
 for c in "${cases[@]}"; do
     name=${c%%:*}; file=${c#*:}
-    if [[ -n $file ]]; then
+    if [[ -n $file && -n ${MEMORY_HEADLESS_ONLY:-} ]]; then
+        h=$(peak_mb "$bin" --screenshot "$tmp/shot.png" "$file")
+        w=-; st=-
+    elif [[ -n $file ]]; then
         h=$(peak_mb "$bin" --screenshot "$tmp/shot.png" "$file")
         w=$(peak_mb "$bin" --benchmark "$file")
         st=$(settled_mb "$file")

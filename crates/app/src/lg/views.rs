@@ -448,7 +448,7 @@ fn raster(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Textu
         st.zoom = Some(new_zoom);
     }
     if resp.active && resp.drag_delta != Vec2::ZERO {
-        st.offset = st.offset + resp.drag_delta;
+        st.offset += resp.drag_delta;
         st.zoom.get_or_insert(zoom);
     }
 

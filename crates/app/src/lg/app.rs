@@ -138,10 +138,10 @@ impl ViewerApp {
         let mut action = None;
         ui.container_id(root, Layout::column(), Frame { fill: pal.bg_app, ..Frame::none() }, |ui| {
             let drop = ui.drop_zone(&[libgui_winit::FILES]);
-            if let Some(payload) = drop.dropped {
-                if let Some(path) = payload.take::<Vec<PathBuf>>().ok().and_then(|p| p.into_iter().next()) {
-                    self.open_path(path);
-                }
+            if let Some(payload) = drop.dropped
+                && let Some(path) = payload.take::<Vec<PathBuf>>().ok().and_then(|p| p.into_iter().next())
+            {
+                self.open_path(path);
             }
             if drop.hovered {
                 let rect = drop.rect;
