@@ -196,6 +196,46 @@ fn safe_area(window: &Window, scale: f32) -> Insets {
     Insets { left: left / scale, top: top / scale, right: right / scale, bottom: bottom / scale }
 }
 
+/// iOS 27 runs only apps that use UIKit scenes, and a window outside a scene is
+/// never shown. winit 0.30 makes its window before the scene exists and never puts
+/// it in one, so once UIKit has connected the scene (from `Info.plist`), move the
+/// window there. Returns whether it is in a scene; elsewhere there is nothing to do.
+#[cfg(target_os = "ios")]
+fn adopt_scene(window: &Window) -> bool {
+    use objc2::msg_send;
+    use objc2::runtime::AnyObject;
+    use raw_window_handle::{HasWindowHandle, RawWindowHandle};
+    let Ok(handle) = window.window_handle() else { return false };
+    let RawWindowHandle::UiKit(h) = handle.as_raw() else { return false };
+    let view = h.ui_view.as_ptr().cast::<AnyObject>();
+    // SAFETY: UIKit objects winit hands out, messaged on the main thread (the
+    // event loop's), with selectors and types from UIKit's headers.
+    unsafe {
+        let win: *mut AnyObject = msg_send![view, window];
+        if win.is_null() {
+            return false;
+        }
+        let current: *mut AnyObject = msg_send![win, windowScene];
+        if !current.is_null() {
+            return true;
+        }
+        let app: *mut AnyObject = msg_send![objc2::class!(UIApplication), sharedApplication];
+        let scenes: *mut AnyObject = msg_send![app, connectedScenes];
+        let scene: *mut AnyObject = msg_send![scenes, anyObject];
+        if scene.is_null() {
+            return false;
+        }
+        let () = msg_send![win, setWindowScene: scene];
+        let () = msg_send![win, makeKeyAndVisible];
+    }
+    true
+}
+
+#[cfg(not(target_os = "ios"))]
+fn adopt_scene(_: &Window) -> bool {
+    true
+}
+
 type GpuParts = (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue);
 
 /// The adapter and device, picked without a surface; `Host::start` checks the
@@ -467,6 +507,8 @@ struct Host {
     error: Option<anyhow::Error>,
     /// The last frame asked for another straight away (see `about_to_wait`).
     again: bool,
+    /// iOS: the window is in the app's scene (`adopt_scene`).
+    in_scene: bool,
     /// The GPU thread `run` started, until `start` joins it.
     gpu: Option<std::thread::JoinHandle<anyhow::Result<GpuParts>>>,
 }
@@ -674,6 +716,12 @@ impl ApplicationHandler for Host {
     }
 
     fn about_to_wait(&mut self, _el: &ActiveEventLoop) {
+        if !self.in_scene
+            && let Some(w) = self.live.as_ref()
+        {
+            self.in_scene = adopt_scene(&w.window);
+            self.again |= self.in_scene;
+        }
         if std::mem::take(&mut self.again)
             && let Some(w) = self.live.as_ref()
         {

@@ -40,6 +40,11 @@ rendererx = { workspace = true, features = ["controls"] }
 [target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
 rfd = "0.17"
 
+# Putting winit's window into a UIKit scene (lg/mod.rs, adopt_scene).
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6"
+raw-window-handle = "0.6"
+
 [target.'cfg(unix)'.dependencies]
 # mmap for the global allocator's big blocks (src/alloc.rs).
 libc = "0.2"

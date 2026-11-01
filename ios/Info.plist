@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>dev.viewer.app</string>
+	<string>dev.venugopal.viewer</string>
 	<key>CFBundleName</key>
 	<string>Viewer</string>
 	<key>CFBundleDisplayName</key>
@@ -23,6 +23,23 @@
 		<integer>1</integer>
 		<integer>2</integer>
 	</array>
+	<!-- iOS 27 stops apps that don't use scenes. winit 0.30 doesn't, so the app
+	     declares one here and puts winit's window in it (lg/mod.rs, adopt_scene). -->
+	<key>UIApplicationSceneManifest</key>
+	<dict>
+		<key>UIApplicationSupportsMultipleScenes</key>
+		<false/>
+		<key>UISceneConfigurations</key>
+		<dict>
+			<key>UIWindowSceneSessionRoleApplication</key>
+			<array>
+				<dict>
+					<key>UISceneConfigurationName</key>
+					<string>Default</string>
+				</dict>
+			</array>
+		</dict>
+	</dict>
 	<!-- Without a launch screen iOS runs the app letterboxed at an old phone size. -->
 	<key>UILaunchScreen</key>
 	<dict/>

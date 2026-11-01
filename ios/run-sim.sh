@@ -9,7 +9,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 sample=${1:-main.rs}
 target=aarch64-apple-ios-sim
-id=dev.viewer.app
+id=dev.venugopal.viewer
 
 cargo build -q --target "$target" -p viewer
 app=target/$target/debug/Viewer.app

@@ -1,0 +1,35 @@
+# Xcode project for running Viewer on a real iPhone or iPad: an app target with no
+# sources of its own, whose executable is the Rust binary (copied in by a build
+# phase), so Xcode does the signing and provisioning. Generate it with
+#     xcodegen --spec ios/project.yml --project ios
+# (ios/run-device.sh does that). The simulator doesn't need it: ios/run-sim.sh.
+name: Viewer
+options:
+  bundleIdPrefix: dev.venugopal
+  deploymentTarget:
+    iOS: "15.0"
+targets:
+  Viewer:
+    type: application
+    platform: iOS
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.venugopal.viewer
+        PRODUCT_NAME: Viewer
+        EXECUTABLE_NAME: viewer
+        # Ours, not generated: xcodegen's `info:` would rewrite it.
+        INFOPLIST_FILE: Info.plist
+        CODE_SIGN_STYLE: Automatic
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: NO
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
+    postCompileScripts:
+      - name: Rust binary and samples
+        basedOnDependencyAnalysis: false
+        script: |
+          set -e
+          bin="$PROJECT_DIR/../target/aarch64-apple-ios/${RUST_PROFILE:-debug}/viewer"
+          app="$TARGET_BUILD_DIR/$WRAPPER_NAME"
+          cp "$bin" "$app/viewer"
+          mkdir -p "$app/samples"
+          cp "$PROJECT_DIR/../samples/"* "$app/samples/"
