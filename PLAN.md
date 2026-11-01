@@ -299,15 +299,17 @@ viewer/
 
 ## 11. Roadmap
 
-1. **MVP (desktop):** shell, detection, Hex, images, text/code, Markdown, JSON tree, CSV, zip. Startup tracing and benchmark from day 1.
-2. **Documents:** PDF (PDFium), EPUB, XLSX, comics.
-3. **3D:** wgpu viewport, glTF/OBJ/STL/PLY, then Assimp.
-4. **Media:** libmpv (desktop), platform decoders (mobile); trim and gain editors (§12.6).
-5. **Mobile:** Android, then iOS, using platform backends and OS open-file integration.
-6. **Hardening:** worker sandbox, fuzzing, signing and packaging.
-7. **Wider OS reach:** FreeBSD/OpenBSD ports, LoongArch/RISC-V builds for Kylin/UOS/openEuler, HarmonyOS NEXT shell.
-8. **Long tail:** converter bridge, WASM plugin SDK, CAD, DICOM, science formats.
-9. **OS preview integration:** Quick Look, Explorer preview handler, freedesktop thumbnailer, quick-preview mode toggled with the spacebar.
+✅ done · 🟡 partly done · ⬜ not started. Updated 2026-11-01. Basic editors for every content model follow 3D (§12).
+
+1. ✅ **MVP (desktop):** shell, detection, Hex, images, text/code, Markdown, JSON tree, CSV, zip. Startup tracing and benchmark from day 1. Since then: folders as containers, image streaming in bands, memory budgets in CI.
+2. ⬜ **Documents:** PDF (PDFium), EPUB, XLSX, comics. *Not started; next up.* DOCX/XLSX/EPUB/CBZ only open as zip listings today.
+3. 🟡 **3D:** done: RendererX (wgpu, clay/PBR/unlit, textures, streaming, off-thread pipelines), glTF/GLB/VRM, FBX and OBJ via ufbx (in place of Assimp), USD/USDZ with composition via `usd-lite`, `.blend` preview, blocked/missing file reporting. Left: STL, PLY, MToon shading, animation playback (v2).
+4. ⬜ **Media:** libmpv (desktop), platform decoders (mobile); trim and gain editors (§12.6).
+5. 🟡 **Mobile:** iOS/iPadOS runs (libfilepicker, folder grants, Open Folder…). Left: opening files tapped in the Files app (`CFBundleDocumentTypes`), bookmarks with a Recents list, then Android.
+6. ⬜ **Hardening:** worker sandbox, fuzzing, signing and packaging. (CI tests Linux, Windows and macOS already.)
+7. ⬜ **Wider OS reach:** FreeBSD/OpenBSD ports, LoongArch/RISC-V builds for Kylin/UOS/openEuler, HarmonyOS NEXT shell.
+8. ⬜ **Long tail:** converter bridge, WASM plugin SDK, CAD, DICOM, science formats.
+9. ⬜ **OS preview integration:** Quick Look, Explorer preview handler, freedesktop thumbnailer, quick-preview mode toggled with the spacebar.
 
 ---
 
