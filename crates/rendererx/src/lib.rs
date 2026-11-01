@@ -70,11 +70,20 @@ pub struct RendererDesc {
     /// Bytes uploaded per [`Renderer::sync`] call, so a huge model streams in over
     /// several frames instead of stalling one.
     pub upload_budget: u64,
+    /// No shader is ever compiled on the frame path, not even clay: `new`, `sync` and
+    /// `render` only queue pipelines, the host compiles them on a worker with
+    /// [`Renderer::compile_one`] / [`compile_pending`](Renderer::compile_pending), and
+    /// batches whose pipeline isn't ready yet are left out of the frame. For
+    /// interactive hosts: on a cold driver cache each pipeline takes tens of
+    /// milliseconds (65–100 ms on an M-series Mac), a visible stall on the UI thread.
+    /// Off (the default), clay compiles where needed, which suits tests and one-shot
+    /// renders.
+    pub background_compile: bool,
 }
 
 impl Default for RendererDesc {
     fn default() -> Self {
-        Self { msaa: Msaa::Auto, upload_budget: 32 << 20 }
+        Self { msaa: Msaa::Auto, upload_budget: 32 << 20, background_compile: false }
     }
 }
 
@@ -172,11 +181,17 @@ impl Renderer {
             encode,
             trace: None,
         };
-        // The pipelines a typical model needs for its first frame: clay triangles,
-        // with and without vertex colours and uvs. Everything else draws as clay until
-        // its own pipeline is compiled, off the frame path (§7.3).
-        for (colors, uvs) in [(false, false), (false, true), (true, false), (true, true)] {
-            r.pipeline(PipelineKey { model: Model::Clay, topology: Topology::Triangles, colors, uvs });
+        // What a typical model's first frame needs: clay triangles, with and without
+        // uvs (vertex colours are rarer and compile on first use). Everything else
+        // draws as clay until its own pipeline is compiled (§7.3). In background mode
+        // even these are only queued for the host's worker.
+        for uvs in [true, false] {
+            let k = PipelineKey { model: Model::Clay, topology: Topology::Triangles, colors: false, uvs };
+            if r.desc.background_compile {
+                r.want(k);
+            } else {
+                r.pipeline(k);
+            }
         }
         r
     }
@@ -197,32 +212,59 @@ impl Renderer {
         })
     }
 
-    /// The pipeline for `k` if it is compiled. Otherwise it is queued and the clay
-    /// pipeline for the same vertex streams is used (compiled now if need be: clay is
-    /// the one shader allowed on the frame path).
-    fn pipeline_or_clay(&self, k: PipelineKey) -> &wgpu::RenderPipeline {
-        if let Some(p) = self.slot(k).get() {
-            return p;
-        }
+    /// Queues `k` for compiling (once). The queue is taken from the end.
+    fn want(&self, k: PipelineKey) {
         let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
         if !wanted.contains(&k) {
             wanted.push(k);
         }
-        drop(wanted);
-        self.pipeline(PipelineKey { model: Model::Clay, ..k })
     }
 
-    /// Compiles every pipeline a frame has asked for. Safe to call from any thread;
-    /// hosts with a worker pool can run it there so no frame ever waits on a shader.
-    /// Returns true when something was compiled (views then redraw on their own).
+    /// Queues `k` to compile next, ahead of everything already queued.
+    fn want_next(&self, k: PipelineKey) {
+        let mut wanted = self.wanted.lock().unwrap_or_else(|e| e.into_inner());
+        wanted.retain(|w| *w != k);
+        wanted.push(k);
+    }
+
+    /// The pipeline for `k` if it is compiled. Otherwise it is queued and the clay
+    /// pipeline for the same vertex streams stands in: compiled now if need be (clay
+    /// is the one shader allowed on the frame path), or, in background mode, queued
+    /// ahead of `k` with `None` returned so the batch waits a frame or two.
+    fn pipeline_or_clay(&self, k: PipelineKey) -> Option<&wgpu::RenderPipeline> {
+        if let Some(p) = self.slot(k).get() {
+            return Some(p);
+        }
+        self.want(k);
+        let clay = PipelineKey { model: Model::Clay, ..k };
+        if let Some(p) = self.slot(clay).get() {
+            return Some(p);
+        }
+        if self.desc.background_compile {
+            // Ahead of `k` and every other model: one clay pipeline gives every mesh
+            // using these vertex streams a shape.
+            self.want_next(clay);
+            return None;
+        }
+        Some(self.pipeline(clay))
+    }
+
+    /// Compiles one queued pipeline, blocking. Safe to call from any thread: hosts in
+    /// background mode run it on a worker until it returns false, telling their views
+    /// to redraw after each (a frame drawn without it is stale once it's ready).
+    pub fn compile_one(&self) -> bool {
+        let Some(k) = self.next_wanted() else { return false };
+        self.pipeline(k);
+        self.pipelines_ready.fetch_add(1, Ordering::Release);
+        true
+    }
+
+    /// Compiles every queued pipeline (see [`compile_one`](Self::compile_one)).
+    /// Returns true when something was compiled.
     pub fn compile_pending(&self) -> bool {
         let mut any = false;
-        while let Some(k) = self.next_wanted() {
-            self.pipeline(k);
+        while self.compile_one() {
             any = true;
-        }
-        if any {
-            self.pipelines_ready.fetch_add(1, Ordering::Release);
         }
         any
     }
@@ -274,16 +316,11 @@ impl Renderer {
     ///
     /// Also compiles one pipeline a frame asked for, if any (so hosts that never call
     /// [`compile_pending`](Self::compile_pending) still get every shading model, one
-    /// per tick, without a frame waiting on all of them).
+    /// per tick, without a frame waiting on all of them). Not in background mode,
+    /// where the host's worker does it.
     pub fn sync(&self, scene: &mut GpuScene) -> bool {
-        let compiled = match self.next_wanted() {
-            Some(k) => {
-                self.pipeline(k);
-                self.pipelines_ready.fetch_add(1, Ordering::Release);
-                true
-            }
-            None => false,
-        };
+        // In background mode the host's worker compiles; never here.
+        let compiled = !self.desc.background_compile && self.compile_one();
         let synced = scene.sync(&self.device, &self.queue, &self.materials, self.desc.upload_budget);
         for id in &synced.done {
             scene.reader.release_mesh_data(*id);
@@ -380,7 +417,10 @@ impl Renderer {
             for batch in &scene.batches {
                 let Some(mesh) = scene.meshes.get(batch.mesh.index()).and_then(Option::as_ref) else { continue };
                 let key = PipelineKey { model: batch.model, topology: mesh.topology, colors: mesh.colors.is_some(), uvs: mesh.uvs.is_some() };
-                pass.set_pipeline(self.pipeline_or_clay(key));
+                // Background mode: no pipeline yet, not even clay; it's queued and the
+                // batch shows a frame or two later.
+                let Some(pipeline) = self.pipeline_or_clay(key) else { continue };
+                pass.set_pipeline(pipeline);
                 let groups = batch.material.and_then(|m| scene.material_groups.get(m.index())).and_then(Option::as_ref);
                 // Without uvs there is nothing to sample maps with: the factors alone.
                 let group = groups.map(|g| if mesh.uvs.is_some() { &g.textured } else { &g.plain });

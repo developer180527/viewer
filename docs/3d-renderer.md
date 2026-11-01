@@ -340,6 +340,8 @@ Memory is budgeted like time. Rules from the first line of code:
 
 ---
 
+Shader compiles are the one cost the frame can't absorb: on a cold driver cache (first launch after install or update, or after a shader changes) each pipeline takes 65–100 ms on an M-series Mac; warm, about 0.5 ms. `RendererDesc::background_compile` keeps them all off the frame path: `new`, `sync` and `render` only queue pipelines (the clay stand-in for a mesh's vertex streams ahead of everything else), and the host runs `compile_one` on a worker, redrawing after each. Viewer does this; a cold open of a textured USD model went from one 197 ms frame to none over 10 ms. Without it (tests, one-shot renders), clay compiles where needed and `prepare` compiles a scene's pipelines up front.
+
 ## 12. Limits (hostile files)
 
 `SceneLimits` (defaults, all configurable): max triangles (50M), max vertices (50M), max texture side (16384, capped at the device limit), max total GPU memory (e.g. 2 GB or 50% of the adapter's budget), max node depth (256), max nodes (1M).

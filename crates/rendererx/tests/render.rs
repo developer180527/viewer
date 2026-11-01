@@ -613,3 +613,54 @@ fn an_arriving_texture_only_rebuilds_its_own_materials() {
     // Rebuilding every material per arrival took ~1 s here (quadratic); now linear.
     assert!(start.elapsed().as_millis() < 500, "{:?}", start.elapsed());
 }
+
+/// A frame as an interactive host draws it: no `prepare`, so nothing is compiled
+/// for it.
+fn frame(r: &Renderer, device: &wgpu::Device, queue: &wgpu::Queue, scene: &GpuScene, view: &mut View, camera: &Camera) -> Vec<u8> {
+    let mut encoder = device.create_command_encoder(&Default::default());
+    r.render(&mut encoder, scene, view, camera, &RenderOptions::default());
+    queue.submit([encoder.finish()]);
+    view.read_pixels(device, queue).unwrap()
+}
+
+#[test]
+fn background_compile_never_compiles_on_the_frame_path() {
+    let (device, queue) = gpu_or_skip!();
+    let desc = RendererDesc { background_compile: true, msaa: Msaa::Off, ..Default::default() };
+    let r = Renderer::new(&device, &queue, desc);
+    assert!(r.pipelines_pending(), "new() queues clay instead of compiling it");
+
+    // A PBR cube without uvs: a pipeline that isn't compiled, and whose clay
+    // stand-in isn't either.
+    let (scene, mut b) = CpuScene::new();
+    let m = b.add_mesh(cube()).unwrap();
+    let pbr = Material::new(ShadingId::PBR, ShadingSource::FromFile).with_param("base_color", ParamValue::Vec4(Vec4::new(0.9, 0.2, 0.2, 1.0)));
+    let mat = b.add_material(pbr).unwrap();
+    b.add_node(Node::mesh(m, Some(mat), Mat4::IDENTITY, None)).unwrap();
+    let mut g = r.attach(&scene);
+    r.sync(&mut g);
+    let mut view = r.create_view(ViewDesc { width: 32, height: 32 });
+    let camera = Camera::framing(g.bounds().unwrap(), 1.0);
+    let bg = [28, 28, 31, 255];
+
+    // Nothing ready: the frame draws the background, without waiting on a shader.
+    let first = frame(&r, &device, &queue, &g, &mut view, &camera);
+    assert_eq!(px(&first, 32, 16, 16), bg);
+    assert!(!r.sync(&mut g) && r.pipelines_pending(), "sync doesn't compile in background mode");
+
+    // A worker compiles the queue: clay first, then PBR.
+    std::thread::scope(|s| {
+        s.spawn(|| assert!(r.compile_one()));
+    });
+    assert!(r.needs_redraw(&g, &view, &camera, &RenderOptions::default()), "a ready pipeline makes the frame stale");
+    let clay = px(&frame(&r, &device, &queue, &g, &mut view, &camera), 32, 16, 16);
+    assert_ne!(clay, bg, "the clay stand-in draws as soon as it's compiled");
+
+    std::thread::scope(|s| {
+        s.spawn(|| r.compile_pending());
+    });
+    assert!(!r.pipelines_pending());
+    let shaded = px(&frame(&r, &device, &queue, &g, &mut view, &camera), 32, 16, 16);
+    assert_ne!(shaded, clay, "then its own PBR shading");
+    assert!(shaded[0] > 2 * shaded[1], "red base colour: {shaded:?}");
+}

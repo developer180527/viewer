@@ -107,8 +107,9 @@ fn draw_scene(
         rx.render(&mut encoder, gpu, view, camera, &opts);
         queue.submit([encoder.finish()]);
     }
-    // Pipelines a material asked for compile in `sync`, one per tick: keep ticking.
-    gpu.needs_sync() || rx.pipelines_pending() || scene.read().geometry() == rendererx::scene_data::GeometryState::Loading
+    // Pipelines aren't counted: windows compile them on `Rx`'s worker, which wakes the
+    // window as each is ready; screenshots compiled them in `prepare` above.
+    gpu.needs_sync() || scene.read().geometry() == rendererx::scene_data::GeometryState::Loading
 }
 
 fn new_ui(dark: bool) -> anyhow::Result<Ui> {
@@ -241,13 +242,55 @@ fn headless(path: &Path, job: Option<Job>) -> anyhow::Result<()> {
 
 // --- Windowed --------------------------------------------------------------------
 
+/// RendererX for windows, in background-compile mode, and the thread that compiles
+/// its pipelines: on a cold driver cache each takes 65–100 ms, which on the UI thread
+/// froze the window on the first 3D file and stalled a frame per shading model. Now
+/// a model shows as soon as clay is ready and switches to its own shading as each
+/// pipeline arrives.
+struct Rx {
+    renderer: std::sync::Arc<rendererx::Renderer>,
+    /// Wakes the worker; one slot, so nudges while it is busy merge.
+    kick: std::sync::mpsc::SyncSender<()>,
+}
+
+impl Rx {
+    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
+        let desc = rendererx::RendererDesc { background_compile: true, ..Default::default() };
+        let renderer = std::sync::Arc::new(rendererx::Renderer::new(device, queue, desc));
+        let (kick, nudged) = std::sync::mpsc::sync_channel::<()>(1);
+        let worker = renderer.clone();
+        // Exits when the window (and so `kick`) goes away.
+        let spawned = std::thread::Builder::new().name("shader compile".into()).spawn(move || {
+            while nudged.recv().is_ok() {
+                while worker.compile_one() {
+                    if let Some(wake) = WAKE.get() {
+                        wake();
+                    }
+                }
+            }
+        });
+        if spawned.is_err() {
+            // No thread: compile here instead, as foreground hosts do.
+            renderer.compile_pending();
+        }
+        let rx = Self { renderer, kick };
+        // The clay pipelines queued by `new`.
+        rx.nudge();
+        rx
+    }
+
+    fn nudge(&self) {
+        let _ = self.kick.try_send(());
+    }
+}
+
 struct Gpu<'a> {
     device: &'a wgpu::Device,
     queue: &'a wgpu::Queue,
     renderer: &'a mut libgui_wgpu::Renderer,
     /// RendererX on the same device, created the first time a 3D view needs it so
     /// startup never pays for its pipelines.
-    rx: &'a mut Option<rendererx::Renderer>,
+    rx: &'a mut Option<Rx>,
     scale: f32,
     /// Set by `uploads_done`.
     settle: &'a mut bool,
@@ -289,8 +332,12 @@ impl Textures for Gpu<'_> {
     }
 
     fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
-        let rx = self.rx.get_or_insert_with(|| rendererx::Renderer::new(self.device, self.queue, Default::default()));
-        let busy = draw_scene((rx, self.device, self.queue), st, scene, size, camera, background, false);
+        let rx = self.rx.get_or_insert_with(|| Rx::new(self.device, self.queue));
+        let busy = draw_scene((&rx.renderer, self.device, self.queue), st, scene, size, camera, background, false);
+        // The frame queued pipelines it lacked (drawing clay, or nothing, meanwhile).
+        if rx.renderer.pipelines_pending() {
+            rx.nudge();
+        }
         // The target is recreated on resize; point the UI's texture at the new one.
         let view = st.view.as_ref().expect("created by draw_scene");
         if let Some(target) = view.target_view() {
@@ -323,7 +370,7 @@ struct Live {
     idle: f32,
     batches: Vec<Batch>,
     clear: Color,
-    rx: Option<rendererx::Renderer>,
+    rx: Option<Rx>,
 }
 
 #[derive(Default)]
