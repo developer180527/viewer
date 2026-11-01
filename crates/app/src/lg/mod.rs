@@ -15,7 +15,6 @@ use std::time::{Duration, Instant};
 use anyhow::{Context as _, anyhow};
 use libgui::*;
 use winit::application::ApplicationHandler;
-use winit::dpi::LogicalSize;
 use winit::event::{StartCause, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
 use winit::window::{Window, WindowId};
@@ -152,7 +151,7 @@ impl FontSource for LazySystemFonts {
 
 pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
     if let Some(path) = &args.screenshot {
-        return headless(path, args.size.unwrap_or(SIZE), job);
+        return headless(path, args.size.unwrap_or(SIZE), args.info, job);
     }
     let el = EventLoop::<()>::with_user_event().build().context("creating the event loop")?;
     startup::mark("event loop created");
@@ -166,9 +165,35 @@ pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
             let _ = proxy.send_event(());
         })
     });
-    let mut host = Host { title, app: Some(ViewerApp::new(job, true)), benchmark: args.benchmark, gpu: Some(gpu), ..Default::default() };
+    let mut app = ViewerApp::new(job, true);
+    app.show_info = args.info;
+    let mut host = Host { title, app: Some(app), benchmark: args.benchmark, gpu: Some(gpu), ..Default::default() };
     el.run_app(&mut host).context("running the event loop")?;
     host.error.map_or(Ok(()), Err)
+}
+
+/// The size to draw at: the whole window. On iOS winit's inner size is only the
+/// safe area, but the drawing layer covers the screen; the gap is `safe_area`.
+fn surface_size(window: &Window) -> winit::dpi::PhysicalSize<u32> {
+    if cfg!(any(target_os = "ios", target_os = "android")) { window.outer_size() } else { window.inner_size() }
+}
+
+/// What the notch, status bar, home indicator and rounded corners cover, in points:
+/// the window minus winit's inner (safe) rect. Zero on desktops.
+fn safe_area(window: &Window, scale: f32) -> Insets {
+    if !cfg!(any(target_os = "ios", target_os = "android")) {
+        return Insets::all(0.0);
+    }
+    let (outer, inner) = (window.outer_size(), window.inner_size());
+    let (op, ip) = match (window.outer_position(), window.inner_position()) {
+        (Ok(o), Ok(i)) => (o, i),
+        _ => return Insets::all(0.0),
+    };
+    let left = (ip.x - op.x).max(0) as f32;
+    let top = (ip.y - op.y).max(0) as f32;
+    let right = (outer.width as f32 - inner.width as f32 - left).max(0.0);
+    let bottom = (outer.height as f32 - inner.height as f32 - top).max(0.0);
+    Insets { left: left / scale, top: top / scale, right: right / scale, bottom: bottom / scale }
 }
 
 type GpuParts = (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue);
@@ -262,8 +287,10 @@ const HEADLESS_SCALE: f32 = 2.0;
 
 /// `--screenshot`: wait for the file, draw it on the CPU at 2× and save the
 /// pixels. No window, no GPU, so it runs anywhere (CI included).
-fn headless(path: &Path, size: (f32, f32), job: Option<Job>) -> anyhow::Result<()> {
+fn headless(path: &Path, size: (f32, f32), info: bool, job: Option<Job>) -> anyhow::Result<()> {
     let mut app = ViewerApp::new(job, true);
+    app.show_info = info;
+    app.stable = true;
     while app.loading() && !app.poll_job() {
         std::thread::sleep(Duration::from_millis(1));
     }
@@ -426,6 +453,8 @@ struct Live {
     idle: f32,
     batches: Vec<Batch>,
     clear: Color,
+    /// Frames still to draw after a finger lifted (see `window_event`).
+    release_frames: u8,
     rx: Option<Rx>,
 }
 
@@ -444,10 +473,14 @@ struct Host {
 
 impl Host {
     fn start(&mut self, el: &ActiveEventLoop) -> anyhow::Result<()> {
-        let attrs = Window::default_attributes()
-            .with_title(&self.title)
-            .with_inner_size(LogicalSize::new(SIZE.0, SIZE.1))
-            .with_min_inner_size(LogicalSize::new(320.0, 240.0));
+        let attrs = Window::default_attributes().with_title(&self.title);
+        // Phones and tablets: the window is the screen (winit would otherwise size it
+        // from these, desktop-sized, and the app would lay out for 1100 points).
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
+        let attrs =
+            attrs
+            .with_inner_size(winit::dpi::LogicalSize::new(SIZE.0, SIZE.1))
+            .with_min_inner_size(winit::dpi::LogicalSize::new(320.0, 240.0));
         let window = Arc::new(el.create_window(attrs).context("creating the window")?);
         startup::mark("window created");
 
@@ -466,7 +499,7 @@ impl Host {
             (device, queue) = open_device(&adapter)?;
         }
 
-        let px = window.inner_size();
+        let px = surface_size(&window);
         let mut config = surface
             .get_default_config(&adapter, px.width.max(1), px.height.max(1))
             .context("surface has no configuration")?;
@@ -497,6 +530,7 @@ impl Host {
             last: Instant::now(),
             idle: 0.0,
             batches: Vec::new(),
+            release_frames: 0,
             rx: None,
         });
         Ok(())
@@ -507,7 +541,7 @@ impl Host {
 
         // One check covers every way the window can change size, and turns a
         // resize drag into one reconfigure per presented frame.
-        let px = w.window.inner_size();
+        let px = surface_size(&w.window);
         if px.width.max(1) != w.config.width || px.height.max(1) != w.config.height {
             w.config.width = px.width.max(1);
             w.config.height = px.height.max(1);
@@ -518,6 +552,7 @@ impl Host {
         w.idle += (now - w.last).as_secs_f32(); // real time: libgui keeps its own clocks with it
         w.last = now;
         let scale = w.window.scale_factor() as f32;
+        app.safe_area = safe_area(&w.window, scale);
         let info = FrameInfo {
             screen_size: Vec2::new(w.config.width as f32 / scale, w.config.height as f32 / scale),
             scale,
@@ -529,7 +564,9 @@ impl Host {
         }
         let mut platform = PlatformOutput::default();
         let mut settle = false;
-        if w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 {
+        let releasing = w.release_frames > 0;
+        w.release_frames = w.release_frames.saturating_sub(1);
+        if w.ui.needs_frame_for(&info, w.idle) || self.content_frames < 3 || releasing {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
@@ -613,6 +650,7 @@ impl Host {
         // Sleep until libgui, input or a loader thread needs us.
         match platform.repaint_after {
             _ if self.content_frames < 3 && (app.shown() || app.loading()) => w.window.request_redraw(),
+            _ if w.release_frames > 0 => w.window.request_redraw(),
             Some(t) if t <= 0.0 => w.window.request_redraw(),
             Some(t) => el.set_control_flow(ControlFlow::WaitUntil(Instant::now() + Duration::from_secs_f32(t))),
             None => el.set_control_flow(ControlFlow::Wait),
@@ -649,6 +687,20 @@ impl ApplicationHandler for Host {
 
     fn window_event(&mut self, el: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         let Some(w) = self.live.as_mut() else { return };
+        // A finger that lands and lifts between two frames is shown to widgets as
+        // a press in one frame and the release in the next, and nothing else asks
+        // for that next frame: a quick tap would only highlight. Draw it.
+        if let WindowEvent::Touch(t) = &event {
+            if matches!(t.phase, winit::event::TouchPhase::Ended | winit::event::TouchPhase::Cancelled) {
+                w.release_frames = 2;
+            }
+            // libgui (ab3ded2) forgets where such a finger was by the release frame
+            // and judges the release at the previous pointer position, so a tap on a
+            // menu item misses it. Moving the pointer there too keeps them together.
+            let s = w.window.scale_factor();
+            let pos = Vec2::new((t.location.x / s) as f32, (t.location.y / s) as f32);
+            w.ui.push(InputEvent::PointerMoved { pos });
+        }
         if !w.files.push_window_event(&mut w.ui, &event) {
             libgui_winit::push_window_event(&mut w.ui, &event, w.window.scale_factor());
         }

@@ -30,6 +30,7 @@ OPTIONS:
     --trace-startup         Print startup timings to stderr
     --benchmark             Trace startup and exit after the first frame showing the file
     --screenshot <PNG>      Save a screenshot once the file is shown, then exit
+    --info                  Open with the info panel shown
     --size <WxH>            Window size in points for --screenshot (default 1100x760)
     --list-loaders          Print the available loaders
     -h, --help              Show this help
@@ -43,6 +44,7 @@ pub struct Args {
     pub benchmark: bool,
     pub screenshot: Option<PathBuf>,
     pub size: Option<(f32, f32)>,
+    pub info: bool,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -77,6 +79,7 @@ fn parse_args() -> Result<Args, String> {
             Some("--screenshot") => {
                 args.screenshot = Some(it.next().ok_or("--screenshot needs a path")?.into());
             }
+            Some("--info") => args.info = true,
             Some("--size") => {
                 let v = it.next().ok_or("--size needs WxH")?;
                 let v = v.to_string_lossy();

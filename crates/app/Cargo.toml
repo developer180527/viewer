@@ -17,7 +17,6 @@ viewer-fmt-data.workspace = true
 viewer-fmt-archive.workspace = true
 viewer-fmt-3d.workspace = true
 anyhow.workspace = true
-rfd = "0.17"
 # Only for writing --screenshot PNGs.
 image = { version = "0.25", default-features = false, features = ["png"] }
 
@@ -36,6 +35,10 @@ wgpu = { version = "30" }
 winit = { version = "0.30" }
 pollster = { version = "1" }
 rendererx = { workspace = true, features = ["controls"] }
+
+# File dialogs. Phones get the system document picker instead (not wired up yet).
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+rfd = "0.17"
 
 [target.'cfg(unix)'.dependencies]
 # mmap for the global allocator's big blocks (src/alloc.rs).

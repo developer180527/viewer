@@ -74,9 +74,13 @@ pub struct ViewerApp {
     stack: Vec<Page>,
     job: Option<Job>,
     error: Option<String>,
-    show_info: bool,
     next_page_id: u64,
     pub dark: bool,
+    pub show_info: bool,
+    /// Kept clear of the notch, status bar and home indicator (zero on desktops).
+    pub safe_area: Insets,
+    /// Leave out what changes run to run (timings), so screenshots can be compared.
+    pub stable: bool,
     /// New window title, for the host to apply.
     pub title: Option<String>,
     /// Textures of closed pages, for the host to free.
@@ -91,6 +95,8 @@ impl ViewerApp {
             job,
             error: None,
             show_info: false,
+            safe_area: Insets::all(0.0),
+            stable: false,
             next_page_id: 0,
             dark,
             title: None,
@@ -116,6 +122,7 @@ impl ViewerApp {
     }
 
     fn open_dialog(&mut self) {
+        #[cfg(not(any(target_os = "ios", target_os = "android")))]
         if let Some(path) = rfd::FileDialog::new().pick_file() {
             self.open_path(path);
         }
@@ -180,12 +187,14 @@ impl ViewerApp {
 
     pub fn ui(&mut self, ui: &mut Ui, tex: &mut dyn Textures) {
         let pal = ui.theme.palette;
-        let screen = ui.screen_size();
+        let safe = self.safe_area;
+        // Layout works in the safe rect; the backgrounds still fill the screen.
+        let screen = ui.screen_size() - Vec2::new(safe.left + safe.right, safe.top + safe.bottom);
         let class = WidthClass::for_width(screen.x, self.width_class);
         self.width_class = Some(class);
         let root = Id::from_name("root");
         let mut action = None;
-        ui.container_id(root, Layout::column(), Frame { fill: pal.bg_app, ..Frame::none() }, |ui| {
+        ui.container_id(root, Layout::column().padding(safe), Frame { fill: pal.bg_app, ..Frame::none() }, |ui| {
             let drop = ui.drop_zone(&[libgui_winit::FILES]);
             if let Some(payload) = drop.dropped
                 && let Some(path) = payload.take::<Vec<PathBuf>>().ok().and_then(|p| p.into_iter().next())
@@ -253,7 +262,7 @@ impl ViewerApp {
         }
     }
 
-    /// The compact top bar: Back, the current file's name, and a "⋯" menu with
+    /// The compact top bar: Back, the current file's name, and a "···" menu with
     /// everything the full toolbar has.
     fn top_bar(&mut self, ui: &mut Ui) {
         let pal = ui.theme.palette;
@@ -266,7 +275,8 @@ impl ViewerApp {
             ui.label(self.stack.last().map_or("Viewer", |p| p.src.name()));
             ui.flex();
             let mut pick = None;
-            ui.menu_button("⋯", |ui| {
+            // Middle dots, not "⋯": Inter lacks that, and drawing it would load a system font.
+            ui.menu_button("···", |ui| {
                 if ui.menu_item("Open…").clicked {
                     self.open_dialog();
                 }
@@ -372,7 +382,9 @@ impl ViewerApp {
                 ui.label_muted("·");
                 ui.label(&format!("{} view", page.doc.content.model_name()));
                 ui.flex();
-                ui.label_muted(&format!("decoded in {:.1} ms", page.load_time.as_secs_f64() * 1000.0));
+                if !self.stable {
+                    ui.label_muted(&format!("decoded in {:.1} ms", page.load_time.as_secs_f64() * 1000.0));
+                }
             } else {
                 ui.label_muted("No file open");
             }

@@ -1,0 +1,5 @@
+[env]
+# One iOS version for Rust and for C code built by `cc` (ufbx): left unset, they
+# disagree (Rust links for iOS 10, cc compiles for the installed SDK) and the app
+# fails to link. Matches MinimumOSVersion in ios/Info.plist.
+IPHONEOS_DEPLOYMENT_TARGET = "15.0"

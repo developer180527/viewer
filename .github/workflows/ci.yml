@@ -54,6 +54,14 @@ jobs:
       - name: Tests
         run: cargo test --workspace --all-features
 
+      # What the golden screenshot test drew, and its diffs, when it fails.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: goldens-${{ matrix.os }}
+          path: target/tmp/goldens/
+          if-no-files-found: ignore
+
   memory:
     name: Memory budgets (Linux, headless)
     runs-on: ubuntu-24.04
@@ -110,6 +118,7 @@ jobs:
           -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
           -p viewer-fmt-3d -p rendererx-scene -p rendererx -p rendererx-gltf -p usd-lite
 
+  # The shared crates and the app itself (ios/run-sim.sh runs it on a simulator).
   ios:
     name: Build (iOS)
     runs-on: macos-latest
@@ -124,6 +133,6 @@ jobs:
 
       - name: Build
         run: >
-          cargo build --target aarch64-apple-ios
+          cargo build --target aarch64-apple-ios -p viewer
           -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
           -p viewer-fmt-3d -p rendererx-scene -p rendererx -p rendererx-gltf -p usd-lite
