@@ -1,0 +1,9 @@
+[package]
+name = "viewer-picker"
+description = "Choosing a file to open, on every platform: native dialogs on desktops, the system document picker on phones."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[target.'cfg(not(any(target_os = "ios", target_os = "android")))'.dependencies]
+rfd = "0.17"

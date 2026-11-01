@@ -3364,13 +3364,13 @@ dependencies = [
  "pollster 1.0.1",
  "raw-window-handle",
  "rendererx",
- "rfd",
  "viewer-core",
  "viewer-fmt-3d",
  "viewer-fmt-archive",
  "viewer-fmt-data",
  "viewer-fmt-doc",
  "viewer-fmt-image",
+ "viewer-picker",
  "wgpu",
  "winit",
 ]
@@ -3441,6 +3441,13 @@ dependencies = [
  "png",
  "resvg",
  "viewer-core",
+]
+
+[[package]]
+name = "viewer-picker"
+version = "0.1.0"
+dependencies = [
+ "rfd",
 ]
 
 [[package]]

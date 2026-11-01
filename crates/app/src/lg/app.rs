@@ -1,12 +1,15 @@
 //! The window's contents: toolbar, the current page's view, info panel, status bar.
 //! Knows nothing about winit or the GPU; the host in `mod.rs` drives it.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
 
 use libgui::*;
 use viewer_core::{Document, FileSource};
+use viewer_picker::Picked;
 
 use super::Textures;
 use super::views::{self, Action, ViewState};
@@ -85,6 +88,10 @@ pub struct ViewerApp {
     pub title: Option<String>,
     /// Textures of closed pages, for the host to free.
     pub retired: Vec<TextureId>,
+    /// Where the file picker leaves its answer, which can come after `pick` returns.
+    picked: Rc<RefCell<Option<Picked>>>,
+    /// The file last picked, held so it stays readable (see [`Picked`]).
+    reading: Option<Picked>,
 }
 
 impl ViewerApp {
@@ -101,6 +108,8 @@ impl ViewerApp {
             dark,
             title: None,
             retired: Vec::new(),
+            picked: Rc::default(),
+            reading: None,
         }
     }
 
@@ -122,10 +131,15 @@ impl ViewerApp {
     }
 
     fn open_dialog(&mut self) {
-        #[cfg(not(any(target_os = "ios", target_os = "android")))]
-        if let Some(path) = rfd::FileDialog::new().pick_file() {
-            self.open_path(path);
-        }
+        let slot = Rc::clone(&self.picked);
+        viewer_picker::pick(move |picked| {
+            if picked.is_some() {
+                *slot.borrow_mut() = picked;
+                if let Some(wake) = crate::loading::WAKE.get() {
+                    wake();
+                }
+            }
+        });
     }
 
     fn open_entry(&mut self, container: Arc<dyn viewer_core::Container>, index: usize) {
@@ -151,8 +165,15 @@ impl ViewerApp {
         }
     }
 
-    /// Returns true when a load finished (successfully or not).
+    /// Starts loading a file the picker chose, or takes in a finished load. Returns
+    /// true when a file started or finished loading (successfully or not).
     pub fn poll_job(&mut self) -> bool {
+        let picked = self.picked.borrow_mut().take();
+        if let Some(picked) = picked {
+            self.open_path(picked.path().to_path_buf());
+            self.reading = Some(picked);
+            return true;
+        }
         let Some(job) = &self.job else { return false };
         let Some(result) = job.poll() else { return false };
         let target = job.target;
