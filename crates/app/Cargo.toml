@@ -16,6 +16,7 @@ viewer-fmt-doc.workspace = true
 viewer-fmt-data.workspace = true
 viewer-fmt-archive.workspace = true
 viewer-fmt-3d.workspace = true
+viewer-fmt-pdf.workspace = true
 libfilepicker.workspace = true
 anyhow.workspace = true
 # Only for writing --screenshot PNGs.

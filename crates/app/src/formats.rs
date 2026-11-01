@@ -12,6 +12,7 @@ pub fn registry() -> &'static Registry {
             viewer_fmt_data::LOADERS,
             viewer_fmt_doc::LOADERS,
             viewer_fmt_3d::LOADERS,
+            viewer_fmt_pdf::LOADERS,
         ])
     })
 }

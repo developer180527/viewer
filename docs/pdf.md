@@ -1,6 +1,6 @@
 # PDF in Viewer
 
-Status: plan, ahead of the spike (§10). Roadmap step 2 (PLAN.md §11), the first document format.
+Status: both backends in, behind `PageSource`; the app shows page 1 as an interim view (§10). Roadmap step 2 (PLAN.md §11), the first document format.
 
 ## 1. Goals
 
@@ -55,7 +55,7 @@ If Artifex ever allows MuPDF in the App Store build, these rows simply switch on
 
 ```
 crates/
-  pdf-api/        viewer-pdf-api     PageSource-side types shared by both backends (MIT/Apache)
+  core/           viewer-core        Content::Pages, PageSource and its types (MIT/Apache)
   pdf-mupdf/      viewer-pdf-mupdf   MuPDF backend + its FFI (AGPL)
   pdf-pdfkit/     viewer-pdf-pdfkit  PDFKit backend via objc2-pdf-kit (MIT/Apache)
   fmt-pdf/        viewer-fmt-pdf     the FormatLoader; picks the backend by target (MIT/Apache)
@@ -137,10 +137,10 @@ So there is one **page-render thread** that owns every open document:
 
 ## 10. Plan
 
-1. **Spike, MuPDF on macOS:** submodule, `build.rs`, minimal FFI; open a file, read page sizes, render page 1. Measure open time, first-page time, and binary size added.
-2. **Spike, PDFKit on iOS:** same three calls through `objc2-pdf-kit`, on the iPhone and iPad; same measurements.
-3. `viewer-core`: `Content::Pages` + `PageSource`.
-4. `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` behind the trait; `viewer-fmt-pdf` loader; the page-render thread.
+1. ✅ **MuPDF from source on macOS:** submodule at 1.28.6, `build.rs` (~20 s clean, incremental after), a C shim catching MuPDF's errors. A 22-page, 2.2 MB textbook chapter: open 4 ms, page 1 at 2× on screen in 111 ms.
+2. ✅ **PDFKit** through `objc2-pdf-kit`, tested on macOS: open 53 ms, page 1 in 122 ms; renders match MuPDF. ⬜ Measure on the iPhone and iPad.
+3. ✅ `viewer-core`: `Content::Pages` + `PageSource` (+ hand-written test PDFs in `viewer_core::testing`).
+4. ✅ `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` behind the trait; `viewer-fmt-pdf` loader (`VIEWER_PDF_BACKEND=pdfkit` on macOS). The iOS dependency tree has no MuPDF. ⬜ The page-render thread (comes with the view).
 5. The view: layout, tiles, zoom, cache, chrome.
 6. The PDF corpus and its runner; both backends passing it.
 7. Builds: Windows (MSVC), Linux, Android NDK, BSD; CI with the iOS dependency check; README and licence notes.

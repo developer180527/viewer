@@ -1847,6 +1847,7 @@ version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e022c9d066895efa1345f8e33e584b9f958da2fd4cd116792e15e07e4720a807"
 dependencies = [
+ "bitflags 2.13.2",
  "dispatch2",
  "objc2 0.6.5",
  "objc2-core-foundation",
@@ -1951,6 +1952,18 @@ dependencies = [
  "bitflags 2.13.2",
  "block2 0.6.2",
  "objc2 0.6.5",
+ "objc2-foundation 0.3.2",
+]
+
+[[package]]
+name = "objc2-pdf-kit"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c14ed801ae810c6ba487cedd7616bb48f9a8e37940042f57e862538e2c7db117"
+dependencies = [
+ "bitflags 2.13.2",
+ "objc2 0.6.5",
+ "objc2-core-graphics",
  "objc2-foundation 0.3.2",
 ]
 
@@ -3380,6 +3393,7 @@ dependencies = [
  "viewer-fmt-data",
  "viewer-fmt-doc",
  "viewer-fmt-image",
+ "viewer-fmt-pdf",
  "wgpu",
  "winit",
 ]
@@ -3449,6 +3463,38 @@ dependencies = [
  "image",
  "png",
  "resvg",
+ "viewer-core",
+]
+
+[[package]]
+name = "viewer-fmt-pdf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "viewer-core",
+ "viewer-pdf-mupdf",
+ "viewer-pdf-pdfkit",
+]
+
+[[package]]
+name = "viewer-pdf-mupdf"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cc",
+ "viewer-core",
+]
+
+[[package]]
+name = "viewer-pdf-pdfkit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-pdf-kit",
  "viewer-core",
 ]
 

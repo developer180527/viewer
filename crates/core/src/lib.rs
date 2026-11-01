@@ -7,11 +7,13 @@
 mod content;
 mod hex;
 mod loader;
+mod pages;
 mod source;
 
 pub use content::*;
 pub use hex::HexLoader;
 pub use loader::{Confidence, FormatLoader, Registry, open_guarded};
+pub use pages::*;
 pub use source::FileSource;
 
 pub type Result<T> = anyhow::Result<T>;

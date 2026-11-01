@@ -108,6 +108,8 @@ pub enum Content {
     Hex(FileSource),
     /// A 3D model: meshes, materials and nodes, built without a GPU.
     Scene(SceneDoc),
+    /// Pages laid out one after another and rendered on demand (PDF).
+    Pages(std::sync::Arc<dyn crate::PageSource>),
 }
 
 impl Content {
@@ -121,6 +123,7 @@ impl Content {
             Content::Container(_) => "Container",
             Content::Hex(_) => "Hex",
             Content::Scene(_) => "3D scene",
+            Content::Pages(_) => "Pages",
         }
     }
 }

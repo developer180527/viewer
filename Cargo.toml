@@ -21,6 +21,9 @@ rendererx-scene = { path = "crates/rendererx-scene" }
 rendererx = { path = "crates/rendererx" }
 rendererx-gltf = { path = "crates/rendererx-gltf" }
 usd-lite = { path = "crates/usd-lite" }
+viewer-pdf-mupdf = { path = "crates/pdf-mupdf" }
+viewer-pdf-pdfkit = { path = "crates/pdf-pdfkit" }
+viewer-fmt-pdf = { path = "crates/fmt-pdf" }
 
 anyhow = "1"
 memmap2 = "0.9"
