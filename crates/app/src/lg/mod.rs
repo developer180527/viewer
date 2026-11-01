@@ -116,12 +116,38 @@ fn new_ui(dark: bool) -> anyhow::Result<Ui> {
     let theme = if dark { Theme::dark() } else { Theme::light() };
     // Inter first, then the system's fonts, opened lazily the first time a
     // script Inter lacks (CJK file names, say) is drawn.
-    let mut ui = libgui_sysfonts::ui(theme, INTER).map_err(|e| anyhow!("loading fonts: {e:?}"))?;
+    let stack = FontStack::from_fonts(&[INTER]).map_err(|e| anyhow!("loading fonts: {e:?}"))?;
+    let mut ui = Ui::with_rasterizer(theme, Box::new(stack.with_source(Box::new(LazySystemFonts))));
     startup::mark("  body font + system font source");
     let mono = ui.fonts.add_font(HACK).map_err(|e| anyhow!("loading mono font: {e:?}"))?;
     ui.set_font_role(FontRole::Mono, mono);
     libgui_keymap::Keymap::<u8>::for_current_platform().install(&mut ui);
     Ok(ui)
+}
+
+/// The installed fonts, listed on a thread (`scan_system_fonts`, started first
+/// thing in `main`): listing them reads every font directory, 5–10 ms warm but
+/// close to 200 ms from a cold disk, and most files never need one.
+static SYSTEM_FONTS: std::sync::OnceLock<libgui_sysfonts::SystemFonts> = std::sync::OnceLock::new();
+static SYSTEM_FONTS_SCAN: std::sync::Mutex<Option<std::thread::JoinHandle<libgui_sysfonts::SystemFonts>>> =
+    std::sync::Mutex::new(None);
+
+pub fn scan_system_fonts() {
+    *SYSTEM_FONTS_SCAN.lock().unwrap() = Some(std::thread::spawn(libgui_sysfonts::SystemFonts::new));
+}
+
+/// The system fonts, waiting for the scan the first time a character needs them.
+struct LazySystemFonts;
+
+impl FontSource for LazySystemFonts {
+    fn face_for(&self, ch: char) -> Option<Box<dyn FontRasterizer>> {
+        SYSTEM_FONTS
+            .get_or_init(|| {
+                let scan = SYSTEM_FONTS_SCAN.lock().unwrap().take();
+                scan.and_then(|t| t.join().ok()).unwrap_or_default()
+            })
+            .face_for(ch)
+    }
 }
 
 pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
@@ -130,15 +156,45 @@ pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
     }
     let el = EventLoop::<()>::with_user_event().build().context("creating the event loop")?;
     startup::mark("event loop created");
+    let display = el.owned_display_handle();
+    // The GPU device doesn't need the window: open it on a thread while the window
+    // is built.
+    let gpu = std::thread::spawn(move || open_gpu(display));
     let proxy = el.create_proxy();
     WAKE.get_or_init(|| {
         Box::new(move || {
             let _ = proxy.send_event(());
         })
     });
-    let mut host = Host { title, app: Some(ViewerApp::new(job, true)), benchmark: args.benchmark, ..Default::default() };
+    let mut host = Host { title, app: Some(ViewerApp::new(job, true)), benchmark: args.benchmark, gpu: Some(gpu), ..Default::default() };
     el.run_app(&mut host).context("running the event loop")?;
     host.error.map_or(Ok(()), Err)
+}
+
+type GpuParts = (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue);
+
+/// The adapter and device, picked without a surface; `Host::start` checks the
+/// adapter can draw to the window once it exists.
+fn open_gpu(display: winit::event_loop::OwnedDisplayHandle) -> anyhow::Result<GpuParts> {
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(Box::new(display)));
+    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        power_preference: wgpu::PowerPreference::LowPower,
+        ..Default::default()
+    }))
+    .context("no GPU adapter")?;
+    let (device, queue) = open_device(&adapter)?;
+    startup::mark("  GPU device opened");
+    Ok((instance, adapter, device, queue))
+}
+
+fn open_device(adapter: &wgpu::Adapter) -> anyhow::Result<(wgpu::Device, wgpu::Queue)> {
+    let desc = wgpu::DeviceDescriptor {
+        required_limits: adapter.limits(),
+        // Compressed texture formats, where the GPU has them.
+        required_features: adapter.features() & rendererx::OPTIONAL_FEATURES,
+        ..Default::default()
+    };
+    pollster::block_on(adapter.request_device(&desc)).context("creating the GPU device")
 }
 
 // --- Headless ------------------------------------------------------------------
@@ -382,6 +438,8 @@ struct Host {
     content_frames: u32,
     first_frame_done: bool,
     error: Option<anyhow::Error>,
+    /// The GPU thread `run` started, until `start` joins it.
+    gpu: Option<std::thread::JoinHandle<anyhow::Result<GpuParts>>>,
 }
 
 impl Host {
@@ -393,22 +451,20 @@ impl Host {
         let window = Arc::new(el.create_window(attrs).context("creating the window")?);
         startup::mark("window created");
 
-        let instance =
-            wgpu::Instance::new(wgpu::InstanceDescriptor::new_with_display_handle(Box::new(el.owned_display_handle())));
+        let gpu = self.gpu.take().context("started twice")?;
+        let (instance, mut adapter, mut device, mut queue) =
+            gpu.join().map_err(|_| anyhow!("GPU setup panicked"))??;
         let surface = instance.create_surface(window.clone()).context("creating the surface")?;
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::LowPower,
-            compatible_surface: Some(&surface),
-            ..Default::default()
-        }))
-        .context("no GPU adapter")?;
-        let desc = wgpu::DeviceDescriptor {
-            required_limits: adapter.limits(),
-            // Compressed texture formats, where the GPU has them.
-            required_features: adapter.features() & rendererx::OPTIONAL_FEATURES,
-            ..Default::default()
-        };
-        let (device, queue) = pollster::block_on(adapter.request_device(&desc)).context("creating the GPU device")?;
+        if !adapter.is_surface_supported(&surface) {
+            // The thread's pick can't draw here (several GPUs): ask again for one that can.
+            adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+                power_preference: wgpu::PowerPreference::LowPower,
+                compatible_surface: Some(&surface),
+                ..Default::default()
+            }))
+            .context("no GPU adapter for the window")?;
+            (device, queue) = open_device(&adapter)?;
+        }
 
         let px = window.inner_size();
         let mut config = surface

@@ -31,7 +31,7 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -61,7 +61,7 @@ jobs:
     name: Memory budgets (Linux, headless)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
 
@@ -92,7 +92,7 @@ jobs:
     name: Build (Android)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -106,9 +106,8 @@ jobs:
 
       # The shared crates (formats, renderer, USD); the app shell for Android comes
       # with its own frontend later (PLAN.md §5).
+      # cargo-ndk finds the runner's NDK through ANDROID_NDK_ROOT.
       - name: Build
-        env:
-          ANDROID_NDK_HOME: ${{ env.ANDROID_NDK_LATEST_HOME }}
         run: >
           cargo ndk -t arm64-v8a build
           -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
@@ -118,7 +117,7 @@ jobs:
     name: Build (iOS)
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - uses: dtolnay/rust-toolchain@stable
         with:

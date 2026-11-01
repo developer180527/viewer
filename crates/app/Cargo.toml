@@ -32,9 +32,6 @@ rfd = "0.17"
 # Only for writing --screenshot PNGs.
 image = { version = "0.25", default-features = false, features = ["png"] }
 
-[target.'cfg(unix)'.dependencies]
-# mmap for the global allocator's big blocks (src/alloc.rs).
-libc = "0.2"
 
 eframe = { version = "0.37", optional = true, default-features = false, features = [
     "wgpu", "accesskit", "default_fonts", "clipboard", "links", "wayland", "x11",
@@ -56,3 +53,7 @@ wgpu = { version = "30", optional = true }
 winit = { version = "0.30", optional = true }
 pollster = { version = "1", optional = true }
 rendererx = { workspace = true, optional = true, features = ["controls"] }
+
+[target.'cfg(unix)'.dependencies]
+# mmap for the global allocator's big blocks (src/alloc.rs).
+libc = "0.2"

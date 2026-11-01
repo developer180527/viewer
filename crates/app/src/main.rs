@@ -107,6 +107,9 @@ fn main() {
         std::process::exit(2);
     });
 
+    // The font list, wanted only once a character Inter lacks is drawn.
+    #[cfg(feature = "libgui")]
+    lg::scan_system_fonts();
     // Kick off decoding before the window exists; it overlaps GPU initialisation.
     let job = args
         .path
