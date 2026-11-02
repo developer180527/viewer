@@ -32,7 +32,7 @@ Every format **loader** converts a file into one of about 8 **content models**. 
 | **RichText** (styled flow) | Markdown, EPUB, DOCX-lite, text, code | `parley` / `cosmic-text` + `syntect` |
 | **Table** (virtualised) | CSV, XLSX, Parquet, SQLite, Arrow | Lazy grid that fetches only visible rows |
 | **Tree** | JSON, YAML, XML, archives, HDF5 | Collapsible tree, lazy children |
-| **Media** (A/V frames) | Video, audio | libmpv / ffmpeg → texture; `symphonia` for audio |
+| **Media** (A/V frames) | Video, audio | libVLC → texture; `symphonia` for audio |
 | **Hex** (raw bytes) | Unknown files, executables | mmap hex view + strings + entropy plot |
 | **Web** (fallback) | HTML and HTML-ish formats | `wry` webview (system WebView) |
 
@@ -76,7 +76,7 @@ trait Document: Send {
 ### Documents
 | Formats | Library / approach |
 |---|---|
-| PDF | **`pdfium-render`** + PDFium (permissive); `hayro` as the pure-Rust option to watch. Avoid MuPDF (AGPL) unless the project goes AGPL |
+| PDF | **MuPDF** built from source (a submodule), everywhere but iOS; **PDFKit** on iOS, because the App Store can't carry AGPL. Both behind `PageSource` (docs/pdf.md) — **done**. `hayro` as the pure-Rust option to watch |
 | EPUB | `epub` → HTML → RichText or webview |
 | Markdown | `comrak` |
 | Text / code / logs | `syntect`, `ropey`, `memmap2`; must handle multi-GB files |
@@ -104,10 +104,10 @@ trait Document: Send {
 | Blend | Saved preview image (`TEST` block) — **done**; geometry: Blender headless → glTF (converter bridge) |
 
 ### Audio / video
-- **Default:** `libmpv` (via `libmpv2`) rendering into our wgpu texture. Gives every codec, subtitles and hardware decoding.
+- **Default:** libVLC (LGPL) on every platform, frames into our wgpu texture. Gives every codec, subtitles, audio output and hardware decoding. Getting frames into wgpu is the first spike.
 - **Lite or mobile builds:** platform decoders (AVFoundation, MediaCodec, Media Foundation) + `symphonia` / `cpal` for audio.
 - Waveform / spectrogram views: `symphonia` + `rustfft`.
-- **Playback is not ours to solve.** libmpv/ffmpeg (desktop, Android) and AVFoundation (iOS) already handle codecs, seeking, subtitles and hardware decoding. We embed them; we never write a player.
+- **Playback is not ours to solve.** libVLC already handles codecs, seeking, subtitles and hardware decoding. We embed them; we never write a player.
 - **Editing is deliberately tiny** (§12.6): trim (video and audio) and gain/normalise (audio). No timeline, no effects.
 
 ### Archives
@@ -184,7 +184,7 @@ The fallback is always Hex.
   - `windows` (WIC, Media Foundation)
 
   Mobile builds prefer the platform backends, which means a smaller binary, hardware decoding, and no LGPL static-linking problems on the App Store.
-- **C dependencies must cross-compile to every target above.** Prefer libraries with prebuilt binaries for all targets (e.g. `bblanchon/pdfium-binaries` covers Android, iOS, Linux, macOS and Windows). For LoongArch, RISC-V and OHOS, build from source in CI.
+- **C dependencies must cross-compile to every target above.** Prefer libraries with prebuilt binaries for all targets or that build from source everywhere (MuPDF). For LoongArch, RISC-V and OHOS, build from source in CI.
 - **Feature-gated builds:** `full` (desktop), `mobile`, `minimal` (pure Rust only, for exotic targets). The pure-Rust build is the portability floor: it must compile anywhere `std` + a window exist.
 - **iOS has no JIT and no `dlopen` of downloaded code:** everything is static, and WASM plugins run through an interpreter (`wasmi`).
 - **CI:** GitHub Actions matrix (macOS, Windows, Ubuntu) + cross-compiled jobs (`cross`) for Android, FreeBSD, LoongArch, RISC-V and OHOS, plus emulator smoke tests.
@@ -195,9 +195,10 @@ The fallback is always Hex.
 
 | Library | Licence | Rule |
 |---|---|---|
-| PDFium, Assimp, LibRaw (CDDL/LGPL dual), OpenCASCADE (LGPL + exception) | Permissive / LGPL | OK; link LGPL dynamically on desktop |
-| ffmpeg / libmpv | LGPL (avoid GPL build options) | Dynamic on desktop; **on iOS use AVFoundation instead** (static LGPL + App Store is a problem) |
-| MuPDF, Poppler | AGPL / GPL | Avoid unless the whole app is (A)GPL |
+| LibRaw (CDDL/LGPL dual), OpenCASCADE (LGPL + exception) | Permissive / LGPL | OK; link LGPL dynamically on desktop |
+| libVLC, FFmpeg | LGPL (avoid GPL build options; no x264/x265) | Dynamic everywhere, including as frameworks on iOS, with our source public, as VLC for iOS does |
+| MuPDF | AGPL | **Used, except on iOS.** Only `viewer-pdf-mupdf` and the app builds containing it are AGPL; libgui, libfilepicker, RendererX and the other crates stay MIT/Apache (docs/pdf.md §3) |
+| Poppler | GPL | Avoid |
 | djvulibre | GPL | Optional plugin / converter only |
 
 ---
@@ -213,7 +214,7 @@ Nothing that serves a particular format runs before "app ready": no format modul
 
 ### Process and binary
 - **Single instance, many windows (§12.3).** A second launch hands the path to the running instance (Unix socket / named pipe) and exits in a few ms; the instance opens it in a **new window**. Optionally, a tiny resident agent keeps a hidden window warm (user setting, off by default).
-- **Small core binary.** Heavy libraries (PDFium, Assimp, mpv, OpenCASCADE) are **not linked into the main executable**. They live in on-demand modules that are `dlopen`ed on first use (desktop/Android), or in the worker process. Opening a JPEG must never page in PDFium.
+- **Small core binary.** Heavy libraries (libVLC, OpenCASCADE) are **not linked into the main executable**. They live in on-demand modules that are `dlopen`ed on first use (desktop/Android), or in the worker process. Opening a JPEG must never page them in. MuPDF is the exception so far: linked statically, but nothing in it runs until the first PDF (docs/pdf.md §4).
 - **Release profile:** `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `opt-level = 3`, strip symbols. Also try PGO and BOLT (`cargo-pgo`).
 - **Zero static initialisers.** The loader registry is a `const` table of function pointers. No plugin scanning at startup; WASM plugins are indexed lazily and cached.
 
@@ -299,12 +300,12 @@ viewer/
 
 ## 11. Roadmap
 
-✅ done · 🟡 partly done · ⬜ not started. Updated 2026-11-01. Basic editors for every content model follow 3D (§12).
+✅ done · 🟡 partly done · ⬜ not started. Updated 2026-11-01. **Opening every kind of file comes first; editors and further GUI work follow** (docs/roadmap-notes.md, docs/editing.md).
 
 1. ✅ **MVP (desktop):** shell, detection, Hex, images, text/code, Markdown, JSON tree, CSV, zip. Startup tracing and benchmark from day 1. Since then: folders as containers, image streaming in bands, memory budgets in CI.
-2. ⬜ **Documents:** PDF (PDFium), EPUB, XLSX, comics. *Not started; next up.* DOCX/XLSX/EPUB/CBZ only open as zip listings today.
+2. 🟡 **Documents:** done: PDF (MuPDF, PDFKit on iOS) with a tiled scrolling page view. Next, after the command list and macOS menu: XLSX, comics, EPUB/DOCX, slides, in the order in docs/roadmap-notes.md §3. DOCX/XLSX/EPUB/CBZ only open as zip listings today, and that view stays available through **View as** beside the new one, text and hex (§1 there).
 3. 🟡 **3D:** done: RendererX (wgpu, clay/PBR/unlit, textures, streaming, off-thread pipelines), glTF/GLB/VRM, FBX and OBJ via ufbx (in place of Assimp), USD/USDZ with composition via `usd-lite`, `.blend` preview, blocked/missing file reporting. STL (welded, Z-up turned Y-up) and PLY (ASCII/binary, meshes and point clouds, colours). Left: MToon shading, Gaussian splats drawn as splats (they show as coloured points), animation playback (v2).
-4. ⬜ **Media:** libmpv (desktop), platform decoders (mobile); trim and gain editors (§12.6).
+4. ⬜ **Media:** libVLC for playback, FFmpeg's libavformat for trimming (§12.6).
 5. 🟡 **Mobile:** iOS/iPadOS runs (libfilepicker, folder grants, Open Folder…). Left: opening files tapped in the Files app (`CFBundleDocumentTypes`), bookmarks with a Recents list, then Android.
 6. ⬜ **Hardening:** worker sandbox, fuzzing, signing and packaging. (CI tests Linux, Windows and macOS already.)
 7. ⬜ **Wider OS reach:** FreeBSD/OpenBSD ports, LoongArch/RISC-V builds for Kylin/UOS/openEuler, HarmonyOS NEXT shell.
@@ -364,7 +365,7 @@ In-process hardening (iOS, HarmonyOS, and the first line of defence everywhere):
 - **Panics are caught** at the loader boundary (already done), falling back to the next loader or hex.
 - iOS / macOS **Quick Look extensions** are separate processes managed by the OS, so previews from Files or Mail get process isolation for free.
 
-Phasing: the interface exists now and runs in-process everywhere. The worker process on desktop arrives together with the first C/C++ parser (PDFium), because today every parser is Rust and gains nothing from it.
+Phasing: the interface exists now and runs in-process everywhere. The worker process on desktop was to arrive with the first C/C++ parser. MuPDF now is one, and it still runs in-process on its render thread (docs/pdf.md §8), so the worker is due.
 
 Rules out: calling a parser directly from UI code; linking a native C parser into the iOS app.
 
@@ -383,12 +384,11 @@ Playback and decoding are solved problems, so we embed rather than build:
 
 | Platform | Engine |
 |---|---|
-| Desktop, Android | **libmpv** (on ffmpeg) rendering into a texture on the shared device (§12.2); LGPL build, linked dynamically |
-| iOS | **AVFoundation** (avoids static LGPL in an App Store app) |
-| HarmonyOS | the system media kit (AVPlayer), libmpv later if needed |
+| Desktop, Android, iOS | **libVLC** with frames in a texture on the shared device (§12.2); LGPL, linked dynamically |
+| HarmonyOS | the system media kit (AVPlayer), libVLC later if needed |
 
-Editing is **deliberately basic**, using the operation model (§12.5) and the same engines to write the result:
-- **Trim** (video and audio): set in/out points, save. By default it **cuts at keyframes without re-encoding** (instant and lossless; ffmpeg stream copy, `AVAssetExportPresetPassthrough`). "Exact cut" re-encodes and says so.
+Editing is **deliberately basic**, using the operation model (§12.5) with FFmpeg's libraries to write the result, since libVLC is a player:
+- **Trim** (video and audio): set in/out points, save. By default it **cuts at keyframes without re-encoding** (instant and lossless; stream copy with FFmpeg's libavformat, which needs no codecs). "Exact cut" re-encodes only up to the next keyframe, with the platform's hardware encoders, and says so.
 - **Volume** (audio and the audio track of video): gain in dB and "normalise" (peak or loudness). Needs only the audio to be re-encoded; video is copied.
 - Also: a waveform for audio; frame grab as PNG for video.
 - Out of scope: timelines, multiple clips, transitions, effects, colour grading, subtitle editing.

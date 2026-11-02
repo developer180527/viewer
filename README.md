@@ -15,13 +15,14 @@ Runs on macOS, Windows and Linux, and on iPhone and iPad. One UI everywhere (lib
 | Table | CSV, TSV, PSV (delimiter is sniffed) |
 | 3D scene | glTF / GLB / VRM, FBX, OBJ (+ `.mtl`), STL (binary and ASCII), PLY (meshes and point clouds, vertex colours, splat colours), USD / USDA / USDC / USDZ (sublayers, references, payloads, variants), drawn by RendererX: clay, PBR and unlit shading, textures decoded off-thread. Blender `.blend` shows its saved preview image |
 | Container | Folders, zip (and zip-based formats, e.g. DOCX, XLSX, EPUB, CBZ, shown as their file lists), tar, tar.gz, gz. Entries open in place, nested to any depth |
+| Pages | PDF, in a scrolling view rendered in tiles: MuPDF, or PDFKit on iOS |
 | Hex | Everything else, with detected MIME type and entropy |
 
-The **View as** menu re-opens the current file with any loader that claims it (e.g. view a `.toml` as text).
+The **View as** menu re-opens the current file with any loader that claims it (e.g. view a `.toml` as text). Formats with their own view keep the others: a PDF can also open as text or hex. A DOCX will open as a document, a zip, text or hex.
 
 Files a model refers to but Viewer can't read are reported: *blocked* ones (on iOS, picking a model alone doesn't grant the textures next to it) get a banner with **Open Folder…**; *missing* ones are listed in the info panel.
 
-Not yet: PDF and other documents, audio and video, editing. See the roadmap in [PLAN.md](PLAN.md) §11.
+Not yet: Office documents, EPUB and comics (they open as zip listings), audio and video, editing. See the roadmap in [PLAN.md](PLAN.md) §11.
 
 ## Run
 
