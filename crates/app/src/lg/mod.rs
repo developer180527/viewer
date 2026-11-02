@@ -40,6 +40,11 @@ pub trait Textures {
     fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId;
     /// Physical pixels per logical point, for views that render at native resolution.
     fn pixels_per_point(&self) -> f32;
+    /// This frame's trackpad pinch over the window, as a zoom ratio minus 1 (0 = none).
+    /// libgui's `Response::pinch` is touch only; winit reports trackpads separately.
+    fn trackpad_pinch(&self) -> f32 {
+        0.0
+    }
     /// Waits for background work (texture decoding) before drawing, for screenshots.
     fn settles(&self) -> bool {
         false
@@ -426,9 +431,15 @@ struct Gpu<'a> {
     settle: &'a mut bool,
     /// Textures views freed this frame; unregistered once the frame is prepared.
     freed: &'a mut Vec<TextureId>,
+    /// See `Textures::trackpad_pinch`.
+    pinch: f32,
 }
 
 impl Textures for Gpu<'_> {
+    fn trackpad_pinch(&self) -> f32 {
+        self.pinch
+    }
+
     fn max_side(&self) -> u32 {
         self.device.limits().max_texture_dimension_2d
     }
@@ -504,6 +515,8 @@ struct Live {
     last: Instant,
     /// Time since the last frame that was actually built.
     idle: f32,
+    /// Trackpad pinches since the last frame, multiplied together.
+    pinch: f32,
     /// Something outside libgui changed what the UI shows (a load finished, a
     /// file was picked, a texture decoded), so the next frame must be built.
     /// `Ui::request_repaint` can't say this: it only counts during a frame.
@@ -588,6 +601,7 @@ impl Host {
             files: libgui_winit::FileDrop::default(),
             last: Instant::now(),
             idle: 0.0,
+            pinch: 1.0,
             stale: false,
             batches: Vec::new(),
             rx: None,
@@ -628,7 +642,8 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0 };
+            w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
             let out = w.ui.end_frame();
             if self.content_frames == 0 { startup::mark(&format!("  frame built in {:.2} ms", t.elapsed().as_secs_f64() * 1000.0)); }
@@ -769,6 +784,10 @@ impl ApplicationHandler for Host {
             let s = w.window.scale_factor();
             let pos = Vec2::new((t.location.x / s) as f32, (t.location.y / s) as f32);
             w.ui.push(InputEvent::PointerMoved { pos });
+        }
+        if let WindowEvent::PinchGesture { delta, .. } = &event {
+            w.pinch *= 1.0 + *delta as f32;
+            w.stale = true;
         }
         if !w.files.push_window_event(&mut w.ui, &event) {
             libgui_winit::push_window_event(&mut w.ui, &event, w.window.scale_factor());

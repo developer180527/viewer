@@ -428,8 +428,9 @@ fn raster(ui: &mut Ui, r: &mut Raster, st: &mut RasterState, tex: &mut dyn Textu
     let zoom = st.zoom.unwrap_or(fit(rect));
 
     let mut new_zoom = zoom;
+    new_zoom *= 1.0 + resp.pinch;
     if resp.hovered {
-        new_zoom *= (resp.scroll.y / 300.0).exp();
+        new_zoom *= (resp.scroll.y / 300.0).exp() * (1.0 + tex.trackpad_pinch());
         if ui.key_pressed(Key::Num0) {
             st.zoom = None;
             st.offset = Vec2::ZERO;
@@ -553,8 +554,9 @@ fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, tex: &mut dyn Textures
             c.zoom((resp.scroll.y / 300.0).exp());
             st.moved = true;
         }
-        if resp.pinch != 0.0 {
-            c.zoom(1.0 + resp.pinch);
+        let trackpad = if resp.hovered { tex.trackpad_pinch() } else { 0.0 };
+        if resp.pinch != 0.0 || trackpad != 0.0 {
+            c.zoom((1.0 + resp.pinch) * (1.0 + trackpad));
             st.moved = true;
         }
         if resp.pan2 != Vec2::ZERO {

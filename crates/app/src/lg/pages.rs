@@ -33,8 +33,16 @@ const GAP: f32 = 12.0;
 const MARGIN: f32 = 16.0;
 /// Rendered tiles kept on the GPU (RGBA8).
 const CACHE_BYTES: usize = if cfg!(any(target_os = "ios", target_os = "android")) { 96 << 20 } else { 256 << 20 };
-/// Tiles uploaded per frame; the rest wait a frame, so scrolling stays smooth.
-const UPLOADS_PER_FRAME: usize = 4;
+/// Bytes uploaded per frame (at least one tile); the rest wait, so scrolling stays smooth.
+const UPLOAD_BYTES: usize = if TOUCH { 4 << 20 } else { 16 << 20 };
+/// Touch platforms: a released drag keeps going. (Trackpads send their own momentum.)
+const TOUCH: bool = cfg!(any(target_os = "ios", target_os = "android"));
+/// How fast a fling dies away (1/s), and the speed where it stops (points/s).
+const FLING_FRICTION: f32 = 3.2;
+const FLING_CUTOFF: f32 = 5.0;
+/// A cheap whole-page preview renders first, this many steps coarser (two octaves):
+/// a page scrolled to shows its content at once, then sharpens.
+const PREVIEW_STEPS: i16 = 8;
 /// Render scales are rounded to steps of a quarter octave.
 const STEPS_PER_OCTAVE: f32 = 4.0;
 const MIN_ZOOM: f32 = 0.05;
@@ -266,6 +274,8 @@ pub struct PagesView {
     frame: u64,
     /// Why the document shows nothing at all.
     error: Option<String>,
+    /// Scroll speed left from a flung touch drag, in window points/s.
+    fling: Vec2,
 }
 
 impl Default for PagesView {
@@ -281,6 +291,7 @@ impl Default for PagesView {
             wanted: Vec::new(),
             frame: 0,
             error: None,
+            fling: Vec2::ZERO,
         }
     }
 }
@@ -350,7 +361,12 @@ impl PagesView {
     fn take_tiles(&mut self, tex: &mut dyn Textures, all: bool) -> bool {
         let Some(w) = &self.worker else { return false };
         let mut s = w.lock();
-        let take = if all { s.results.len() } else { s.results.len().min(UPLOADS_PER_FRAME) };
+        let mut take = 0;
+        let mut bytes = 0;
+        while take < s.results.len() && (all || take == 0 || bytes < UPLOAD_BYTES) {
+            bytes += s.results[take].1.as_ref().map_or(0, |i| i.rgba.len());
+            take += 1;
+        }
         let results: Vec<_> = s.results.drain(..take).collect();
         let more = !s.results.is_empty();
         drop(s);
@@ -370,15 +386,16 @@ impl PagesView {
         more
     }
 
-    /// Frees the tiles drawn longest ago until the cache fits its budget; tiles drawn
-    /// this frame stay.
-    fn evict(&mut self, tex: &mut dyn Textures) {
+    /// Frees tiles until the cache fits its budget, before this frame draws: first
+    /// those at scales no longer in use, then those drawn longest ago.
+    fn evict(&mut self, tex: &mut dyn Textures, step: i16) {
         let mut total: usize = self.tiles.values().map(|t| t.bytes).sum();
         if total <= CACHE_BYTES {
             return;
         }
-        let mut old: Vec<_> = self.tiles.iter().filter(|(_, t)| t.used < self.frame).map(|(k, t)| (t.used, *k)).collect();
-        old.sort_unstable_by_key(|(used, _)| *used);
+        let current = |k: &TileKey| k.step == step || k.step <= step - PREVIEW_STEPS;
+        let mut old: Vec<_> = self.tiles.iter().map(|(k, t)| ((current(k), t.used), *k)).collect();
+        old.sort_unstable_by_key(|(rank, _)| *rank);
         let mut forgotten = Vec::new();
         for (_, key) in old {
             if total <= CACHE_BYTES {
@@ -443,7 +460,7 @@ pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mu
         let mut new_zoom = st.zoom;
         let zooming_scroll = resp.modifiers.ctrl || resp.modifiers.logo;
         if resp.hovered {
-            let mut factor = 1.0 + resp.pinch;
+            let mut factor = 1.0 + tex.trackpad_pinch();
             if zooming_scroll {
                 factor *= (resp.scroll.y / 300.0).exp();
             }
@@ -463,12 +480,23 @@ pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mu
                 new_zoom = Some(1.0);
             }
         }
+        // A touch pinch needn't count as hovering.
+        if resp.pinch != 0.0 {
+            new_zoom = Some((new_zoom.unwrap_or(zoom) * (1.0 + resp.pinch)).clamp(MIN_ZOOM, MAX_ZOOM));
+        }
         if resp.double_clicked {
             new_zoom = if st.zoom.is_some() { None } else { Some(1.0) };
         }
         if new_zoom != st.zoom {
             let target = new_zoom.unwrap_or_else(|| st.fit(rect));
-            let anchor = if resp.hovered { resp.mouse_pos - Vec2::new(rect.x, rect.y) } else { Vec2::new(rect.w / 2.0, rect.h / 2.0) };
+            let gesture = ui.gesture();
+            let anchor = if gesture.active {
+                gesture.center - Vec2::new(rect.x, rect.y)
+            } else if resp.hovered {
+                resp.mouse_pos - Vec2::new(rect.x, rect.y)
+            } else {
+                Vec2::new(rect.w / 2.0, rect.h / 2.0)
+            };
             // The document point under the anchor stays there.
             let y = st.top_y(zoom) + anchor.y;
             let page = st.layout.page_at(y, zoom);
@@ -483,10 +511,30 @@ pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mu
         // Scroll: wheel and trackpad, dragging, keys.
         let mut d = Vec2::ZERO;
         if resp.hovered && !zooming_scroll {
-            d = d - resp.scroll - resp.pan2;
+            d = d - resp.scroll;
         }
+        d = d - resp.pan2;
         if resp.active {
             d = d - resp.drag_delta;
+        }
+        // A touch drag let go keeps moving, slowing down; any new touch stops it.
+        let dt = ui.input().dt;
+        if resp.pressed || resp.active || resp.pinch != 0.0 {
+            st.fling = Vec2::ZERO;
+        }
+        if TOUCH && resp.released {
+            let v = ui.pointer_velocity();
+            st.fling = Vec2::ZERO - v;
+        }
+        if st.fling != Vec2::ZERO {
+            d += st.fling * dt;
+            st.fling = st.fling * (-FLING_FRICTION * dt).exp();
+            let (top, end) = (st.top_y(zoom), (st.layout.height(zoom) - rect.h).max(0.0));
+            let at_end = (top <= 0.0 && st.fling.y < 0.0) || (top >= end && st.fling.y > 0.0);
+            if at_end || st.fling.x.hypot(st.fling.y) < FLING_CUTOFF {
+                st.fling = Vec2::ZERO;
+            }
+            ui.request_repaint();
         }
         let mut top = st.top_y(zoom);
         if resp.hovered {
@@ -548,11 +596,24 @@ pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mu
     };
     visible.retain(|(k, _)| !st.errors.contains_key(&(k.page as usize)));
     visible.sort_by(|(a, pa), (b, pb)| dist(a, pa).total_cmp(&dist(b, pb)));
-    let mut wanted: Vec<TileKey> = visible.iter().map(|(k, _)| *k).collect();
+    // Previews of the pages on screen, then their sharp tiles, then the neighbours.
+    let whole = |index: usize, s: PageSize, out: &mut Vec<TileKey>| {
+        // Coarse enough that the whole page fits one tile, however far zoomed in.
+        let fits = ((TILE as f32 / s.width.max(s.height).max(1.0)).log2() * STEPS_PER_OCTAVE).floor() as i16;
+        out.push(TileKey { page: index as u32, step: (step - PREVIEW_STEPS).min(fits), tx: 0, ty: 0 });
+    };
+    let mut wanted: Vec<TileKey> = Vec::new();
+    for p in &placed {
+        if !st.errors.contains_key(&p.index) {
+            whole(p.index, st.layout.sizes[p.index], &mut wanted);
+        }
+    }
+    wanted.extend(visible.iter().map(|(k, _)| *k));
     if let (Some(first), Some(last)) = (placed.first(), placed.last()) {
         for (index, dy) in [(last.index + 1, 1.0), (first.index.wrapping_sub(1), -1.0)] {
             if index < n && !st.errors.contains_key(&index) {
                 let s = st.layout.sizes[index];
+                whole(index, s, &mut wanted);
                 // Where the page will be once scrolled to: just past this edge.
                 let y = if dy > 0.0 { rect.y + rect.h } else { rect.y - s.height * zoom };
                 let near = Placed { index, rect: Rect::new(first.rect.x, y, s.width * zoom, s.height * zoom) };
@@ -577,6 +638,8 @@ pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mu
         ui.request_repaint();
     }
 
+    st.evict(tex, step);
+
     // Draw: each page white, then its tiles, coarser scales under finer, the wanted
     // scale on top.
     let mut draws: Vec<(Rect, TextureId, i16)> = Vec::new();
@@ -596,7 +659,6 @@ pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mu
         }
     }
     draws.sort_by_key(|d| d.2);
-    st.evict(tex);
 
     let current = placed.iter().min_by(|a, b| (a.rect.center().y - middle.y).abs().total_cmp(&(b.rect.center().y - middle.y).abs())).map_or(0, |p| p.index);
     let label = format!("{} / {n}  ·  {:.0}%", current + 1, zoom * 100.0);
