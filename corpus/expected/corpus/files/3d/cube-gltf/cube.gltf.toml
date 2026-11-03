@@ -1,0 +1,23 @@
+loader = "gltf"
+format = "glTF 2.0"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 1
+vertices = 24
+elements = 36
+topologies = ["Triangles"]
+materials = 1
+nodes = 1
+textures = 1
+textures_decoded = ["64x64"]
+bounds = ["-0.500 -0.500 -0.500", "0.500 0.500 0.500"]
+
+[metadata]
+Meshes = "1"
+"Placed meshes" = "1"
+Triangles = "12"
+Vertices = "24"
+Materials = "1"
+Textures = "1 map(s), up to 2048 px"

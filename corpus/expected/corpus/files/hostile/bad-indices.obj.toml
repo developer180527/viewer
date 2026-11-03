@@ -1,0 +1,24 @@
+loader = "obj"
+format = "Wavefront OBJ"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 1
+vertices = 2
+elements = 6
+topologies = ["Triangles"]
+materials = 0
+nodes = 1
+textures = 0
+textures_decoded = []
+bounds = ["0.000 0.000 0.000", "1.000 0.000 0.000"]
+
+[metadata]
+Meshes = "1"
+"Placed meshes" = "1"
+Triangles = "2"
+Vertices = "2"
+Materials = "0"
+Warning = "Clamped index (×2)"
+Textures = "none"

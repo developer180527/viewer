@@ -1,0 +1,27 @@
+loader = "obj"
+format = "Wavefront OBJ"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 4
+vertices = 121119
+elements = 578955
+topologies = ["Triangles"]
+materials = 4
+nodes = 4
+textures = 0
+textures_decoded = []
+bounds = ["0.564 0.098 -6.892", "3.009 2.078 -0.965"]
+
+[metadata]
+Meshes = "4"
+"Placed meshes" = "4"
+Triangles = "192985"
+Vertices = "121119"
+Materials = "4"
+Warning = "Could not open .mtl file: test_3d_files/32-mercedes-benz-gls-580-2020/Mercedes Benz GLS 580.mtl"
+Textures = "none"
+
+[unreadable]
+missing = ["580.mtl", "Benz", "GLS", "Mercedes"]

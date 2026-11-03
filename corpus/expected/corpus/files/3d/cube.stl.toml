@@ -1,0 +1,22 @@
+loader = "stl"
+format = "STL (binary)"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 1
+vertices = 24
+elements = 36
+topologies = ["Triangles"]
+materials = 0
+nodes = 1
+textures = 0
+textures_decoded = []
+bounds = ["-0.500 -0.500 -0.500", "0.500 0.500 0.500"]
+
+[metadata]
+Meshes = "1"
+"Placed meshes" = "1"
+Triangles = "12"
+Vertices = "24"
+Materials = "0"

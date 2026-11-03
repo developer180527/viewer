@@ -1,0 +1,13 @@
+loader = "csv"
+format = "Delimited table"
+model = "Table"
+
+[table]
+rows = 2000
+columns = 4
+headers = ["id", "city", "country", "population"]
+
+[metadata]
+Rows = "2000"
+Columns = "4"
+Delimiter = "','"

@@ -1,0 +1,11 @@
+loader = "hex"
+failed = ["zip"]
+format = "Binary data"
+model = "Hex"
+
+[hex]
+bytes = 516
+
+[metadata]
+"Detected type" = "application/zip (zip)"
+"Entropy (first 64 KiB)" = "8.00 bits/byte"

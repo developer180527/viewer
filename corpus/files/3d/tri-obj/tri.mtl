@@ -1,0 +1,3 @@
+newmtl Paint
+Kd 0.8 0.2 0.2
+map_Kd paint.png

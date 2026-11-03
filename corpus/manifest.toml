@@ -1,0 +1,166 @@
+# The files the corpus opens (corpus/README.md). Paths are from the repository root.
+#
+#   path      the file
+#   golden    also compare a small render: an image's pixels, or a document's first page
+#   optional  skip when the file isn't there (large real-world files kept out of git)
+#   timeout   seconds before the open counts as hung (default 20)
+#
+# What each file is expected to open as lives in corpus/expected/, written by the
+# runner with UPDATE_CORPUS=1 and reviewed as a diff.
+
+# ---------------------------------------------------------------- samples/
+
+[[file]]
+path = "samples/gradient.png"
+golden = true
+
+[[file]]
+path = "samples/logo.svg"
+golden = true
+
+[[file]]
+path = "samples/README.md"
+
+[[file]]
+path = "samples/main.rs"
+
+[[file]]
+path = "samples/table.csv"
+
+[[file]]
+path = "samples/data.json"
+
+[[file]]
+path = "samples/example.toml"
+
+[[file]]
+path = "samples/bundle.zip"
+
+[[file]]
+path = "samples/archive.tar.gz"
+
+[[file]]
+path = "samples/notes.txt.gz"
+
+[[file]]
+path = "samples/blob.bin"
+
+# ---------------------------------------------------------------- images
+
+[[file]]
+path = "corpus/files/images/checker.png"
+golden = true
+
+[[file]]
+path = "corpus/files/images/ramp.bmp"
+golden = true
+
+[[file]]
+path = "corpus/files/images/ramp.ppm"
+golden = true
+
+# ---------------------------------------------------------------- documents
+
+[[file]]
+path = "corpus/files/pdf/two-pages.pdf"
+golden = true
+
+# ---------------------------------------------------------------- data
+
+[[file]]
+path = "corpus/files/data/people.tsv"
+
+[[file]]
+path = "corpus/files/data/events.jsonl"
+
+# ---------------------------------------------------------------- 3D
+
+[[file]]
+path = "corpus/files/3d/cube-gltf/cube.gltf"
+
+[[file]]
+path = "corpus/files/3d/missing-texture/cube.gltf"
+
+[[file]]
+path = "corpus/files/3d/cube.glb"
+
+[[file]]
+path = "corpus/files/3d/tri-obj/tri.obj"
+
+[[file]]
+path = "corpus/files/3d/tri.usda"
+
+[[file]]
+path = "corpus/files/3d/cube.stl"
+
+[[file]]
+path = "corpus/files/3d/tetra.stl"
+
+[[file]]
+path = "corpus/files/3d/spiral.ply"
+
+# ---------------------------------------------------------------- folders
+
+[[file]]
+path = "corpus/files/3d/cube-gltf"
+
+# ---------------------------------------------------------------- hostile: must fail cleanly
+
+[[file]]
+path = "corpus/files/hostile/truncated.png"
+
+[[file]]
+path = "corpus/files/hostile/huge-dimensions.png"
+
+[[file]]
+path = "corpus/files/hostile/deep-nesting.json"
+
+[[file]]
+path = "corpus/files/hostile/garbage.pdf"
+
+[[file]]
+path = "corpus/files/hostile/truncated.glb"
+
+[[file]]
+path = "corpus/files/hostile/fake.zip"
+
+[[file]]
+path = "corpus/files/hostile/empty.bin"
+
+[[file]]
+path = "corpus/files/hostile/bad-indices.obj"
+
+[[file]]
+path = "corpus/files/hostile/short.stl"
+
+# ---------------------------------------------------------------- real-world, local only
+
+[[file]]
+path = "test_3d_files/portable_generator_4k.usdc/portable_generator_4k.usdc"
+optional = true
+timeout = 120
+
+[[file]]
+path = "test_3d_files/namaqualand_boulder_02_4k.usdc/namaqualand_boulder_02_4k.usdc"
+optional = true
+timeout = 120
+
+[[file]]
+path = "test_3d_files/long_life_food_4k.fbx/long_life_food_4k.fbx"
+optional = true
+timeout = 120
+
+[[file]]
+path = "test_3d_files/32-mercedes-benz-gls-580-2020/uploads_files_2787791_Mercedes+Benz+GLS+580.fbx"
+optional = true
+timeout = 120
+
+[[file]]
+path = "test_3d_files/32-mercedes-benz-gls-580-2020/uploads_files_2787791_Mercedes+Benz+GLS+580.obj"
+optional = true
+timeout = 120
+
+[[file]]
+path = "test_3d_files/32-mercedes-benz-gls-580-2020/uploads_files_2787791_Mercedes+Benz+GLS+580.blend"
+optional = true
+timeout = 120

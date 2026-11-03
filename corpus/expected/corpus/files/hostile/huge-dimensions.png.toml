@@ -1,0 +1,11 @@
+loader = "image"
+format = "PNG image"
+model = "Raster"
+
+[raster]
+size = "100000x100000"
+
+[metadata]
+Dimensions = "100000 × 100000"
+Color = "Rgba"
+Decoded = "in bands, straight to the GPU"

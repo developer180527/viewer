@@ -1,0 +1,11 @@
+loader = "folder"
+format = "Folder"
+model = "Container"
+
+[container]
+entries = 3
+paths = ["cube.bin", "cube.gltf", "textures/checker.png"]
+
+[metadata]
+Files = "3"
+"Total size" = "2458 bytes"

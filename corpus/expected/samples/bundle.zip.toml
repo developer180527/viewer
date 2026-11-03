@@ -1,0 +1,11 @@
+loader = "zip"
+format = "Zip archive"
+model = "Container"
+
+[container]
+entries = 4
+paths = ["docs/README.md", "img/gradient.png", "data/data.json", "src/main.rs"]
+
+[metadata]
+Files = "4"
+"Uncompressed size" = "493554 bytes"

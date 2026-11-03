@@ -1,0 +1,11 @@
+loader = "hex"
+failed = ["pdf"]
+format = "Binary data"
+model = "Hex"
+
+[hex]
+bytes = 4105
+
+[metadata]
+"Detected type" = "application/pdf (pdf)"
+"Entropy (first 64 KiB)" = "8.00 bits/byte"

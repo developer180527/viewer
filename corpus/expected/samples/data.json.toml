@@ -1,0 +1,10 @@
+loader = "json"
+format = "JSON"
+model = "Tree"
+
+[tree]
+nodes = 531
+top = ["name", "version", "features", "startup_ms", "cross_platform", "license", "targets", "numbers"]
+
+[metadata]
+Nodes = "531"

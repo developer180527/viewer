@@ -1,0 +1,13 @@
+loader = "csv"
+format = "Delimited table"
+model = "Table"
+
+[table]
+rows = 3
+columns = 3
+headers = ["name", "age", "city"]
+
+[metadata]
+Rows = "3"
+Columns = "3"
+Delimiter = ''''\t''''

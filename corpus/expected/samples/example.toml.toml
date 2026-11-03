@@ -1,0 +1,10 @@
+loader = "toml"
+format = "TOML"
+model = "Tree"
+
+[tree]
+nodes = 10
+top = ["package", "dependencies"]
+
+[metadata]
+Nodes = "10"

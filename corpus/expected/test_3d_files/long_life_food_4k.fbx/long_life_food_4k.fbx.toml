@@ -1,0 +1,23 @@
+loader = "fbx"
+format = "FBX (binary)"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 4
+vertices = 4074
+elements = 14136
+topologies = ["Triangles"]
+materials = 1
+nodes = 4
+textures = 3
+textures_decoded = ["2048x2048", "2048x2048", "2048x2048"]
+bounds = ["-0.286 -0.002 -0.057", "0.238 0.236 0.057"]
+
+[metadata]
+Meshes = "4"
+"Placed meshes" = "4"
+Triangles = "4712"
+Vertices = "4074"
+Materials = "1"
+Textures = "3 map(s), up to 2048 px"

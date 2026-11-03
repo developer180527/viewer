@@ -1,0 +1,23 @@
+loader = "ply"
+format = "PLY (ASCII)"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 1
+vertices = 100
+elements = 100
+topologies = ["Points"]
+materials = 1
+nodes = 1
+textures = 0
+textures_decoded = []
+bounds = ["-0.937 -0.980 0.000", "0.838 0.890 0.990"]
+
+[metadata]
+Meshes = "1"
+"Placed meshes" = "1"
+Triangles = "100"
+Vertices = "100"
+Materials = "1"
+Kind = "point cloud"

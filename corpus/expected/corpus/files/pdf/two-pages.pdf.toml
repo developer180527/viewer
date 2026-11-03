@@ -1,0 +1,13 @@
+loader = "pdf"
+format = "PDF document"
+model = "Pages"
+
+[pages]
+backend = "MuPDF"
+count = 2
+sizes = ["612x792", "842x595"]
+
+[metadata]
+Pages = "2"
+Renderer = "MuPDF"
+Version = "PDF 1.7"

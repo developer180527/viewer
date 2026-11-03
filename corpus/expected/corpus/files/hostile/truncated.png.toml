@@ -1,0 +1,11 @@
+loader = "hex"
+failed = ["image"]
+format = "Binary data"
+model = "Hex"
+
+[hex]
+bytes = 120
+
+[metadata]
+"Detected type" = "image/png (png)"
+"Entropy (first 64 KiB)" = "4.94 bits/byte"

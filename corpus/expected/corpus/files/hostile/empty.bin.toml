@@ -1,0 +1,10 @@
+loader = "hex"
+format = "Binary data"
+model = "Hex"
+
+[hex]
+bytes = 0
+
+[metadata]
+"Detected type" = "unknown"
+"Entropy (first 64 KiB)" = "0.00 bits/byte"

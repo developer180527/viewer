@@ -1,0 +1,11 @@
+loader = "text"
+format = "Rust source"
+model = "Text"
+
+[text]
+lines = 15
+syntax = "Rust"
+
+[metadata]
+Lines = "15"
+Encoding = "UTF-8"

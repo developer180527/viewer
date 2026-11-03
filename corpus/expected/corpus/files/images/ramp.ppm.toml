@@ -1,0 +1,10 @@
+loader = "image"
+format = "PBM image"
+model = "Raster"
+
+[raster]
+size = "32x16"
+
+[metadata]
+Dimensions = "32 × 16"
+Color = "Rgb8"

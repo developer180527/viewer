@@ -1,0 +1,11 @@
+loader = "tar"
+format = "Gzipped tar archive"
+model = "Container"
+
+[container]
+entries = 3
+paths = ["nested/table.csv", "nested/logo.svg", "nested/bundle.zip"]
+
+[metadata]
+Files = "3"
+"Uncompressed size" = "439391 bytes"

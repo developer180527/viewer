@@ -1,0 +1,26 @@
+loader = "fbx"
+format = "FBX (binary)"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 17
+vertices = 247481
+elements = 1083708
+topologies = ["Triangles"]
+materials = 17
+nodes = 17
+textures = 0
+textures_decoded = []
+bounds = ["0.564 0.000 -6.892", "3.009 2.078 -0.951"]
+
+[metadata]
+Meshes = "17"
+"Placed meshes" = "17"
+Triangles = "361236"
+Vertices = "247481"
+Materials = "17"
+Textures = "none"
+
+[unreadable]
+missing = ["texture.png"]

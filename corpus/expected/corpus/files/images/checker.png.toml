@@ -1,0 +1,10 @@
+loader = "image"
+format = "PNG image"
+model = "Raster"
+
+[raster]
+size = "64x64"
+
+[metadata]
+Dimensions = "64 × 64"
+Color = "Rgba8"

@@ -1,0 +1,11 @@
+loader = "gzip"
+format = "Gzip"
+model = "Container"
+
+[container]
+entries = 1
+paths = ["notes.txt"]
+
+[metadata]
+Files = "1"
+"Uncompressed size" = "56 bytes"

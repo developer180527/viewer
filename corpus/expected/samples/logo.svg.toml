@@ -1,0 +1,10 @@
+loader = "svg"
+format = "SVG image"
+model = "Raster"
+
+[raster]
+size = "480x320"
+
+[metadata]
+"Intrinsic size" = "240 × 160"
+"Rendered at" = "480 × 320"

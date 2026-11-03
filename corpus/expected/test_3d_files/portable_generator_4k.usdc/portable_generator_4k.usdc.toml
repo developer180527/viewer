@@ -1,0 +1,23 @@
+loader = "usd"
+format = "USD (binary)"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 5
+vertices = 24425
+elements = 79257
+topologies = ["Triangles"]
+materials = 2
+nodes = 5
+textures = 3
+textures_decoded = ["2048x2048", "2048x2048", "2048x2048"]
+bounds = ["-0.415 0.000 -0.282", "0.404 0.577 0.282"]
+
+[metadata]
+Meshes = "5"
+"Placed meshes" = "5"
+Triangles = "26419"
+Vertices = "24425"
+Materials = "2"
+Textures = "3 map(s), up to 2048 px"

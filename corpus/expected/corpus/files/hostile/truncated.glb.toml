@@ -1,0 +1,11 @@
+loader = "hex"
+failed = ["gltf"]
+format = "Binary data"
+model = "Hex"
+
+[hex]
+bytes = 212
+
+[metadata]
+"Detected type" = "unknown"
+"Entropy (first 64 KiB)" = "4.82 bits/byte"

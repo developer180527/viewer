@@ -3394,6 +3394,7 @@ dependencies = [
  "viewer-fmt-doc",
  "viewer-fmt-image",
  "viewer-fmt-pdf",
+ "viewer-formats",
  "wgpu",
  "winit",
 ]
@@ -3406,6 +3407,19 @@ dependencies = [
  "infer",
  "memmap2",
  "rendererx-scene",
+]
+
+[[package]]
+name = "viewer-corpus"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image",
+ "rendererx-scene",
+ "toml",
+ "viewer-core",
+ "viewer-fmt-archive",
+ "viewer-formats",
 ]
 
 [[package]]
@@ -3474,6 +3488,19 @@ dependencies = [
  "viewer-core",
  "viewer-pdf-mupdf",
  "viewer-pdf-pdfkit",
+]
+
+[[package]]
+name = "viewer-formats"
+version = "0.1.0"
+dependencies = [
+ "viewer-core",
+ "viewer-fmt-3d",
+ "viewer-fmt-archive",
+ "viewer-fmt-data",
+ "viewer-fmt-doc",
+ "viewer-fmt-image",
+ "viewer-fmt-pdf",
 ]
 
 [[package]]
