@@ -27,29 +27,32 @@ Every format **loader** converts a file into one of about 8 **content models**. 
 
 | Content model | Used for | Renderer |
 |---|---|---|
-| **Raster** (tiled image or pages) | Images, PDF pages, DjVu, comics, RAW, DICOM | wgpu textured tiles, zoom/pan, mipmaps |
-| **Scene** (meshes, materials, points) | glTF, OBJ, STL, FBX, CAD, LiDAR, splats | Small custom wgpu PBR renderer (or `three-d`) |
+| **Raster** (tiled image) | Images, RAW, DICOM | wgpu textured tiles, zoom/pan, mipmaps |
+| **Pages** (`PageSource`) | PDF, comics, DjVu, slides | Tiled scrolling page view (docs/pdf.md §7) |
+| **Scene** (meshes, materials, points) | glTF, OBJ, STL, FBX, USD, CAD, LiDAR, splats | RendererX, our wgpu renderer (docs/3d-renderer.md) |
 | **RichText** (styled flow) | Markdown, EPUB, DOCX-lite, text, code | `parley` / `cosmic-text` + `syntect` |
 | **Table** (virtualised) | CSV, XLSX, Parquet, SQLite, Arrow | Lazy grid that fetches only visible rows |
 | **Tree** | JSON, YAML, XML, archives, HDF5 | Collapsible tree, lazy children |
-| **Media** (A/V frames) | Video, audio | libVLC → texture; `symphonia` for audio |
+| **Media** (A/V frames) | Video, audio | FFmpeg's libraries (decode into our buffers) → texture; `symphonia` for audio |
 | **Hex** (raw bytes) | Unknown files, executables | mmap hex view + strings + entropy plot |
 | **Web** (fallback) | HTML and HTML-ish formats | `wry` webview (system WebView) |
 
 ```rust
 trait FormatLoader: Sync {
     fn id(&self) -> &'static str;
-    fn probe(&self, header: &[u8], ext: Option<&str>) -> Confidence; // must be cheap, no allocation
-    fn open(&self, src: FileSource) -> Result<Box<dyn Document>>;
+    fn probe(&self, header: &[u8], ext: Option<&str>, name: &str) -> Confidence; // cheap, no allocation
+    fn open(&self, src: &FileSource) -> Result<Document>;
 }
 
-trait Document: Send {
-    fn model(&self) -> ContentModel;
-    fn metadata(&self) -> Metadata;
-    fn children(&self) -> Option<Vec<Entry>>; // containers can be opened recursively
-    fn quick_preview(&self) -> Option<Raster> { None } // embedded thumbnail, for instant first paint
+struct Document {
+    format: String,
+    content: Content,          // Raster, Text, Markdown, Tree, Table, Container, Hex, Scene, Pages
+    metadata: Vec<(String, String)>,
+    unreadable: Unreadables,   // referenced files blocked or missing; grows while textures load
 }
 ```
+
+This is today's shape, in `viewer-core`. Where it is heading (contracts in their own crate, loaders taking a `ParseContext` of hooks) is in docs/architecture.md.
 
 - **Detection:** magic bytes first (`infer`, `file-format`), then the extension, then content sniffing.
 - **Recursion:** a zip holding a PDF holding images can be browsed level by level.
@@ -93,8 +96,8 @@ trait Document: Send {
 |---|---|
 | glTF / GLB (primary) | `rendererx-gltf` (own reader, zero-copy from the mapped file) — **done** |
 | OBJ (+ MTL) | `ufbx` (one C file, official Rust bindings) — **done** |
-| STL | `stl_io` |
-| PLY + Gaussian splats | `ply-rs` + custom splat shader |
+| STL | Our own parser (binary and ASCII, welded, Z-up) — **done** |
+| PLY + Gaussian splats | Our own parser (meshes, point clouds, colours) — **done**; splats drawn as splats later |
 | FBX | `ufbx` — **done** |
 | DAE, 3DS, X, LWO, … | `russimp` (Assimp, C++), on demand |
 | STEP / IGES / BREP (CAD) | OpenCASCADE (FFI, `opencascade-rs`) or `truck` → tessellate |
@@ -104,10 +107,12 @@ trait Document: Send {
 | Blend | Saved preview image (`TEST` block) — **done**; geometry: Blender headless → glTF (converter bridge) |
 
 ### Audio / video
-- **Default:** libVLC (LGPL) on every platform, frames into our wgpu texture. Gives every codec, subtitles, audio output and hardware decoding. Getting frames into wgpu is the first spike.
-- **Lite or mobile builds:** platform decoders (AVFoundation, MediaCodec, Media Foundation) + `symphonia` / `cpal` for audio.
-- Waveform / spectrogram views: `symphonia` + `rustfft`.
-- **Playback is not ours to solve.** libVLC already handles codecs, seeking, subtitles and hardware decoding. We embed them; we never write a player.
+- **Default:** FFmpeg's libraries (`libavformat`, `libavcodec`, `libswresample`; LGPL, no GPL parts) on every platform, behind our own media library: open, list streams, read metadata, decode a frame or audio samples into the caller's buffer. Reads go through our callback (so `FileResolver` and iOS grants apply), threads are set by us, and only the codecs we choose are built in. Hardware decoding through VideoToolbox, MediaCodec and D3D11VA. Getting decoded frames into wgpu is the first spike.
+- **Not libVLC** (decided 2026-11-03): it is a player rather than a library: its own threads, clock, audio output, plugins and file and network access, no allocator hook, and 20–150 MB on disk. That breaks "libraries provide mechanism, the app decides policy" (docs/architecture.md) and makes the media library heavy for every app that uses it.
+- **Hardware decoding** uses each platform's decoders through FFmpeg, so there is one media path everywhere rather than per-platform players.
+- **Audio-only light path:** `symphonia` (pure Rust) for common audio; also waveform and spectrogram views with `rustfft`.
+- What plays, and what is deliberately left out: §12.6.
+- **Codecs are not ours to solve; the player is small and ours.** FFmpeg handles containers, codecs and hardware decoding. Viewer's player is app code on top of the media library: a clock, audio output through `cpal`, seeking, and subtitles from FFmpeg's decoded subtitle streams. No playlists, no streaming protocols, no filters.
 - **Editing is deliberately tiny** (§12.6): trim (video and audio) and gain/normalise (audio). No timeline, no effects.
 
 ### Archives
@@ -156,7 +161,7 @@ The fallback is always Hex.
 | GPU | `wgpu` (Metal / Vulkan / DX12 / GLES) |
 | UI | **libgui** on every platform, one shell (decided, §12.1). The egui frontend from the MVP is removed |
 | CPU fallback renderer | `softbuffer` + `tiny-skia` (instant first frame, no-GPU machines, old BSD boxes) |
-| Async / threads | `rayon` pool + small `tokio` runtime only where I/O needs it |
+| Async / threads | Background work through the app's `Spawn` hook; libraries start no threads or global pools of their own (docs/architecture.md). `tokio` only where I/O needs it |
 | File dialogs / clipboard | `libfilepicker` (`rfd` on desktop, `UIDocumentPickerViewController` on iOS), `arboard` |
 | Fonts | `fontdb`, which loads system fonts lazily (CJK fonts are not bundled) |
 
@@ -179,11 +184,11 @@ The fallback is always Hex.
 - **Core is `no_std`-friendly where possible and platform-free.** All OS-specific code lives in `crates/platform-*`.
 - **Platform backends.** Each loader family has a trait with these implementations:
   - `bundled` (our libraries)
-  - `apple` (ImageIO, PDFKit, AVFoundation)
-  - `android` (BitmapFactory, PdfRenderer, MediaCodec via JNI)
-  - `windows` (WIC, Media Foundation)
+  - `apple` (ImageIO, PDFKit)
+  - `android` (BitmapFactory, PdfRenderer via JNI)
+  - `windows` (WIC)
 
-  Mobile builds prefer the platform backends, which means a smaller binary, hardware decoding, and no LGPL static-linking problems on the App Store.
+  A platform backend is used where it is the better choice on that platform (PDFKit on iOS, because MuPDF is AGPL). Video is the exception: FFmpeg everywhere, using the platform's hardware decoders through it (§12.6).
 - **C dependencies must cross-compile to every target above.** Prefer libraries with prebuilt binaries for all targets or that build from source everywhere (MuPDF). For LoongArch, RISC-V and OHOS, build from source in CI.
 - **Feature-gated builds:** `full` (desktop), `mobile`, `minimal` (pure Rust only, for exotic targets). The pure-Rust build is the portability floor: it must compile anywhere `std` + a window exist.
 - **iOS has no JIT and no `dlopen` of downloaded code:** everything is static, and WASM plugins run through an interpreter (`wasmi`).
@@ -196,7 +201,11 @@ The fallback is always Hex.
 | Library | Licence | Rule |
 |---|---|---|
 | LibRaw (CDDL/LGPL dual), OpenCASCADE (LGPL + exception) | Permissive / LGPL | OK; link LGPL dynamically on desktop |
-| libVLC, FFmpeg | LGPL (avoid GPL build options; no x264/x265) | Dynamic everywhere, including as frameworks on iOS, with our source public, as VLC for iOS does |
+| FFmpeg | LGPL (no GPL build options: no x264/x265, no `--enable-gpl`) | Dynamic on desktop and Android; on iOS as dynamic frameworks inside the app, with our source public so it can be relinked |
+| `dav1d`, `libopenmpt`, `libass`, `rustysynth` | BSD / BSD / ISC / MIT | OK (media, §12.6) |
+| `libbluray` | LGPL | OK, dynamic; unencrypted discs only |
+| `libdvdnav` / `libdvdread`, `libcdio` | GPL | Avoid: no DVD menus (titles play from their VOBs), no audio CDs |
+| H.264, HEVC, AAC (patents, not licences) | Patent pools | Prefer the platform's hardware decoders where they exist; get a proper answer before any commercial release |
 | MuPDF | AGPL | **Used, except on iOS.** Only `viewer-pdf-mupdf` and the app builds containing it are AGPL; libgui, libfilepicker, RendererX and the other crates stay MIT/Apache (docs/pdf.md §3) |
 | Poppler | GPL | Avoid |
 | djvulibre | GPL | Optional plugin / converter only |
@@ -214,8 +223,8 @@ Nothing that serves a particular format runs before "app ready": no format modul
 
 ### Process and binary
 - **Single instance, many windows (§12.3).** A second launch hands the path to the running instance (Unix socket / named pipe) and exits in a few ms; the instance opens it in a **new window**. Optionally, a tiny resident agent keeps a hidden window warm (user setting, off by default).
-- **Small core binary.** Heavy libraries (libVLC, OpenCASCADE) are **not linked into the main executable**. They live in on-demand modules that are `dlopen`ed on first use (desktop/Android), or in the worker process. Opening a JPEG must never page them in. MuPDF is the exception so far: linked statically, but nothing in it runs until the first PDF (docs/pdf.md §4).
-- **Release profile:** `lto = "fat"`, `codegen-units = 1`, `panic = "abort"`, `opt-level = 3`, strip symbols. Also try PGO and BOLT (`cargo-pgo`).
+- **Small core binary.** Heavy libraries (FFmpeg, OpenCASCADE) are **not linked into the main executable**. They live in on-demand modules that are `dlopen`ed on first use (desktop/Android), or in the worker process. Opening a JPEG must never page them in. MuPDF is the exception so far: linked statically, but nothing in it runs until the first PDF (docs/pdf.md §4).
+- **Release profile:** `lto = "fat"`, `codegen-units = 1`, `opt-level = 3`, strip symbols. Not `panic = "abort"`: a panicking decoder must fall back to the next loader (§12.4). Also try PGO and BOLT (`cargo-pgo`).
 - **Zero static initialisers.** The loader registry is a `const` table of function pointers. No plugin scanning at startup; WASM plugins are indexed lazily and cached.
 
 ### First pixel before full load
@@ -252,7 +261,7 @@ Rules, and what the first memory pass found (2026-11-01):
 
 - **Parser host (§12.4).** Desktop and Android isolate parsers in a separate process; iOS and HarmonyOS isolate them in-process. Details:
 - **Worker process** for every C/C++ parser (desktop). Communicates over shared memory + IPC. If it crashes, show "couldn't render, showing hex" instead of crashing the app. Sandbox it with seccomp (Linux), App Sandbox (macOS), AppContainer (Windows), pledge/unveil (OpenBSD), Capsicum (FreeBSD).
-  - On iOS and HarmonyOS, run in-process: pure-Rust parsers, platform backends, and C libraries only as WASM (§12.4).
+  - On iOS and HarmonyOS, run in-process: pure-Rust parsers, platform backends, vetted C libraries natively, and other C libraries as WASM (§12.4).
 - **Fuzz** every loader with `cargo-fuzz`, and integrate OSS-Fuzz later.
 - **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document.
 - **Never auto-execute.** Scripts and macros in documents are never run. HTML in the webview runs with JS off and no network by default.
@@ -274,38 +283,40 @@ Use the **best library for the job**. Rust's job here is the safe shell, the glu
 
 ## 10. Workspace layout
 
+Today (one repo, one Cargo workspace):
+
 ```
-viewer/
-├─ crates/
-│  ├─ core/            # traits, detection, registry, content models
-│  ├─ render/          # wgpu + CPU renderers: raster, scene, text, table, tree, hex
-│  ├─ app/             # libgui shell, windows, info panel, single-instance IPC
-│  ├─ rendererx/       # reusable 3D renderer (docs/3d-renderer.md)
-│  ├─ worker/          # sandboxed parser process + IPC protocol
-│  ├─ plugin-host/     # wasmtime / wasmi + WIT
-│  ├─ platform-desktop/
-│  ├─ platform-apple/  # iOS/macOS backends + Quick Look extension glue
-│  ├─ platform-android/
-│  ├─ platform-ohos/
-│  ├─ fmt-image/  fmt-doc/  fmt-3d/  fmt-media/  fmt-archive/  fmt-data/  fmt-dev/
-├─ apps/
-│  ├─ ios/             # Xcode wrapper
-│  ├─ android/         # Gradle wrapper
-│  └─ ohos/            # ArkTS wrapper
-├─ plugins/            # example WASM plugins
-└─ bench/              # startup + decode benchmarks, test corpus
+crates/
+  core/                 viewer-core: FileSource, Document, Content, PageSource, registry, hex fallback
+  fmt-image/  fmt-doc/  fmt-data/  fmt-archive/  fmt-3d/  fmt-pdf/     format loaders
+  pdf-mupdf/            MuPDF backend (AGPL)        pdf-pdfkit/   PDFKit backend
+  rendererx/  rendererx-scene/  rendererx-gltf/      the reusable 3D renderer (docs/3d-renderer.md)
+  usd-lite/             pure-Rust USD reader and composition
+  formats/              viewer-formats: the registry of every loader, shared by the app and the corpus
+  corpus/               viewer-corpus: the test corpus runner (corpus/README.md)
+  app/                  libgui shell, views, loading, single window
+corpus/                 test corpus: manifest, synthetic files, expected summaries and renders
+ios/                    Xcode wrapper, device and simulator scripts
+bench/                  startup and memory benchmarks, sample generator
+samples/                one small file per supported format
 ```
+
+Outside it: libgui (UI) and libfilepicker (pickers), each its own repo, pinned by commit.
+
+Where it is heading (contracts, parsers, renderers, isolation kit and UI adapters as separate products; platform crates; the worker process; WASM plugins): docs/architecture.md.
 
 ---
 
 ## 11. Roadmap
 
-✅ done · 🟡 partly done · ⬜ not started. Updated 2026-11-01. **Opening every kind of file comes first; editors and further GUI work follow** (docs/roadmap-notes.md, docs/editing.md).
+✅ done · 🟡 partly done · ⬜ not started. Updated 2026-11-03. **Opening every kind of file comes first; editors and further GUI work follow** (docs/roadmap-notes.md, docs/editing.md).
+
+**Next, in order** (reasons in docs/roadmap-notes.md §3 and docs/architecture.md §6): the test corpus (🟡 started: `corpus/`, run by `crates/corpus` on every CI platform); the command list and macOS menu; a thin contracts slice with a thumbnailer tool as its second user; then formats (XLSX first); then MuPDF in a helper process on desktop.
 
 1. ✅ **MVP (desktop):** shell, detection, Hex, images, text/code, Markdown, JSON tree, CSV, zip. Startup tracing and benchmark from day 1. Since then: folders as containers, image streaming in bands, memory budgets in CI.
-2. 🟡 **Documents:** done: PDF (MuPDF, PDFKit on iOS) with a tiled scrolling page view. Next, after the command list and macOS menu: XLSX, comics, EPUB/DOCX, slides, in the order in docs/roadmap-notes.md §3. DOCX/XLSX/EPUB/CBZ only open as zip listings today, and that view stays available through **View as** beside the new one, text and hex (§1 there).
+2. 🟡 **Documents:** done: PDF (MuPDF, PDFKit on iOS) with a tiled scrolling page view. Next: XLSX, comics, EPUB/DOCX, slides, in the order in docs/roadmap-notes.md §3. DOCX/XLSX/EPUB/CBZ only open as zip listings today, and that view stays available through **View as** beside the new one, text and hex (§1 there).
 3. 🟡 **3D:** done: RendererX (wgpu, clay/PBR/unlit, textures, streaming, off-thread pipelines), glTF/GLB/VRM, FBX and OBJ via ufbx (in place of Assimp), USD/USDZ with composition via `usd-lite`, `.blend` preview, blocked/missing file reporting. STL (welded, Z-up turned Y-up) and PLY (ASCII/binary, meshes and point clouds, colours). Left: MToon shading, Gaussian splats drawn as splats (they show as coloured points), animation playback (v2).
-4. ⬜ **Media:** libVLC for playback, FFmpeg's libavformat for trimming (§12.6).
+4. ⬜ **Media:** our media library on FFmpeg's libraries for reading, decoding and trimming; Viewer's small player on top (§12.6).
 5. 🟡 **Mobile:** iOS/iPadOS runs (libfilepicker, folder grants, Open Folder…). Left: opening files tapped in the Files app (`CFBundleDocumentTypes`), bookmarks with a Recents list, then Android.
 6. ⬜ **Hardening:** worker sandbox, fuzzing, signing and packaging. (CI tests Linux, Windows and macOS already.)
 7. ⬜ **Wider OS reach:** FreeBSD/OpenBSD ports, LoongArch/RISC-V builds for Kylin/UOS/openEuler, HarmonyOS NEXT shell.
@@ -360,14 +371,15 @@ All file parsing goes through one interface, the **parser host**. Which isolatio
 
 In-process hardening (iOS, HarmonyOS, and the first line of defence everywhere):
 - **Pure-Rust parsers by default**: memory-safe, so a hostile file can cause an error but not memory corruption.
-- **C/C++ libraries only as WebAssembly** run in `wasmi` / wasmtime's Pulley interpreter (no JIT, so App-Store-legal). The sandbox is the isolation: a bug in the C code can only corrupt its own linear memory. Slower than native, which is acceptable for niche formats. Platform frameworks (ImageIO, PDFKit, AVFoundation) are used directly: the OS vendor maintains them.
+- **Vetted C/C++ libraries natively** (decided 2026-11-03): only libraries that are widely shipped and continuously fuzzed (OSS-Fuzz or equivalent), such as FFmpeg, `dav1d`, `libass` and ufbx, each with strict `Limits`, our own fuzzing in CI, and a pinned, regularly updated version. Each one is listed in docs/architecture.md §5 with what it may touch.
+- **Other C/C++ libraries only as WebAssembly** run in `wasmi` / wasmtime's Pulley interpreter (no JIT, so App-Store-legal). The sandbox is the isolation: a bug in the C code can only corrupt its own linear memory. Slower than native, which is acceptable for niche formats. Platform frameworks (ImageIO, PDFKit, AVFoundation) are used directly: the OS vendor maintains them.
 - **Budgets on every parse**: size, nesting depth, decompression ratio, memory and time. A parse over budget is cancelled.
 - **Panics are caught** at the loader boundary (already done), falling back to the next loader or hex.
 - iOS / macOS **Quick Look extensions** are separate processes managed by the OS, so previews from Files or Mail get process isolation for free.
 
 Phasing: the interface exists now and runs in-process everywhere. The worker process on desktop was to arrive with the first C/C++ parser. MuPDF now is one, and it still runs in-process on its render thread (docs/pdf.md §8), so the worker is due.
 
-Rules out: calling a parser directly from UI code; linking a native C parser into the iOS app.
+Rules out: calling a parser directly from UI code; native C on iOS that isn't on the vetted list.
 
 ### 12.5 Documents and the editing model
 **Loading.** Loaders produce **plain data that doesn't need the GPU** (CPU-side rasters, text, tables, trees and 3D scenes). This is what lets parsing start at launch, before the window and GPU exist. The renderers upload it later. `viewer-core` never depends on wgpu.
@@ -384,10 +396,27 @@ Playback and decoding are solved problems, so we embed rather than build:
 
 | Platform | Engine |
 |---|---|
-| Desktop, Android, iOS | **libVLC** with frames in a texture on the shared device (§12.2); LGPL, linked dynamically |
-| HarmonyOS | the system media kit (AVPlayer), libVLC later if needed |
+| Desktop, Android, iOS | **Our media library on FFmpeg's libraries**, decoded frames into a texture on the shared device (§12.2); LGPL, linked dynamically. Viewer's player (clock, `cpal` audio, seeking, subtitles) sits on top |
+| HarmonyOS | the system media kit (AVPlayer), FFmpeg later if needed |
 
-Editing is **deliberately basic**, using the operation model (§12.5) with FFmpeg's libraries to write the result, since libVLC is a player:
+**What plays.** FFmpeg is built with demuxers and decoders only: no network protocols, encoders, filters or device capture. VLC gets most of its file coverage from these same libraries; we take that and leave out the rest of VLC.
+
+| Category | Covered by | Formats |
+|---|---|---|
+| Video containers | FFmpeg | MP4/M4V, MKV, AVI, MOV, WebM, FLV, OGV/OGM, MPEG-PS/TS/M2TS/MTS, WMV/ASF, 3GP/3G2, MXF, NUT, VOB, RealMedia, DV, Y4M |
+| Video codecs | FFmpeg (AV1 through `dav1d`), platform hardware decoders through it | H.264, HEVC, VP8/9, AV1, MPEG-1/2/4, DivX/Xvid, Theora, WMV, ProRes, DNxHD, MJPEG, Cinepak, Dirac, RealVideo and older codecs |
+| Audio | FFmpeg | MP3, AAC/M4A, FLAC, WAV, Vorbis, Opus, WMA, ALAC, AIFF, APE, WavPack, AC3/E-AC3, DTS, MPC, TTA, AMR, CAF |
+| Tracker music | `libopenmpt` (through FFmpeg) | MOD, XM, IT, S3M |
+| MIDI | `rustysynth` + a soundfont | MID |
+| Subtitles | FFmpeg reads and decodes; `libass` draws styled ASS; we draw text and bitmap ones | SRT, ASS/SSA, VobSub (SUB/IDX), SMI, VTT, MicroDVD, PGS, DVB, tracks embedded in MKV/MP4 |
+| Discs | FFmpeg + our ISO listing; `libbluray` | DVD and VCD titles (from their VOB/MPEG files), ISO images, unencrypted Blu-ray |
+| Playlists | Our own small parsers | M3U/M3U8, PLS, XSPF, ASX: local entries only |
+
+**Left out on purpose:** network protocols and streams (HTTP, RTSP, RTMP, HLS, DASH, …), TV tuners, screen capture, DVD menus and audio CDs (their libraries are GPL), encrypted Blu-ray.
+
+Memory: a fixed number of decoded frames in flight (a few, not a buffer of seconds), owned by the caller; hardware frames stay on the GPU where the platform allows.
+
+Editing is **deliberately basic**, using the operation model (§12.5) with the same FFmpeg libraries to write the result:
 - **Trim** (video and audio): set in/out points, save. By default it **cuts at keyframes without re-encoding** (instant and lossless; stream copy with FFmpeg's libavformat, which needs no codecs). "Exact cut" re-encodes only up to the next keyframe, with the platform's hardware encoders, and says so.
 - **Volume** (audio and the audio track of video): gain in dB and "normalise" (peak or loudness). Needs only the audio to be re-encoded; video is copied.
 - Also: a waveform for audio; frame grab as PNG for video.
@@ -399,11 +428,7 @@ Every decision above is measured against §7: the startup benchmark runs in CI, 
 ### 12.8 One layout for every screen size
 The chrome adapts to width classes and input kind, not to the platform: see docs/responsive-ui.md.
 
-### 12.9 Still open
-- Whether the resident agent (§7) should ship on by default on desktop.
-
-
-### Folder access (iOS, sandboxed macOS)
+### 12.9 Folder access (iOS, sandboxed macOS)
 
 A picked folder grants everything under it; a picked file grants that file alone,
 and nothing reaches upward. Loaders report every referenced file they couldn't
@@ -415,3 +440,6 @@ Later, with a Recents list: security-scoped bookmarks (`bookmarkData` on iOS, wi
 `startAccessingSecurityScopedResource` after resolving, and re-saving stale ones),
 and `CFBundleDocumentTypes` + `LSSupportsOpeningDocumentsInPlace` so files tapped
 in the Files app open in Viewer (those URLs are single-file grants too).
+
+### 12.10 Still open
+- Whether the resident agent (§7) should ship on by default on desktop.

@@ -40,6 +40,8 @@ On a device: `ios/run-device.sh "<device>" <TEAM_ID>` (or `ios/run-sim.sh` for t
 cargo test --workspace
 ```
 
+The test corpus checks what every file opens as; after an intended change, `UPDATE_CORPUS=1 cargo test -p viewer-corpus` and review the diff (corpus/README.md).
+
 ```bash
 python3 bench/make-samples.py --big
 ```
@@ -50,6 +52,10 @@ bench/startup.sh
 
 Automation flags: `--benchmark` (prints startup timings and exits once the file is on screen), `--screenshot out.png`, `--view-as <loader>`, `--list-loaders`.
 
+## Licence
+
+MIT or Apache-2.0, except `crates/pdf-mupdf`, which links MuPDF and is AGPL-3.0-or-later. Desktop and Android builds include it, so those builds of the app are distributed under the AGPL; iOS builds use PDFKit and contain no MuPDF (docs/pdf.md §3).
+
 ## Layout
 
 ```
@@ -59,10 +65,17 @@ crates/fmt-doc       text / code / Markdown loaders
 crates/fmt-data      JSON / TOML / CSV loaders
 crates/fmt-archive   zip / tar / gzip containers, folders
 crates/fmt-3d        glTF, FBX/OBJ (ufbx), STL, PLY, USD, .blend previews; texture decoding
+crates/fmt-pdf       PDF loader; picks the backend by target
+crates/pdf-mupdf     MuPDF backend (AGPL; not in iOS builds)
+crates/pdf-pdfkit    PDFKit backend (Apple)
 crates/rendererx*    RendererX: the reusable 3D renderer, its CPU scene and glTF loader
 crates/usd-lite      pure-Rust USD reader and composition
+crates/formats       the registry of every loader (app and corpus share it)
+crates/corpus        test corpus runner: opens every file in corpus/ and checks the result
 crates/app           libgui + wgpu shell and views
+docs/                design notes: architecture, roadmap notes, PDF, 3D renderer, responsive UI, editing
 ios/                 Xcode wrapper and device / simulator scripts
 bench/               sample generator, startup and memory benchmarks
 samples/             one small file per supported format
+corpus/              test corpus (corpus/README.md)
 ```

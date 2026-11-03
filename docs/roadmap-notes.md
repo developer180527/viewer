@@ -50,9 +50,10 @@ Menus: File, Edit, View, Window, Help.
 
 ## 3. Order of work
 
-1. **Command list and native macOS menu.** Small, and required on the Mac.
-2. **Test corpus** grows with every format from here on: "supported" means passing it on every platform. Its design is in [pdf.md](pdf.md) §8.
-3. **Formats:**
+1. **Test corpus,** first with PDF, 3D and images, then growing with every format: "supported" means passing it on every platform. Its design is in [pdf.md](pdf.md) §8. It comes first because it guards the restructure in step 3.
+2. **Command list and native macOS menu.** Small, and required on the Mac.
+3. **Thin contracts slice** and a thumbnailer tool as its second user ([architecture.md](architecture.md) §6, steps 2–3). Only what the next formats need; the rest of the restructure waits.
+4. **Formats:**
 
 | Order | Formats | Why | Work |
 |---|---|---|---|
@@ -60,10 +61,10 @@ Menus: File, Edit, View, Window, Help.
 | 2 | **CBZ, CBR** | Reuses the page view | Very small; check unrar's licence for CBR |
 | 3 | **EPUB, then DOCX, ODT, RTF** | One shared flowing-document view serves them all | Largest; won't match Word's layout exactly at first |
 | 4 | **PPTX, ODP** | Slides can reuse `PageSource`, but drawing them is hard | Medium to large |
-| 5 | **Audio and video** | Core to "opens anything"; libVLC (PLAN.md §12.6) | Medium, a separate track |
+| 5 | **Audio and video** | Core to "opens anything"; our media library on FFmpeg's libraries, not libVLC (PLAN.md §12.6) | Medium to large: the library, then a small player; a separate track |
 | 6 | **Long tail** | 7z, RAR, SQLite, fonts, HEIC, RAW, STEP, DICOM | Many small jobs |
 
-Not chosen for the App Store build: MuPDF's own EPUB, XPS and other extras, which docs/pdf.md §2 keeps off iOS. Reconsider EPUB in step 3: our own reader would work on iOS too, whereas MuPDF's wouldn't. That would change the "not on iOS" row for EPUB.
+Not chosen for the App Store build: MuPDF's own EPUB, XPS and other extras, which docs/pdf.md §2 keeps off iOS. Reconsider EPUB with the flowing-document view (format 3): our own reader would work on iOS too, whereas MuPDF's wouldn't. That would change the "not on iOS" row for EPUB.
 
 ## 4. 3D editing, for later
 

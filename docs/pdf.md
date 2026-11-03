@@ -91,6 +91,8 @@ pub trait PageSource: Send + Sync {
 }
 ```
 
+This is the trait as built. It moves to the sink and cancel form in docs/architecture.md §3 (`render(..., into: &mut dyn PixelSink, cancel: &Cancel)`), so a helper process can stand behind it; that is step 2 of the order there.
+
 The loader only opens the file and reads page sizes. That is fast, so the page appears at once and rendering happens in the view.
 
 ## 6. Threading
@@ -143,6 +145,6 @@ So each open document has one **page-render thread** (the backend serialises acc
 3. ✅ `viewer-core`: `Content::Pages` + `PageSource` (+ hand-written test PDFs in `viewer_core::testing`).
 4. ✅ `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` behind the trait; `viewer-fmt-pdf` loader (`VIEWER_PDF_BACKEND=pdfkit` on macOS). The iOS dependency tree has no MuPDF. The page-render thread came with the view (5).
 5. ✅ The view: layout, tiles, zoom, cache, page counter, keys, its render thread. ⬜ Jump to page, thumbnails, momentum after a touch fling, aborting a slow tile.
-6. The PDF corpus and its runner; both backends passing it.
+6. 🟡 The corpus and its runner exist (`corpus/`, `crates/corpus`): page count, sizes and a page-1 render, checked on every CI platform with MuPDF. ⬜ Real-world and hostile PDFs beyond the first two, and PDFKit with its own expected renders.
 7. Builds: Windows (MSVC), Linux, Android NDK, BSD; CI with the iOS dependency check; README and licence notes.
 8. Then §9.

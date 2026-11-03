@@ -64,6 +64,16 @@ Viewer's choice: helper on desktop, in-process on iOS.
 
 **5. Simple use stays simple.** `viewer_parse::open(path)` works with strict default limits.
 
+**6. Memory is part of every contract.** Any app should be able to read any kind of file cheaply, so every library:
+- reads only what it needs: headers first, files mapped, the rest streamed; never a whole file when part will do;
+- writes into the caller's buffers (sinks), so the caller decides where memory goes;
+- honours `Limits`: every size, count and nesting depth is capped, and going over is an error, not a crash;
+- keeps caches bounded, sized by the caller (the PDF tile cache);
+- starts no hidden threads or global pools: background work goes through `Spawn`;
+- reports what it holds ("this document: 42 MB"), so apps can enforce budgets.
+
+A large library underneath (MuPDF, FFmpeg) is fine as long as it obeys these from the outside.
+
 ## 4. Who owns the contracts
 
 They live in their own crate, not in the app, because a library can't depend on an app. Viewer is the first customer and drives what goes in. Each library defines its own native API and the hooks it needs; adapters map it onto the contracts.
@@ -83,17 +93,19 @@ Audited 2026-11-03 from the dependency tree, headers and our source. Rows marked
 | **`resvg` / `fontdb`** | Global allocator | None seen | **Scans and maps system fonts** in the SVG loader | Make fonts a hook |
 | **`zip`, `tar`, `flate2`, `zlib-rs`, `bzip2`, `lzma-rust2`, `syntect`, `calamine` (planned)** | Global allocator | None seen | Bytes from us. `tar` pulls `filetime`, unused for reading | Limits only |
 | **PDFKit, CoreGraphics** | **No control** | **No control** | OS framework | Accept; we own only the output buffer |
-| **libVLC** (planned) | **No hook** (unverified) | **Its own threads**, plugins, its own file and network access | Heavy | Helper process on desktop; network off |
+| **FFmpeg libraries** (planned; libVLC dropped, PLAN.md §12.6) | `av_malloc` has no runtime hook; cap with `av_max_alloc` and count frames, which we own | `thread_count` per decoder, set by us | Reads only through our `AVIOContext` callback; network protocols not built | Build only the codecs and demuxers we list; no GPL parts |
 
 Our own code breaks the rule too: `fmt-3d/src/textures.rs` and `core/src/content.rs` start their own threads, and `alloc.rs` is a global allocator only an app can set.
 
 ## 6. Order
 
-1. Split contracts out; replace the global `WAKE` with hooks.
-2. Change `PageSource` to the sink and cancel form; move loaders onto `ParseContext`.
-3. Remove `rayon` from `image`; route our threads through `Spawn`; route MuPDF and ufbx allocators.
-4. Move renderers and views out of the app.
-5. Build the isolation kit with PDF first, then Viewer's desktop helper. Spike 3D scenes alongside; `CpuScene` fills in gradually and is the hardest to isolate.
-6. Continue with the menu bar and XLSX on the new structure (roadmap-notes.md).
+Opening every kind of file stays the priority (roadmap-notes.md), so the restructure comes in a thin slice first, and the rest only when something needs it.
 
-Keep one repo for now, and split repos when the APIs settle. A small second user, such as a thumbnailer command-line tool, will test whether the design is right.
+1. **Test corpus** (PDF, 3D, images first): it is what proves each later step broke nothing.
+2. **Thin contracts slice:** split the contracts crate; `ParseContext` with `files`, `limits`, `cancel` and `notify` (replacing the global `WAKE`); `PageSource` in the sink and cancel form; move loaders onto it. Contracts carry data as owned bytes or a shared-memory handle, never a pointer into a parser (3D's mapped vertex data included).
+3. **A second user alongside:** a small thumbnailer command-line tool built on the contracts and parsers alone. Whatever it can't do without reaching into the app shows where a boundary is wrong.
+4. **Formats** continue on the new structure (roadmap-notes.md §3).
+5. **MuPDF in a helper process on desktop:** the first real use of isolation, for the most common hostile format.
+6. **Only when needed:** remove `rayon` from `image` and route our threads through `Spawn`; allocator hooks for C libraries, as counting for budgets (§5); the general isolation kit; moving renderers and views out of the app.
+
+Keep one repo for now, and split repos when the APIs settle.
