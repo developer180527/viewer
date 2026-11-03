@@ -125,6 +125,14 @@ fn metal_rough(
 
 /// Decodes and scales one image to at most [`MAX_SIDE`]. `color_space` says how to
 /// store float (EXR) data: sRGB-encoded for colour maps, as-is for data maps.
+/// `image`'s limits from [`viewer_core::limits`]: a texture whose header lies about
+/// its size fails here instead of in the allocator.
+fn image_limits() -> image::Limits {
+    let mut l = image::Limits::default();
+    l.max_alloc = Some(viewer_core::limits::MAX_IMAGE_ALLOC);
+    l
+}
+
 fn load(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -> Option<image::RgbaImage> {
     let file;
     let bytes: &[u8] = match source {
@@ -155,7 +163,9 @@ fn load(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -> 
     {
         return Some(image);
     }
-    let image = image::load_from_memory(bytes).ok()?;
+    let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
+    reader.limits(image_limits());
+    let image = reader.decode().ok()?;
     if image.width().max(image.height()) <= MAX_SIDE {
         return Some(image.into_rgba8());
     }

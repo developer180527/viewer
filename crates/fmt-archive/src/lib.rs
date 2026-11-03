@@ -25,11 +25,15 @@ fn document(format: &str, container: Arc<dyn Container>) -> Document {
 /// a tiny crafted file could otherwise make us allocate `MAX_ENTRY_SIZE` at once.
 const MAX_PREALLOC: u64 = 64 << 20;
 
-fn read_capped(reader: impl Read, hint: u64) -> Result<Vec<u8>> {
-    let mut out = Vec::with_capacity(hint.min(MAX_PREALLOC) as usize);
-    reader.take(MAX_ENTRY_SIZE + 1).read_to_end(&mut out)?;
-    if out.len() as u64 > MAX_ENTRY_SIZE {
-        bail!("entry larger than {MAX_ENTRY_SIZE} bytes; refusing to extract");
+/// Inflates `reader`, refusing past what `packed` bytes may reasonably become
+/// (`viewer_core::limits::unpack_cap`): a decompression bomb stops at the cap rather
+/// than at [`MAX_ENTRY_SIZE`].
+fn read_capped(reader: impl Read, hint: u64, packed: u64) -> Result<Vec<u8>> {
+    let cap = viewer_core::limits::unpack_cap(packed, MAX_ENTRY_SIZE);
+    let mut out = Vec::with_capacity(hint.min(MAX_PREALLOC).min(cap) as usize);
+    reader.take(cap + 1).read_to_end(&mut out)?;
+    if out.len() as u64 > cap {
+        bail!("inflates past {cap} bytes from {packed}; refusing to extract (a decompression bomb?)");
     }
     Ok(out)
 }
@@ -87,9 +91,9 @@ impl Container for ZipContainer {
     fn open_entry(&self, index: usize) -> Result<FileSource> {
         let mut archive = zip::ZipArchive::new(Cursor::new(self.src.bytes()))?;
         let file = archive.by_index(index)?;
-        let size = file.size();
+        let (size, packed) = (file.size(), file.compressed_size());
         let name = file.name()?.into_owned();
-        Ok(FileSource::from_bytes(name, read_capped(file, size)?))
+        Ok(FileSource::from_bytes(name, read_capped(file, size, packed)?))
     }
 }
 
@@ -126,7 +130,7 @@ impl FormatLoader for TarLoader {
 
     fn open(&self, src: &FileSource) -> Result<Document> {
         let (data, format) = if src.bytes().starts_with(&[0x1f, 0x8b]) {
-            let raw = read_capped(flate2::read::MultiGzDecoder::new(src.bytes()), src.len() * 4)?;
+            let raw = read_capped(flate2::read::MultiGzDecoder::new(src.bytes()), src.len() * 4, src.len())?;
             (FileSource::from_bytes(src.name(), raw), "Gzipped tar archive")
         } else {
             (src.clone(), "Tar archive")
@@ -193,7 +197,7 @@ impl FormatLoader for GzipLoader {
     }
 
     fn open(&self, src: &FileSource) -> Result<Document> {
-        let raw = read_capped(flate2::read::MultiGzDecoder::new(src.bytes()), src.len() * 4)?;
+        let raw = read_capped(flate2::read::MultiGzDecoder::new(src.bytes()), src.len() * 4, src.len())?;
         let inner = src
             .name()
             .strip_suffix(".gz")

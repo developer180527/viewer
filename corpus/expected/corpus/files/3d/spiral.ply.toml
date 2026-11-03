@@ -17,7 +17,7 @@ bounds = ["-0.937 -0.980 0.000", "0.838 0.890 0.990"]
 [metadata]
 Meshes = "1"
 "Placed meshes" = "1"
-Triangles = "100"
+Points = "100"
 Vertices = "100"
 Materials = "1"
 Kind = "point cloud"

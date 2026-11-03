@@ -1,0 +1,6 @@
+mtllib My Paint.mtl
+v 0 0 0
+v 1 0 0
+v 0 1 0
+usemtl Paint
+f 1 2 3

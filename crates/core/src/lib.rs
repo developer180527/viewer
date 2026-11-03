@@ -6,6 +6,7 @@
 
 mod content;
 mod hex;
+pub mod limits;
 mod loader;
 mod pages;
 mod source;

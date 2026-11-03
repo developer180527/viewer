@@ -1,0 +1,11 @@
+loader = "hex"
+failed = ["gzip"]
+format = "Binary data"
+model = "Hex"
+
+[hex]
+bytes = 101941
+
+[metadata]
+"Detected type" = "application/gzip (gz)"
+"Entropy (first 64 KiB)" = "0.38 bits/byte"

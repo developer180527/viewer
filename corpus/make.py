@@ -6,7 +6,7 @@ Usage: python3 corpus/make.py
 The output is committed: rerun this only to add or change a file, then refresh the
 expected summaries with UPDATE_CORPUS=1 (corpus/README.md).
 """
-import json, math, os, struct, zlib
+import gzip, json, math, os, struct, zlib
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "files")
@@ -48,6 +48,7 @@ def images():
     write("images/ramp.bmp", header + info + pixels)
     write("images/ramp.ppm", b"P6\n32 16\n255\n" + b"".join(bytes((x * 8, y * 16, 128)) for y in range(h) for x in range(w)))
     write("images/checker.png", png(64, 64, checker))
+    write("images/ramp.pgm", b"P5\n32 16\n255\n" + bytes(x * 8 for y in range(h) for x in range(w)))
 
 
 # ---------------------------------------------------------------- 3D
@@ -133,6 +134,13 @@ def threed():
     # OBJ + MTL whose texture is missing.
     write("3d/tri-obj/tri.obj", "mtllib tri.mtl\no Tri\nv 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nvt 1 0\nvt 0 1\nusemtl Paint\nf 1/1 2/2 3/3\n")
     write("3d/tri-obj/tri.mtl", "newmtl Paint\nKd 0.8 0.2 0.2\nmap_Kd paint.png\n")
+
+    # An mtllib name with spaces in it, as some exporters write: with its .mtl beside
+    # it, and without (reported once, under its whole name, not word by word).
+    obj = "mtllib My Paint.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nusemtl Paint\nf 1 2 3\n"
+    write("3d/spaced-mtl/tri.obj", obj)
+    write("3d/spaced-mtl/My Paint.mtl", "newmtl Paint\nKd 0.2 0.6 0.9\n")
+    write("3d/spaced-mtl-missing/tri.obj", obj)
 
     # USD as text: one triangle, Y up.
     write("3d/tri.usda", """#usda 1.0
@@ -222,6 +230,8 @@ def hostile():
     write("hostile/truncated.glb", b"glTF" + struct.pack("<II", 2, 100000) + json.dumps(doc).encode()[:200])
     write("hostile/fake.zip", b"PK\x03\x04" + bytes((i * 37) % 256 for i in range(512)))
     write("hostile/empty.bin", b"")
+    # 100 MB of zeros in ~100 KB: inflating it must stop at the cap, not run to the end.
+    write("hostile/bomb.txt.gz", gzip.compress(b"\0" * (100 << 20), 9, mtime=0))
     # An OBJ face pointing at vertices that don't exist.
     write("hostile/bad-indices.obj", "v 0 0 0\nv 1 0 0\nf 1 2 99\nf -50 1 2\n")
     # A binary STL whose header promises far more triangles than it holds.

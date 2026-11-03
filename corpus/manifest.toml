@@ -59,6 +59,10 @@ golden = true
 path = "corpus/files/images/ramp.ppm"
 golden = true
 
+[[file]]
+path = "corpus/files/images/ramp.pgm"
+golden = true
+
 # ---------------------------------------------------------------- documents
 
 [[file]]
@@ -86,6 +90,12 @@ path = "corpus/files/3d/cube.glb"
 
 [[file]]
 path = "corpus/files/3d/tri-obj/tri.obj"
+
+[[file]]
+path = "corpus/files/3d/spaced-mtl/tri.obj"
+
+[[file]]
+path = "corpus/files/3d/spaced-mtl-missing/tri.obj"
 
 [[file]]
 path = "corpus/files/3d/tri.usda"
@@ -126,6 +136,9 @@ path = "corpus/files/hostile/fake.zip"
 
 [[file]]
 path = "corpus/files/hostile/empty.bin"
+
+[[file]]
+path = "corpus/files/hostile/bomb.txt.gz"
 
 [[file]]
 path = "corpus/files/hostile/bad-indices.obj"

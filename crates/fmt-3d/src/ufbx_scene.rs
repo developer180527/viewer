@@ -86,10 +86,19 @@ fn report_mtl_libraries(obj: &[u8], dir: &std::path::Path, report: &Unreadables)
         if whole.is_empty() || std::fs::File::open(dir.join(&whole)).is_ok() {
             continue;
         }
-        for name in whole.split_whitespace() {
-            let path = dir.join(name);
-            // Open, not just stat: file modes (and some sandboxes) allow one, not the other.
-            if let Err(e) = std::fs::File::open(&path) {
+        // Open, not just stat: file modes (and some sandboxes) allow one, not the other.
+        let failed: Vec<_> = whole
+            .split_whitespace()
+            .map(|name| dir.join(name))
+            .filter_map(|path| std::fs::File::open(&path).err().map(|e| (path, e)))
+            .collect();
+        if failed.len() == whole.split_whitespace().count() {
+            // Not one of the pieces is there either: it was one name with spaces in it.
+            let path = dir.join(&whole);
+            let e = std::fs::File::open(&path).expect_err("checked above");
+            report.add_io(&path, &e);
+        } else {
+            for (path, e) in failed {
                 report.add_io(&path, &e);
             }
         }

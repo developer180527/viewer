@@ -1,5 +1,5 @@
 loader = "image"
-format = "PBM image"
+format = "PPM image"
 model = "Raster"
 
 [raster]

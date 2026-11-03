@@ -24,4 +24,4 @@ Warning = "Could not open .mtl file: test_3d_files/32-mercedes-benz-gls-580-2020
 Textures = "none"
 
 [unreadable]
-missing = ["580.mtl", "Benz", "GLS", "Mercedes"]
+missing = ["Mercedes Benz GLS 580.mtl"]

@@ -1,0 +1,23 @@
+loader = "obj"
+format = "Wavefront OBJ"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 1
+vertices = 3
+elements = 3
+topologies = ["Triangles"]
+materials = 1
+nodes = 1
+textures = 0
+textures_decoded = []
+bounds = ["0.000 0.000 0.000", "1.000 1.000 0.000"]
+
+[metadata]
+Meshes = "1"
+"Placed meshes" = "1"
+Triangles = "1"
+Vertices = "3"
+Materials = "1"
+Textures = "none"

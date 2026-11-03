@@ -263,7 +263,7 @@ Rules, and what the first memory pass found (2026-11-01):
 - **Worker process** for every C/C++ parser (desktop). Communicates over shared memory + IPC. If it crashes, show "couldn't render, showing hex" instead of crashing the app. Sandbox it with seccomp (Linux), App Sandbox (macOS), AppContainer (Windows), pledge/unveil (OpenBSD), Capsicum (FreeBSD).
   - On iOS and HarmonyOS, run in-process: pure-Rust parsers, platform backends, vetted C libraries natively, and other C libraries as WASM (§12.4).
 - **Fuzz** every loader with `cargo-fuzz`, and integrate OSS-Fuzz later.
-- **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document.
+- **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document. The first two are in `viewer_core::limits` (256 megapixels; inflating past 64 MB at most 200:1), checked by hostile files in the corpus; they move into `ParseContext` later (docs/architecture.md).
 - **Never auto-execute.** Scripts and macros in documents are never run. HTML in the webview runs with JS off and no network by default.
 
 ---

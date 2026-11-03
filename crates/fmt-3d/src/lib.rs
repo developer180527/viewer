@@ -12,7 +12,7 @@ mod usd;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use rendererx_scene::{CpuScene, SceneRead};
+use rendererx_scene::{CpuScene, SceneRead, Topology};
 use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Result, SceneDoc};
 
 pub use blend::BlendLoader;
@@ -35,11 +35,16 @@ fn scene_document(
         if stats.placed == 0 {
             anyhow::bail!("no geometry{}", warnings.first().map(|w| format!(" ({w})")).unwrap_or_default());
         }
-        Document::new(format, Content::Scene(SceneDoc { scene: scene.clone(), textures_pending }))
+        let mut doc = Document::new(format, Content::Scene(SceneDoc { scene: scene.clone(), textures_pending }))
             .with_meta("Meshes", stats.meshes)
-            .with_meta("Placed meshes", stats.placed)
-            .with_meta("Triangles", stats.triangles)
-            .with_meta("Vertices", stats.vertices)
+            .with_meta("Placed meshes", stats.placed);
+        // Points and lines are counted as what they are, not as triangles.
+        for (key, n) in [("Triangles", stats.triangles), ("Lines", stats.lines), ("Points", stats.points)] {
+            if n > 0 {
+                doc = doc.with_meta(key, n);
+            }
+        }
+        doc.with_meta("Vertices", stats.vertices)
             .with_meta("Materials", stats.materials)
     };
     // Shared with the decoder threads, which add what they can't read.
@@ -57,6 +62,8 @@ struct Stats {
     meshes: usize,
     placed: usize,
     triangles: u64,
+    lines: u64,
+    points: u64,
     vertices: u64,
     materials: usize,
 }
@@ -66,11 +73,17 @@ impl Stats {
         Self {
             meshes: read.meshes().len(),
             placed: read.nodes().iter().filter(|n| n.node.mesh.is_some()).count(),
-            triangles: read.meshes().iter().map(|m| m.info.primitives).sum(),
+            triangles: primitives(read, Topology::Triangles),
+            lines: primitives(read, Topology::Lines),
+            points: primitives(read, Topology::Points),
             vertices: read.meshes().iter().map(|m| m.info.vertices as u64).sum(),
             materials: read.materials().len(),
         }
     }
+}
+
+fn primitives(read: &SceneRead<'_>, topology: Topology) -> u64 {
+    read.meshes().iter().filter(|m| m.info.topology == topology).map(|m| m.info.primitives).sum()
 }
 
 fn texture_note(maps: usize) -> String {

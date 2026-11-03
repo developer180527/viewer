@@ -4,7 +4,7 @@ use std::sync::{Arc, OnceLock};
 
 use anyhow::Context;
 use image::ImageFormat;
-use viewer_core::{Band, BandStream, Confidence, Content, Document, FileSource, FormatLoader, Pixels, Raster, Result};
+use viewer_core::{Band, BandStream, limits, Confidence, Content, Document, FileSource, FormatLoader, Pixels, Raster, Result};
 
 pub static LOADERS: &[&dyn FormatLoader] = &[&ImageLoader, &SvgLoader];
 
@@ -37,8 +37,11 @@ impl FormatLoader for ImageLoader {
             .ok()
             .or_else(|| src.ext().as_deref().and_then(ImageFormat::from_extension))
             .context("unknown image format")?;
-        let name = format!("{} image", format.extensions_str()[0].to_ascii_uppercase());
+        let name = format_name(format, src.header());
         let (width, height) = image::ImageReader::with_format(std::io::Cursor::new(src.bytes()), format).into_dimensions()?;
+        if width as u64 * height as u64 > limits::MAX_IMAGE_PIXELS {
+            anyhow::bail!("{width} × {height} pixels is more than Viewer decodes ({} megapixels)", limits::MAX_IMAGE_PIXELS >> 20);
+        }
         if width as u64 * height as u64 > STREAM_ABOVE_PIXELS {
             let (pixels, color) = stream(src, format, width, height)?;
             return Ok(Document::new(name, Content::Raster(Raster { width, height, pixels }))
@@ -46,7 +49,7 @@ impl FormatLoader for ImageLoader {
                 .with_meta("Color", color)
                 .with_meta("Decoded", "in bands, straight to the GPU"));
         }
-        let img = image::load_from_memory_with_format(src.bytes(), format)?;
+        let img = decode_limited(src.bytes(), format)?;
         let color = format!("{:?}", img.color());
         let rgba = img.into_rgba8();
         let (width, height) = rgba.dimensions();
@@ -54,6 +57,34 @@ impl FormatLoader for ImageLoader {
             .with_meta("Dimensions", format!("{width} × {height}"))
             .with_meta("Color", color))
     }
+}
+
+/// "PNG image", "PPM image": PNM files say which of their kinds they are in their
+/// second byte, where `image` only knows the family.
+fn format_name(format: ImageFormat, header: &[u8]) -> String {
+    let ext = match (format, header.get(1)) {
+        (ImageFormat::Pnm, Some(b'1' | b'4')) => "PBM",
+        (ImageFormat::Pnm, Some(b'2' | b'5')) => "PGM",
+        (ImageFormat::Pnm, Some(b'3' | b'6')) => "PPM",
+        (ImageFormat::Pnm, Some(b'7')) => "PAM",
+        _ => return format!("{} image", format.extensions_str()[0].to_ascii_uppercase()),
+    };
+    format!("{ext} image")
+}
+
+/// Decodes with `image`'s allocation and size limits set from ours, so a header that
+/// lies about the size fails here instead of in the allocator.
+fn decode_limited(bytes: &[u8], format: ImageFormat) -> Result<image::DynamicImage> {
+    let mut reader = image::ImageReader::with_format(std::io::Cursor::new(bytes), format);
+    reader.limits(image_limits());
+    Ok(reader.decode()?)
+}
+
+/// `image`'s limits from [`viewer_core::limits`].
+fn image_limits() -> image::Limits {
+    let mut l = image::Limits::default();
+    l.max_alloc = Some(limits::MAX_IMAGE_ALLOC);
+    l
 }
 
 /// Above this many pixels (64 MB as RGBA) images stream: decoded in bands on a thread
@@ -64,6 +95,25 @@ const BAND_BYTES: usize = 16 << 20;
 
 fn band_rows(width: u32, height: u32) -> u32 {
     ((BAND_BYTES / (width as usize * 4).max(1)) as u32).clamp(16, height.max(1))
+}
+
+/// A PNG's colour type named the way `image` names what it decodes ("Rgba8",
+/// "L16"), so the info panel reads the same whether or not the image streamed.
+fn png_color(info: &png::Info) -> String {
+    let bits = match info.bit_depth {
+        png::BitDepth::Sixteen => 16,
+        _ => 8,
+    };
+    let kind = match info.color_type {
+        png::ColorType::Grayscale => "L",
+        png::ColorType::GrayscaleAlpha => "La",
+        png::ColorType::Rgb => "Rgb",
+        png::ColorType::Rgba => "Rgba",
+        // A palette expands to RGB, or RGBA when it has transparency.
+        png::ColorType::Indexed if info.trns.is_some() => "Rgba",
+        png::ColorType::Indexed => "Rgb",
+    };
+    format!("{kind}{bits}")
 }
 
 /// The file's bytes, kept alive for the decoder thread.
@@ -87,12 +137,12 @@ fn stream(src: &FileSource, format: ImageFormat, width: u32, height: u32) -> Res
         decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::ALPHA);
         let reader = decoder.read_info()?;
         if !reader.info().interlaced {
-            let color = format!("{:?}", reader.info().color_type);
+            let color = png_color(reader.info());
             return Ok((Pixels::Bands(BandStream::spawn(move |emit| png_bands(reader, width, height, emit))), color));
         }
     }
     let stream = BandStream::spawn(move |emit| {
-        let img = image::load_from_memory_with_format(bytes.as_ref(), format).map_err(|e| e.to_string())?;
+        let img = decode_limited(bytes.as_ref(), format).map_err(|e| e.to_string())?;
         let rows = band_rows(width, height);
         let mut y = 0;
         while y < height {
@@ -215,8 +265,12 @@ mod tests {
         img.write_to(&mut std::io::Cursor::new(&mut bytes), format).unwrap();
         let src = FileSource::from_bytes("x", bytes.clone());
         let (w, h) = (img.width(), img.height());
-        let (pixels, _) = stream(&src, format, w, h).unwrap();
+        let (pixels, color) = stream(&src, format, w, h).unwrap();
         assert!(matches!(pixels, Pixels::Bands(_)));
+        // The info panel names the colour type the same way, streamed or not.
+        if format == ImageFormat::Png {
+            assert_eq!(color, format!("{:?}", image::load_from_memory_with_format(&bytes, format).unwrap().color()));
+        }
         let mut r = Raster { width: w, height: h, pixels };
         r.make_full().unwrap();
         let want = image::load_from_memory_with_format(&bytes, format).unwrap().into_rgba8();
@@ -252,7 +306,8 @@ mod tests {
             writer.write_image_data(&data).unwrap();
         }
         let src = FileSource::from_bytes("p.png", out.clone());
-        let (pixels, _) = stream(&src, ImageFormat::Png, w, h).unwrap();
+        let (pixels, color) = stream(&src, ImageFormat::Png, w, h).unwrap();
+        assert_eq!(color, format!("{:?}", image::load_from_memory(&out).unwrap().color()));
         let mut r = Raster { width: w, height: h, pixels };
         r.make_full().unwrap();
         let rgba = r.rgba().unwrap();

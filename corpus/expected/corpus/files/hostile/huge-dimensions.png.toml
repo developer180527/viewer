@@ -1,11 +1,11 @@
-loader = "image"
-format = "PNG image"
-model = "Raster"
+loader = "hex"
+failed = ["image"]
+format = "Binary data"
+model = "Hex"
 
-[raster]
-size = "100000x100000"
+[hex]
+bytes = 69
 
 [metadata]
-Dimensions = "100000 × 100000"
-Color = "Rgba"
-Decoded = "in bands, straight to the GPU"
+"Detected type" = "image/png (png)"
+"Entropy (first 64 KiB)" = "4.46 bits/byte"
