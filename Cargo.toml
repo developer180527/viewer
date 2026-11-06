@@ -10,6 +10,8 @@ rust-version = "1.90"
 
 [workspace.dependencies]
 viewer-core = { path = "crates/core" }
+libfileparser-core = { path = "crates/libfileparser-core" }
+libfileparser-testkit = { path = "crates/libfileparser-testkit" }
 viewer-fmt-image = { path = "crates/fmt-image" }
 viewer-fmt-doc = { path = "crates/fmt-doc" }
 viewer-fmt-data = { path = "crates/fmt-data" }

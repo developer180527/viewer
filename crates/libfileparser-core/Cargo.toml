@@ -1,0 +1,11 @@
+[package]
+name = "libfileparser-core"
+description = "The contracts of libfileparser: documents with facets, content models, the Reader trait, hooks, limits and errors (docs/design/libfileparser.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+memmap2.workspace = true
+# The scene content model: plain data (glam, bytemuck), no GPU.
+rendererx-scene.workspace = true

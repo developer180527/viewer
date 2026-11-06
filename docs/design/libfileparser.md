@@ -1,6 +1,6 @@
 # libfileparser: open any file, in any app
 
-Status: design agreed 2026-11-06; nothing built yet. Pre-1.0: every API here may change until §5's checks are in place. Crate names are settled; type names are a first draft. Builds on [document-model.md](document-model.md). [libfileparser-3d.md](libfileparser-3d.md) applies this design to 3D.
+Status: design agreed 2026-11-06. `libfileparser-core` and `libfileparser-testkit` are built (`crates/libfileparser-core`, `crates/libfileparser-testkit`; 2026-11-06); no category is on them yet. Pre-1.0: every API here may change until §5's checks are in place. Crate names are settled; type names are a first draft. Builds on [document-model.md](document-model.md). [libfileparser-3d.md](libfileparser-3d.md) applies this design to 3D.
 
 **Goal:** any app (an IDE, a game engine editor, a chat app, a file manager) can open and show any kind of file, taking only the parts it needs, cheaply. Viewer is the first user, not the owner: nothing here knows about Viewer, libgui or a GPU.
 
@@ -11,7 +11,7 @@ These four hold for **every** category library (`-images`, `-3d`, `-docs`, `-dat
 | # | Requirement | Means | How (§) |
 |---|---|---|---|
 | 1 | **Complete for its category** | It aims to read every format of its kind, and every facet of each (document-model.md §3). Formats it can't read yet are still detected and named, never guessed | §3, §6 |
-| 2 | **A stable, flat, clear API** | Every category exposes the same few items, so knowing one means knowing all. Internals change freely behind it | §4, §5 |
+| 2 | **A stable, flat, clear API** | Every category has the same core shape, so knowing one means knowing the others; a category may add API its kind needs. Internals change freely behind it | §4, §5 |
 | 3 | **A new format is trivial to add** | One module implementing one trait, one line to register it, one corpus file. Everything else applies automatically | §6 |
 | 4 | **Embeddable** | No global state, no threads or runtime of its own, no file system access of its own, few dependencies, every platform, and a C API | §7 |
 
@@ -69,11 +69,11 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 
 | Model | Shape | Read by |
 |---|---|---|
-| `Raster` | Size, then pixels whole or in bands | Bands |
+| `Raster` | Size, then pixels (whole today; bands come with `-images`) | Bands |
 | `Pages` (`PageSource`) | Page count and sizes; render a region into the caller's buffer | Page and region |
 | `Flow` (later) | Reflowing styled text with images (DOCX, EPUB) | Blocks |
 | `Text` (`TextSource`) | Line count, encoding, language | Lines *a..b* |
-| `Markdown` | Source text | — |
+| `Markdown` (with `-text`) | Source text | — |
 | `Table` (`TableSource`) | Columns, row count (maybe estimated), sheets | Rows *a..b* |
 | `Tree` (`TreeSource`) | Nodes with a label, a value and children | Children of a node |
 | `Container` | Entries (path, size, packed size, kind) | Open one entry as a file |
@@ -81,19 +81,32 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 | `Media` (later) | Streams and metadata; decode a frame or samples into the caller's buffer | Time |
 | `Hex` | The bytes | Offset ranges |
 
-`-core` also holds the generic implementations every category shares: a `TextSource` over any bytes, a `TreeSource` over owned nodes, the hex model.
+Built so far: `Raster`, `Text`, `Tree`, `Table`, `Container`, `Scene` and `Hex`, what `-3d` needs; `Pages`, `Flow`, `Markdown` and `Media` arrive with their categories.
+
+`-core` also holds the generic implementations every category shares: `LineText` (a `TextSource` over any bytes, indexed by line), `OwnedTree`, `OwnedTable`, and the hex model.
 
 ### Hooks
 
 ```rust
-pub struct ParseContext<'a> {
-    pub files: &'a dyn FileResolver,   // neighbouring files: textures, .mtl, layers, buffers
-    pub limits: Limits,                // pixels, sizes, unpack ratio, depth, memory, time
+#[derive(Clone)]
+pub struct ParseContext {
+    pub files: Arc<dyn FileResolver>,  // neighbouring files: textures, .mtl, layers, buffers
+    pub limits: Limits,                // pixels, sizes, unpack ratio, depth, items, memory
     pub cancel: Cancel,                // the document was closed: stop
-    pub spawn: &'a dyn Spawn,          // where background work runs
-    pub notify: &'a dyn Notify,        // "more arrived": a band, a texture, a page
+    pub spawn: Arc<dyn Spawn>,         // where background work runs
+    pub notify: Arc<dyn Notify>,       // "more arrived": a band, a texture, a page
 }
+
+let cx = ParseContext::new()                     // files beside the source, desktop limits,
+    .with_files(MyGrants::new())                 // background work inline, no notifications
+    .with_limits(Limits::mobile());
 ```
+
+The hooks are owned, not borrowed: background work (texture decoding) outlives the `open` call that started it, and takes its own clone of the context.
+
+`-core` includes the simplest hooks, so a category library works on its own: `StdFiles` (relative references from the source's folder), `NoFiles`, `InlineSpawn` (background work runs at once on the caller's thread) and `NoNotify`. The front door adds a thread pool and folder-grant-aware files.
+
+**One place reads other files:** `Dependencies::resolve(cx, src, reference)` asks `cx.files` and records the outcome as read, blocked or missing, so a document's dependency list is complete by construction.
 
 | Hook | The app decides | Viewer's choice |
 |---|---|---|
@@ -111,7 +124,7 @@ pub enum ParseError {
     NotThisFormat,          // the front door tries the next reading
     Corrupt(String),        // the next reading, keeping the reason
     TooLarge(Limit),        // stop and say so; don't fall back to hex silently
-    Unreadable(Dependency), // a file it needs is blocked or missing
+    Unreadable { reference: String, reason: Unreadable },   // a file it needs is blocked or missing
     Cancelled,
     Io(std::io::Error),
 }
@@ -119,15 +132,17 @@ pub enum ParseError {
 
 ## 4. The API of every category library
 
-**Flat:** each category exposes exactly these items, nothing more at the top level. Format-specific detail lives inside facets, not in extra API.
+**Similar, not identical:** every category has this core shape, the same in each. A category may add API its kind needs (§4.1); format-specific detail still lives in facets, not in per-format API.
 
 ```rust
 // e.g. libfileparser_3d
 pub fn readers() -> &'static [&'static dyn Reader];                       // every format it reads
-pub fn detect(header: &[u8], name: &str) -> Vec<Detection>;               // which of them fit, best first
+pub fn detect(header: &[u8], name: &str) -> Vec<(&'static dyn Reader, Detection)>;  // which fit, best first
 pub fn open(src: &FileSource, cx: &ParseContext) -> Result<Document, ParseError>;   // the best that succeeds
 pub fn open_with(id: &str, src: &FileSource, cx: &ParseContext) -> Result<Document, ParseError>;
 ```
+
+Each is one line over `-core`'s routing, which every category shares: `libfileparser_core::{detect, open, open_with}` take the reader list, try readers best first, move on only when a reader says the file isn't its format or is damaged, and turn a reader's panic into `Corrupt`.
 
 and one trait, defined in `-core`, the same for every format of every category:
 
@@ -145,7 +160,22 @@ pub trait Reader: Sync {
 | `open` | Builds only what the primary facet needs and lists the rest; files beyond `src` only through `cx.files`, background work only through `cx.spawn`, progress only through `cx.notify`; checks every claimed size against `cx.limits` before allocating |
 | `Document` | Facets, metadata and dependencies, as document-model.md §5 |
 
-An app that knows how to call `libfileparser_images::open` knows how to call `libfileparser_3d::open`. The front door (§8) is the same surface again, across all categories.
+An app that knows how to call `libfileparser_images::open` knows how to call `libfileparser_3d::open`. The front door (§8) offers the core shape again, across all categories.
+
+### 4.1 Category additions
+
+A category may add to the core shape what only its kind needs, under the same rules (§5): stable, small, documented, and never required for the basic open-and-show path.
+
+| Category | May add, for example |
+|---|---|
+| `-3d` | Options for opening a scene (units and up axis to convert to, whether to keep CPU copies after upload), scene-level queries (find a node by path, bounds), texture job control |
+| `-docs` | Page render options (scale, region, annotations on or off), text and search by page |
+| `-images` | Decode at a reduced size, read a region, the embedded thumbnail and metadata alone |
+| `-data` | Column types, sheet selection, row filters pushed down to the reader |
+| `-text` | Encoding override, line search |
+| `-media` | Seek, decode at a time, stream selection |
+
+Additions are per category, never per format: a USD-only call belongs in a USD facet, or in `usd-lite` itself.
 
 ## 5. Keeping the API stable while the inside changes
 
@@ -213,7 +243,7 @@ Every category library, alone or through the front door, can live inside another
 | **Bounded** | `Limits` on every claimed size; `memory()` on every document; caches sized by the caller |
 | **Few dependencies, all optional where heavy** | Per-format features; `minimal` builds are pure Rust |
 | **Every platform** | Desktop, iOS, Android; `-core`, the pure-Rust categories and `-thumb` also WASM |
-| **Not only Rust** | `libfileparser-c` exposes the same flat API (§4) to C, C++, Swift and Kotlin |
+| **Not only Rust** | `libfileparser-c` exposes the core shape (§4) and the category additions to C, C++, Swift and Kotlin |
 | **No panics across the boundary** | Panics inside a reader are caught and returned as errors |
 
 ## 8. `libfileparser`: the front door
@@ -236,7 +266,7 @@ It is the same flat surface as a category (§4), across all enabled categories, 
 1. **Detection** across every enabled reader, best first.
 2. **Open the best reading;** on `NotThisFormat` or `Corrupt`, the next.
 3. **Merged views:** the document's facets, then the generic ones (Raw always; Source when text; Package when a container the reader didn't cover), then other readings' facets that add something new, made only when asked (document-model.md §4).
-4. **Default hooks:** `StdFiles` (files beside the source, folder-grant aware), `ThreadPool`, `Limits::desktop()` and `Limits::mobile()`, a no-op `Notify`. Each replaceable alone.
+4. **Default hooks:** `-core`'s `StdFiles` made folder-grant aware, a `ThreadPool` in place of `InlineSpawn`, `Limits::desktop()` or `Limits::mobile()`. Each replaceable alone.
 5. **Containers:** a Package entry opens through the same router, as a child document.
 6. **Features** choose categories (`images`, `3d`, `docs`, `data`, `text`, `archives`, `media`) and backends (`docs-mupdf`). Presets: `minimal` (pure Rust, permissive, WASM too), `default` (common formats, permissive), `full`.
 7. **Nothing runs at startup:** readers are a static table; no category initialises until a matching file opens.
@@ -273,7 +303,7 @@ Tests are written against §4's API, never against internals, so they stay the s
 2. `open` touches no file except through `cx.files`, starts no thread except through `cx.spawn`, keeps no global state.
 3. Every facet the document lists can be made, and making it twice gives the same content.
 4. With `DenyFiles`, every needed neighbour is reported blocked in `Dependencies`, and the primary facet still opens where the format allows.
-5. With `Limits::tiny()`, it fails with `TooLarge`, never by allocating or hanging.
+5. With `tiny_limits()`, a sample fails with `TooLarge`, never by allocating or hanging; a sample small enough to fit is marked `fits_tiny_limits`, so a reader that never checks limits is caught.
 6. After `cancel`, background work stops and nothing more is notified.
 7. The same file gives the same document.
 8. `memory()` is reported and within budget for its samples.
@@ -304,7 +334,7 @@ Tests are written against §4's API, never against internals, so they stay the s
 
 The corpus passes after every step.
 
-1. **`-core` and `-testkit`:** documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse`, `FacetProvider`; the fakes and the conformance suite; API snapshots and semver checks in CI from the start.
+1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse`, `FacetProvider`; the fakes and the conformance suite; API snapshots and semver checks in CI from the start.
 2. **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
 3. **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it.
 4. **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1.

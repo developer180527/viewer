@@ -55,7 +55,7 @@ Links are optional per format and come after the facets themselves.
 
 ## 4. Inside the crate, and adding a format
 
-Its public API is the one every category has (libfileparser.md §4): `readers()`, `detect`, `open`, `open_with`. Everything 3D-specific is reached through facets, not extra API.
+Its public API is the core shape every category has (libfileparser.md §4): `readers()`, `detect`, `open`, `open_with`, plus 3D's additions (§4.1 there): scene options (units, up axis, CPU copies), scene queries, texture job control. Anything specific to one format is reached through its facets.
 
 ```
 libfileparser-3d

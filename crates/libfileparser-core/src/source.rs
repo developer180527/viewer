@@ -52,8 +52,8 @@ impl FileSource {
         })
     }
 
-    /// A folder on disk: a name and a path, no bytes. Its contents are listed by
-    /// `viewer_fmt_archive::open_folder`, not by format detection.
+    /// A folder on disk: a name and a path, no bytes. Its contents are listed by the
+    /// archives category, not by format detection.
     pub fn folder(path: impl AsRef<Path>) -> Self {
         let path = path.as_ref();
         let name = path

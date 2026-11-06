@@ -1314,6 +1314,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "libfileparser-core"
+version = "0.1.0"
+dependencies = [
+ "memmap2",
+ "rendererx-scene",
+]
+
+[[package]]
+name = "libfileparser-testkit"
+version = "0.1.0"
+dependencies = [
+ "libfileparser-core",
+ "rendererx-scene",
+]
+
+[[package]]
 name = "libfilepicker"
 version = "0.1.0"
 dependencies = [
@@ -3405,6 +3421,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "infer",
+ "libfileparser-core",
  "memmap2",
  "rendererx-scene",
 ]

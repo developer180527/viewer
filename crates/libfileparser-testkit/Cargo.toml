@@ -1,0 +1,10 @@
+[package]
+name = "libfileparser-testkit"
+description = "Fakes for libfileparser's hooks, and the conformance suite every Reader passes (docs/design/libfileparser.md §9)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libfileparser-core.workspace = true
+rendererx-scene.workspace = true
