@@ -1,16 +1,16 @@
-//! Texture decoding, off the loader's critical path: a model's geometry is on screen
-//! first, then its images decode on worker threads and arrive in the scene one by one
-//! (docs/design/3d-renderer.md §7.1).
+//! Texture decoding, off the reader's critical path: a model's geometry is on screen
+//! first, then its images decode as background jobs (`cx.spawn`) and arrive in the
+//! scene one by one, each announced through `cx.notify` (docs/design/3d-renderer.md §7.1).
 //!
 //! Images are scaled to at most [`MAX_SIDE`] and get a full mip chain here, so the
 //! renderer only copies bytes. Mips of colour textures are averaged in linear light.
 
-use std::path::{Component, Path, PathBuf};
+use std::path::{Component, Path};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+use libfileparser_core::{Dependencies, FileSource, ParseContext};
 use rendererx_scene::{ColorSpace, Stream, TextureData, TextureId, TextureSink};
-use viewer_core::{Unreadable, Unreadables};
 
 /// Longest side kept. A 4K base colour map is 64 MB as RGBA8 (85 MB with mips); for a
 /// viewer 2048 (21 MB) is sharp enough and a quarter of the memory.
@@ -21,8 +21,8 @@ const MAX_FILE: u64 = 256 << 20;
 pub enum ImageSource {
     /// Encoded bytes (embedded in the model, or in a GLB).
     Bytes(Stream<u8>),
-    /// A file next to the model, already checked to be inside its folder.
-    File(PathBuf),
+    /// A file the model refers to, read through the files hook.
+    File(FileSource),
     /// Roughness and metalness from separate images (or channels), packed the glTF way:
     /// roughness in green, metalness in blue. Each is an image and the channel to take
     /// (0–3: R, G, B, A); a missing one is white, so its factor alone applies.
@@ -35,56 +35,43 @@ pub struct ImageJob {
     pub color_space: ColorSpace,
 }
 
-/// Decodes `jobs` on worker threads and sets each result on the scene. Returns the
-/// count of images still pending, which reaches zero when all are done (or failed).
+/// Queues one background job per image (`cx.spawn`), each setting its result on the
+/// scene and announcing it (`cx.notify`). Returns the count of images still pending,
+/// which reaches zero when all are done (or failed).
 ///
-/// The workers hold only a weak reference to the count: once the document that owns
-/// it is dropped (its page closed), they stop before the next image instead of
-/// decoding a whole model's textures nobody will see, which also lets the scene and
-/// its decoded images be freed.
-///
-/// Image files that can't be read (not allowed, or gone since they were found) are
-/// added to `report`, the document's list.
-pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, report: Unreadables) -> Arc<AtomicUsize> {
+/// Jobs hold only a weak reference to the count: once the document that owns it is
+/// dropped (its page closed), or `cx.cancel` is set, the rest skip their image instead
+/// of decoding a model's textures nobody will see, and nothing more is announced.
+pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, cx: &ParseContext) -> Arc<AtomicUsize> {
     let pending = Arc::new(AtomicUsize::new(jobs.len()));
-    if jobs.is_empty() {
-        return pending;
+    let sink = Arc::new(sink);
+    let max_alloc = cx.limits.allocation;
+    for job in jobs {
+        let (left, sink, cancel, notify) = (Arc::downgrade(&pending), sink.clone(), cx.cancel.clone(), cx.notify.clone());
+        cx.spawn.spawn(Box::new(move || {
+            let wanted = || left.strong_count() > 0 && !cancel.is_cancelled();
+            // A failed image leaves its material untextured.
+            if wanted()
+                && let Some(data) = decode(&job.source, job.color_space, max_alloc)
+            {
+                let _ = sink.set_texture(job.texture, data);
+            }
+            if let Some(left) = left.upgrade() {
+                left.fetch_sub(1, Ordering::Release);
+            }
+            if wanted() {
+                notify.notify();
+            }
+        }));
     }
-    let left = Arc::downgrade(&pending);
-    std::thread::Builder::new()
-        .name("texture decode".into())
-        .spawn(move || {
-            // Two at a time: a 4K float EXR is ~256 MB while it decodes.
-            let workers = std::thread::available_parallelism().map_or(1, |n| n.get().clamp(1, 2)).min(jobs.len());
-            let next = AtomicUsize::new(0);
-            std::thread::scope(|s| {
-                for _ in 0..workers {
-                    s.spawn(|| {
-                        while let Some(job) = jobs.get(next.fetch_add(1, Ordering::Relaxed)) {
-                            if left.strong_count() == 0 {
-                                return; // The document is gone.
-                            }
-                            // A failed image leaves its material untextured.
-                            if let Some(data) = decode(&job.source, job.color_space, &report) {
-                                let _ = sink.set_texture(job.texture, data);
-                            }
-                            if let Some(left) = left.upgrade() {
-                                left.fetch_sub(1, Ordering::Release);
-                            }
-                        }
-                    });
-                }
-            });
-        })
-        .expect("spawning the texture decoder");
     pending
 }
 
-fn decode(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -> Option<TextureData> {
+fn decode(source: &ImageSource, color_space: ColorSpace, max_alloc: u64) -> Option<TextureData> {
     if let ImageSource::MetalRough { roughness, metalness } = source {
-        return metal_rough(roughness.as_ref(), metalness.as_ref(), report);
+        return metal_rough(roughness.as_ref(), metalness.as_ref(), max_alloc);
     }
-    let rgba = load(source, color_space, report)?;
+    let rgba = load(source, color_space, max_alloc)?;
     let (w, h) = rgba.dimensions();
     Some(with_mips(w, h, rgba.into_raw(), color_space))
 }
@@ -94,13 +81,13 @@ fn decode(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -
 fn metal_rough(
     roughness: Option<&(Box<ImageSource>, usize)>,
     metalness: Option<&(Box<ImageSource>, usize)>,
-    report: &Unreadables,
+    max_alloc: u64,
 ) -> Option<TextureData> {
     // Decoded one after the other and reduced to one channel each, so only one full
     // image is in memory at a time.
     let channel = |src: Option<&(Box<ImageSource>, usize)>| {
         let (src, c) = src?;
-        let rgba = load(src, ColorSpace::Linear, report)?;
+        let rgba = load(src, ColorSpace::Linear, max_alloc)?;
         let (w, h) = rgba.dimensions();
         let c = (*c).min(3);
         image::GrayImage::from_raw(w, h, rgba.as_raw().iter().skip(c).step_by(4).copied().collect())
@@ -125,31 +112,19 @@ fn metal_rough(
 
 /// Decodes and scales one image to at most [`MAX_SIDE`]. `color_space` says how to
 /// store float (EXR) data: sRGB-encoded for colour maps, as-is for data maps.
-/// `image`'s limits from [`viewer_core::limits`]: a texture whose header lies about
-/// its size fails here instead of in the allocator.
-fn image_limits() -> image::Limits {
+/// `image`'s limits from the document's: a texture whose header lies about its size
+/// fails here instead of in the allocator.
+fn image_limits(max_alloc: u64) -> image::Limits {
     let mut l = image::Limits::default();
-    l.max_alloc = Some(viewer_core::limits::MAX_IMAGE_ALLOC);
+    l.max_alloc = Some(max_alloc);
     l
 }
 
-fn load(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -> Option<image::RgbaImage> {
-    let file;
+fn load(source: &ImageSource, color_space: ColorSpace, max_alloc: u64) -> Option<image::RgbaImage> {
     let bytes: &[u8] = match source {
         ImageSource::Bytes(s) => s.as_slice(),
-        ImageSource::File(path) => {
-            // Found earlier, but a sandbox can allow the stat and refuse the read.
-            let read = std::fs::metadata(path).and_then(|m| if m.len() > MAX_FILE { Ok(None) } else { std::fs::read(path).map(Some) });
-            file = match read {
-                Ok(Some(bytes)) => bytes,
-                Ok(None) => return None,
-                Err(e) => {
-                    report.add_io(path, &e);
-                    return None;
-                }
-            };
-            &file
-        }
+        ImageSource::File(file) if file.len() > MAX_FILE => return None,
+        ImageSource::File(file) => file.bytes(),
         ImageSource::MetalRough { .. } => return None,
     };
     if bytes.starts_with(&[0x76, 0x2f, 0x31, 0x01])
@@ -164,7 +139,7 @@ fn load(source: &ImageSource, color_space: ColorSpace, report: &Unreadables) -> 
         return Some(image);
     }
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
-    reader.limits(image_limits());
+    reader.limits(image_limits(max_alloc));
     let image = reader.decode().ok()?;
     if image.width().max(image.height()) <= MAX_SIDE {
         return Some(image.into_rgba8());
@@ -437,37 +412,39 @@ fn linear_to_srgb(c: f32) -> f32 {
     if c <= 0.0031308 { c * 12.92 } else { 1.055 * c.powf(1.0 / 2.4) - 0.055 }
 }
 
-/// Where a model's texture file is, trying the stored relative path, then the file name
-/// next to the model and in a `textures/` folder (where exporters and asset libraries
-/// usually put them). Only files inside the model's folder are used, so a model can't
-/// make the viewer read elsewhere.
-///
-/// Not found: [`Unreadable::Blocked`] when a place it could be couldn't be looked at
-/// (the folder, or a candidate, refused with "not permitted": on iOS, the user picked
-/// the model alone), else [`Unreadable::Missing`].
-pub fn find_file(dir: &Path, relative: &str, absolute: &str) -> Result<PathBuf, Unreadable> {
-    let root = dir.canonicalize().map_err(|e| Unreadable::of(&e))?;
-    let name = |p: &str| Path::new(&p.replace('\\', "/")).file_name().map(PathBuf::from);
-    let mut candidates: Vec<PathBuf> = Vec::new();
-    let rel = PathBuf::from(relative.replace('\\', "/"));
-    if !relative.is_empty() && rel.components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir)) {
-        candidates.push(rel);
-    }
-    for file in [name(relative), name(absolute)].into_iter().flatten() {
-        candidates.push(file.clone());
-        candidates.push(Path::new("textures").join(&file));
-    }
-    let mut blocked = false;
-    for c in candidates {
-        // A refusal anywhere means the file may be there, just out of reach.
-        let found = root.join(c).canonicalize().and_then(|real| real.metadata().map(|m| (real, m)));
-        match found {
-            Ok((real, meta)) if real.starts_with(&root) && meta.is_file() => return Ok(real),
-            Ok(_) => {}
-            Err(e) => blocked |= Unreadable::of(&e) == Unreadable::Blocked,
+/// Where a model's texture file may be, in order: the stored relative path, then the
+/// file name, alone and in a `textures/` folder (where exporters and asset libraries
+/// usually put them), in each of `dirs` (relative to the model; `""` is its own
+/// folder). A stored path that climbs out (`..`) or is absolute is only used by name,
+/// so a model can't name a file outside the folders it was given.
+pub fn candidates(relative: &str, absolute: &str, dirs: &[&str]) -> Vec<String> {
+    let name = |p: &str| Path::new(&p.replace('\\', "/")).file_name().map(|n| n.to_string_lossy().into_owned());
+    let rel = relative.replace('\\', "/");
+    let rel_ok = !rel.is_empty() && Path::new(&rel).components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir));
+    let mut out: Vec<String> = Vec::new();
+    for dir in dirs {
+        let at = |p: &str| if dir.is_empty() { p.to_owned() } else { format!("{dir}/{p}") };
+        if rel_ok {
+            out.push(at(rel.trim_start_matches("./")));
+        }
+        for file in [name(relative), name(absolute)].into_iter().flatten() {
+            out.push(at(&file));
+            out.push(at(&format!("textures/{file}")));
         }
     }
-    Err(if blocked { Unreadable::Blocked } else { Unreadable::Missing })
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|c| seen.insert(c.clone()));
+    out
+}
+
+/// The texture a model names, found through the files hook in [`candidates`] and
+/// recorded once in `deps` under [`report_name`].
+pub fn find(cx: &ParseContext, deps: &Dependencies, from: &FileSource, relative: &str, absolute: &str, dirs: &[&str]) -> Option<FileSource> {
+    let report = report_name(relative, absolute);
+    if report.is_empty() {
+        return None;
+    }
+    deps.resolve_any(cx, from, &report, &candidates(relative, absolute, dirs))
 }
 
 /// The name to report a texture under: the file name it was stored with.
@@ -538,22 +515,30 @@ mod tests {
     }
 
     #[test]
-    fn decoding_stops_once_the_document_is_dropped() {
-        let (scene, mut b) = rendererx_scene::CpuScene::new();
+    fn decoding_stops_once_the_document_is_dropped_or_cancelled() {
+        use libfileparser_testkit::{CountingNotify, QueueSpawn};
         let png = |v: u8| {
             let mut out = Vec::new();
-            image::RgbaImage::from_pixel(64, 64, image::Rgba([v; 4])).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).unwrap();
+            image::RgbaImage::from_pixel(8, 8, image::Rgba([v; 4])).write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).unwrap();
             out
         };
-        let jobs: Vec<ImageJob> = (0..200)
-            .map(|i| ImageJob { texture: b.reserve_texture().unwrap(), source: ImageSource::Bytes(png(i as u8).into()), color_space: ColorSpace::Srgb })
-            .collect();
-        let pending = spawn(b.texture_sink(), jobs, Unreadables::default());
-        drop(pending);
-        // The workers notice before the next image; give them time to finish one each.
-        std::thread::sleep(std::time::Duration::from_millis(300));
-        let decoded = scene.read().textures().iter().filter(|t| t.info.is_some()).count();
-        assert!(decoded < 200, "decoding went on after the document was dropped ({decoded} of 200)");
+        for close in ["drop", "cancel"] {
+            let (scene, mut b) = rendererx_scene::CpuScene::new();
+            let jobs: Vec<ImageJob> = (0..20)
+                .map(|i| ImageJob { texture: b.reserve_texture().unwrap(), source: ImageSource::Bytes(png(i as u8).into()), color_space: ColorSpace::Srgb })
+                .collect();
+            let (spawn_q, notify) = (QueueSpawn::default(), CountingNotify::default());
+            let cx = ParseContext::new().with_spawn(spawn_q.clone()).with_notify(notify.clone());
+            let pending = spawn(b.texture_sink(), jobs, &cx);
+            assert_eq!(spawn_q.queued(), 20, "one job per image, through cx.spawn");
+            match close {
+                "drop" => drop(pending),
+                _ => cx.cancel.cancel(),
+            }
+            spawn_q.run_all();
+            let decoded = scene.read().textures().iter().filter(|t| t.info.is_some()).count();
+            assert_eq!((decoded, notify.count()), (0, 0), "{close}: nothing decoded or announced after closing");
+        }
     }
 
     #[test]
@@ -564,49 +549,37 @@ mod tests {
             Box::new(ImageSource::Bytes(out.into()))
         };
         // Different sizes: packed at the larger.
-        let t = decode(&ImageSource::MetalRough { roughness: Some((png(200, 4), 0)), metalness: Some((png(30, 2), 0)) }, ColorSpace::Linear, &Unreadables::default()).unwrap();
+        let t = decode(&ImageSource::MetalRough { roughness: Some((png(200, 4), 0)), metalness: Some((png(30, 2), 0)) }, ColorSpace::Linear, u64::MAX).unwrap();
         assert_eq!((t.width, t.height, t.color_space), (4, 4, ColorSpace::Linear));
         assert_eq!(&t.levels[0].as_slice()[..4], [255, 200, 30, 255]);
         // Only roughness: metal is white, so the metallic factor alone applies.
-        let t = decode(&ImageSource::MetalRough { roughness: Some((png(90, 2), 0)), metalness: None }, ColorSpace::Linear, &Unreadables::default()).unwrap();
+        let t = decode(&ImageSource::MetalRough { roughness: Some((png(90, 2), 0)), metalness: None }, ColorSpace::Linear, u64::MAX).unwrap();
         assert_eq!(&t.levels[0].as_slice()[..4], [255, 90, 255, 255]);
     }
 
     #[test]
-    fn texture_files_are_found_but_never_outside_the_model_folder() {
-        let dir = std::env::temp_dir().join(format!("viewer-fmt-3d-tex-{}", std::process::id()));
-        std::fs::create_dir_all(dir.join("textures")).unwrap();
-        std::fs::write(dir.join("textures/wood.jpg"), b"x").unwrap();
-        let found = find_file(&dir, "", r"C:\Users\artist\Desktop\wood.jpg").unwrap();
-        assert!(found.ends_with("textures/wood.jpg"));
-        assert_eq!(find_file(&dir, "../outside.jpg", ""), Err(Unreadable::Missing));
-        assert_eq!(find_file(&dir, "missing.png", ""), Err(Unreadable::Missing));
-        std::fs::remove_dir_all(dir).unwrap();
+    fn texture_candidates_never_climb_out_of_their_folders() {
+        assert_eq!(
+            candidates("", r"C:\Users\artist\Desktop\wood.jpg", &[""]),
+            ["wood.jpg", "textures/wood.jpg"],
+            "an exporter's absolute path is tried by name"
+        );
+        assert_eq!(candidates("../outside.jpg", "", &[""]), ["outside.jpg", "textures/outside.jpg"], "a climbing path only by name");
+        assert_eq!(candidates("maps/a.png", "", &["", "sub"]), ["maps/a.png", "a.png", "textures/a.png", "sub/maps/a.png", "sub/a.png", "sub/textures/a.png"]);
     }
 
-    /// What iOS does to the files next to a model the user picked alone: a refusal.
-    /// Here a folder with no permissions stands in for it.
-    #[cfg(unix)]
     #[test]
-    fn textures_in_a_folder_that_cant_be_read_are_blocked_not_missing() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("viewer-fmt-3d-blocked-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(dir.join("textures")).unwrap();
-        std::fs::write(dir.join("textures/wood.png"), b"x").unwrap();
-        std::fs::set_permissions(dir.join("textures"), std::fs::Permissions::from_mode(0o000)).unwrap();
-        let found = find_file(&dir, "textures/wood.png", "");
-        let decoded_report = Unreadables::default();
-        let decoded = load(&ImageSource::File(dir.join("textures/wood.png")), ColorSpace::Srgb, &decoded_report);
-        std::fs::set_permissions(dir.join("textures"), std::fs::Permissions::from_mode(0o755)).unwrap();
-        // Root (some CI images) can read anything; there is nothing to test then.
-        if found.is_err() {
-            assert_eq!(found, Err(Unreadable::Blocked));
-            assert!(decoded.is_none());
-            assert_eq!(decoded_report.names(Unreadable::Blocked), ["wood.png"], "a refused read is reported, not just skipped");
-        }
-        // Absent is missing.
-        assert_eq!(find_file(&dir, "textures/stone.png", ""), Err(Unreadable::Missing));
-        std::fs::remove_dir_all(dir).unwrap();
+    fn found_textures_are_recorded_once_as_read_blocked_or_missing() {
+        use libfileparser_core::DependencyStatus::{Blocked, Missing, Read};
+        use libfileparser_testkit::{DenyFiles, MemFiles};
+        let model = FileSource::from_bytes("m.obj", Vec::new());
+        let deps = Dependencies::new();
+        let cx = ParseContext::new().with_files(MemFiles::new([("textures/wood.jpg".to_string(), b"x".to_vec())]));
+        assert!(find(&cx, &deps, &model, "", r"C:\art\wood.jpg", &[""]).is_some());
+        assert!(find(&cx, &deps, &model, "stone.png", "", &[""]).is_none());
+        let cx = ParseContext::new().with_files(DenyFiles);
+        assert!(find(&cx, &deps, &model, "maps/moss.png", "", &[""]).is_none());
+        let status = |s| deps.with_status(s);
+        assert_eq!((status(Read), status(Missing), status(Blocked)), (vec!["wood.jpg".to_string()], vec!["stone.png".to_string()], vec!["moss.png".to_string()]));
     }
 }

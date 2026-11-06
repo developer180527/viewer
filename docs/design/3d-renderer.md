@@ -48,7 +48,7 @@ crates/
       pick.rs            ray picking (feature `pick`, for editors)
       soft/              CPU fallback rasteriser (feature `soft`, §13)
   rendererx-gltf/         optional: glTF/GLB → rendererx scene (zero-copy, §6)
-  viewer-fmt-3d/         Viewer's loaders (glTF, OBJ, STL, PLY, FBX via ufbx) → rendererx scene
+  libfileparser-3d/      3D readers (glTF, OBJ, STL, PLY, FBX via ufbx, USD) → rendererx scene
   app/                   Viewer: shows the target texture as a libgui image
 ```
 
@@ -379,7 +379,7 @@ The renderer stays a viewer, but leaves the hooks editors need. Editing follows 
 
 1. Core: `rendererx-scene` (CPU scene + builder), `Renderer` with `attach` and views, streaming upload, `clay`, on-demand rendering, camera + `controls`. Viewer shows a glTF with clay shading.
 2. Shading system: registry, pipeline cache, `unlit`, `lambert`, `blinn_phong`, `pbr` + SH ambient; texture streaming.
-3. Adapters: `rendererx-gltf` (zero-copy), then OBJ, STL, PLY, and FBX via `ufbx` in `viewer-fmt-3d`.
+3. Adapters: `rendererx-gltf` (zero-copy), then OBJ, STL, PLY, and FBX via `ufbx` (now in `libfileparser-3d`).
 4. `mtoon` with the outline pass; environment-map lighting; KHR material extensions.
 5. `pick`, mutable scene and overlays (ready for editors); `simplify`; `soft` fallback.
 

@@ -110,10 +110,12 @@ fn check_sample(reader: &dyn Reader, sample: &Sample, fail: &mut dyn FnMut(Strin
         Err(e) => return fail(format!("doesn't open: {e}")),
     };
     spawn.run_all();
-    let known: Vec<String> = doc.dependencies().list().into_iter().map(|d| d.reference).collect();
+    // A file searched for in several places (Dependencies::resolve_any) is recorded
+    // once, under its own name: match by file name.
+    let known: Vec<String> = doc.dependencies().list().into_iter().map(|d| file_name(&d.reference)).collect();
     for asked in files.asked() {
-        if !known.contains(&asked) {
-            fail(format!("read {asked:?} without recording it in Dependencies (use Dependencies::resolve)"));
+        if !known.contains(&file_name(&asked)) {
+            fail(format!("read {asked:?} without recording it in Dependencies (use Dependencies::resolve or resolve_any)"));
         }
     }
 
@@ -154,9 +156,9 @@ fn check_sample(reader: &dyn Reader, sample: &Sample, fail: &mut dyn FnMut(Strin
         let cx = ParseContext::new().with_files(files.clone()).with_spawn(InlineSpawn);
         match open_guarded(reader, &src, &cx) {
             Ok(doc) => {
-                let blocked = doc.dependencies().with_status(DependencyStatus::Blocked);
+                let blocked: Vec<String> = doc.dependencies().with_status(DependencyStatus::Blocked).iter().map(|r| file_name(r)).collect();
                 for a in files.asked() {
-                    if !blocked.contains(&a) {
+                    if !blocked.contains(&file_name(&a)) {
                         fail(format!("{a:?} was refused but isn't recorded as blocked"));
                     }
                 }
@@ -202,6 +204,11 @@ fn check_sample(reader: &dyn Reader, sample: &Sample, fail: &mut dyn FnMut(Strin
         }
         _ => fail("doesn't open the same way twice".into()),
     }
+}
+
+/// The last part of a reference, `/` or `\\` separated.
+fn file_name(reference: &str) -> String {
+    reference.rsplit(['/', '\\']).next().unwrap_or(reference).to_owned()
 }
 
 fn make_all(doc: &Document, cx: &ParseContext) -> libfileparser_core::Result<()> {

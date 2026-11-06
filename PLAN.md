@@ -288,7 +288,8 @@ Today (one repo, one Cargo workspace):
 ```
 crates/
   core/                 viewer-core: FileSource, Document, Content, PageSource, registry, hex fallback
-  fmt-image/  fmt-doc/  fmt-data/  fmt-archive/  fmt-3d/  fmt-pdf/     format loaders
+  libfileparser-core/  libfileparser-testkit/  libfileparser-3d/      libfileparser (docs/design/libfileparser.md)
+  fmt-image/  fmt-doc/  fmt-data/  fmt-archive/  fmt-pdf/             format loaders, moving to libfileparser
   pdf-mupdf/            MuPDF backend (AGPL)        pdf-pdfkit/   PDFKit backend
   rendererx/  rendererx-scene/  rendererx-gltf/      the reusable 3D renderer (docs/design/3d-renderer.md)
   usd-lite/             pure-Rust USD reader and composition

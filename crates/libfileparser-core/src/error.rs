@@ -32,6 +32,11 @@ impl ParseError {
         ParseError::Corrupt(why.to_string())
     }
 
+    /// A limit gone past: `value` where at most `max` is allowed.
+    pub fn too_large(limit: Limit, value: u64, max: u64) -> Self {
+        ParseError::TooLarge(LimitExceeded { limit, value, max })
+    }
+
     /// Whether another reader may still read the file.
     pub fn try_next_reader(&self) -> bool {
         matches!(self, ParseError::NotThisFormat | ParseError::Corrupt(_))

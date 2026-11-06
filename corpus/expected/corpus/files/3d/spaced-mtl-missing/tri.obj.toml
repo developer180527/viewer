@@ -20,7 +20,6 @@ Meshes = "1"
 Triangles = "1"
 Vertices = "3"
 Materials = "1"
-Warning = "Could not open .mtl file: corpus/files/3d/spaced-mtl-missing/My Paint.mtl"
 Textures = "none"
 
 [unreadable]

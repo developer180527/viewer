@@ -10,7 +10,8 @@
 use anyhow::{Context, anyhow, bail};
 use rendererx_scene::glam::{Mat4, Vec3, Vec4};
 use rendererx_scene::{CpuScene, Indices, Material, MeshData, Node, ParamValue, Topology};
-use viewer_core::Result;
+use anyhow::Result;
+use libfileparser_core::ParseContext;
 
 pub struct Loaded {
     pub scene: CpuScene,
@@ -159,7 +160,7 @@ impl Body<'_> {
 /// Most corners one face may have: past this a count is garbage, not a polygon.
 const MAX_FACE_CORNERS: usize = 256;
 
-pub fn load(bytes: &[u8]) -> Result<Loaded> {
+pub fn load(bytes: &[u8], cx: &ParseContext) -> Result<Loaded> {
     let (encoding, elements, body_start) = header(bytes)?;
     let format = match encoding {
         Encoding::Ascii => "PLY (ASCII)",
@@ -255,7 +256,7 @@ pub fn load(bytes: &[u8]) -> Result<Loaded> {
         };
     }
 
-    let (scene, mut builder) = CpuScene::new();
+    let (scene, mut builder) = crate::new_scene(cx);
     let id = builder.add_mesh(mesh).context("the mesh")?;
     // Vertex colours are the surface's colour: a white factor shows them as they are
     // (clay's own grey would darken them).
@@ -408,6 +409,11 @@ fn srgb_to_linear(c: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// With the default context, as the tests below were written.
+    fn load(bytes: &[u8]) -> Result<Loaded> {
+        super::load(bytes, &ParseContext::new())
+    }
 
     const QUAD: &str = "ply\nformat ascii 1.0\ncomment a red square\nelement vertex 4\nproperty float x\nproperty float y\nproperty float z\n\
 property uchar red\nproperty uchar green\nproperty uchar blue\nelement face 1\nproperty list uchar int vertex_indices\nend_header\n\

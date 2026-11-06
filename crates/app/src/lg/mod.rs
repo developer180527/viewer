@@ -173,6 +173,12 @@ pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
             let _ = proxy.send_event(());
         })
     });
+    // libfileparser documents announce what arrives (decoded textures) the same way.
+    viewer_formats::set_notify(|| {
+        if let Some(wake) = WAKE.get() {
+            wake();
+        }
+    });
     let mut app = ViewerApp::new(job, true);
     app.show_info = args.info;
     let mut host = Host { title, app: Some(app), benchmark: args.benchmark, gpu: Some(gpu), ..Default::default() };

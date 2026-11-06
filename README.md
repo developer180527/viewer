@@ -64,7 +64,9 @@ crates/fmt-image     image + SVG loaders
 crates/fmt-doc       text / code / Markdown loaders
 crates/fmt-data      JSON / TOML / CSV loaders
 crates/fmt-archive   zip / tar / gzip containers, folders
-crates/fmt-3d        glTF, FBX/OBJ (ufbx), STL, PLY, USD, .blend previews; texture decoding
+crates/libfileparser-core     libfileparser's contracts: documents, facets, Reader, hooks, limits
+crates/libfileparser-testkit  hook fakes and the conformance suite every reader passes
+crates/libfileparser-3d       glTF, FBX/OBJ (ufbx), STL, PLY, USD, .blend previews; texture decoding
 crates/fmt-pdf       PDF loader; picks the backend by target
 crates/pdf-mupdf     MuPDF backend (AGPL; not in iOS builds)
 crates/pdf-pdfkit    PDFKit backend (Apple)

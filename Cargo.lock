@@ -1314,6 +1314,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "libfileparser-3d"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "exr",
+ "image",
+ "jpeg-decoder",
+ "libfileparser-core",
+ "libfileparser-testkit",
+ "rendererx-gltf",
+ "rendererx-scene",
+ "ufbx",
+ "usd-lite",
+]
+
+[[package]]
 name = "libfileparser-core"
 version = "0.1.0"
 dependencies = [
@@ -3404,7 +3420,6 @@ dependencies = [
  "raw-window-handle",
  "rendererx",
  "viewer-core",
- "viewer-fmt-3d",
  "viewer-fmt-archive",
  "viewer-fmt-data",
  "viewer-fmt-doc",
@@ -3437,21 +3452,6 @@ dependencies = [
  "viewer-core",
  "viewer-fmt-archive",
  "viewer-formats",
-]
-
-[[package]]
-name = "viewer-fmt-3d"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "exr",
- "image",
- "jpeg-decoder",
- "rendererx-gltf",
- "rendererx-scene",
- "ufbx",
- "usd-lite",
- "viewer-core",
 ]
 
 [[package]]
@@ -3511,8 +3511,10 @@ dependencies = [
 name = "viewer-formats"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "libfileparser-3d",
+ "libfileparser-core",
  "viewer-core",
- "viewer-fmt-3d",
  "viewer-fmt-archive",
  "viewer-fmt-data",
  "viewer-fmt-doc",

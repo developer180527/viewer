@@ -3,43 +3,19 @@
 //! Blender saves with "Save Preview Images" on (the default) does carry is a small
 //! preview picture in a `TEST` block right after the header; that is shown instead.
 
-use anyhow::{Context, bail};
-use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Raster, Result};
+use anyhow::{Context, Result, bail};
+use libfileparser_core::{Limit, Limits, Raster};
 
-pub struct BlendLoader;
-
-impl FormatLoader for BlendLoader {
-    fn id(&self) -> &'static str {
-        "blend"
+/// A `.blend` file's preview image, and the Blender version that saved it.
+pub fn preview(bytes: &[u8], limits: &Limits) -> Result<(Raster, String)> {
+    match bytes.get(..4) {
+        Some([0x1f, 0x8b, ..]) => bail!("compressed .blend (gzip); not read yet"),
+        Some([0x28, 0xb5, 0x2f, 0xfd]) => bail!("compressed .blend (zstd); not read yet"),
+        _ => {}
     }
-
-    fn name(&self) -> &'static str {
-        "Blender preview"
-    }
-
-    fn probe(&self, header: &[u8], ext: Option<&str>, _: &str) -> Confidence {
-        if header.starts_with(b"BLENDER") {
-            Confidence::MAGIC
-        } else if ext == Some("blend") {
-            Confidence::EXTENSION
-        } else {
-            Confidence::NONE
-        }
-    }
-
-    fn open(&self, src: &FileSource) -> Result<Document> {
-        let bytes = src.bytes();
-        match bytes.get(..4) {
-            Some([0x1f, 0x8b, ..]) => bail!("compressed .blend (gzip); not read yet"),
-            Some([0x28, 0xb5, 0x2f, 0xfd]) => bail!("compressed .blend (zstd); not read yet"),
-            _ => {}
-        }
-        let header = Header::parse(bytes).context("not a .blend file")?;
-        let raster = thumbnail(bytes, &header)?;
-        Ok(Document::new("Blender file", Content::Raster(raster))
-            .with_meta("Saved by", format!("Blender {}", header.version))
-            .with_meta("Shown", "the preview image saved in the file; its 3D data isn't read yet"))
-    }
+    let header = Header::parse(bytes).context("not a .blend file")?;
+    let raster = thumbnail(bytes, &header, limits)?;
+    Ok((raster, header.version))
 }
 
 struct Header {
@@ -83,7 +59,7 @@ impl Header {
 
 /// The `TEST` block: width, height, then RGBA rows stored bottom-up. It sits among
 /// the first few blocks (after `REND`); stop at the first data block or after a few.
-fn thumbnail(b: &[u8], h: &Header) -> Result<Raster> {
+fn thumbnail(b: &[u8], h: &Header, limits: &Limits) -> Result<Raster> {
     let block_header = if h.large_blocks { 32 } else { 16 + h.pointer };
     let mut at = h.len;
     let (len, data) = loop {
@@ -110,10 +86,11 @@ fn thumbnail(b: &[u8], h: &Header) -> Result<Raster> {
     if w == 0 || ht == 0 || w > 4096 || ht > 4096 || pixels + 8 > len {
         bail!("bad preview image ({w}×{ht})");
     }
+    limits.check(Limit::ImagePixels, w as u64 * ht as u64)?;
     let src = b.get(data + 8..data + 8 + pixels).context("truncated preview")?;
     let row = w as usize * 4;
     let rgba: Vec<u8> = src.chunks_exact(row).rev().flatten().copied().collect();
-    Ok(Raster::full(w, ht, rgba))
+    Ok(Raster::new(w, ht, rgba)?)
 }
 
 #[cfg(test)]
@@ -146,14 +123,12 @@ mod tests {
 
     #[test]
     fn preview_is_found_after_rend_and_flipped_upright() {
-        let src = FileSource::from_bytes("car.blend", blend_with_preview(2, 2));
-        let doc = BlendLoader.open(&src).unwrap();
-        let Content::Raster(r) = doc.content else { panic!("expected an image") };
-        assert_eq!((r.width, r.height), (2, 2));
-        let rgba = r.rgba().unwrap();
+        let (r, version) = preview(&blend_with_preview(2, 2), &Limits::desktop()).unwrap();
+        assert_eq!((r.width(), r.height()), (2, 2));
+        let rgba = r.rgba();
         assert_eq!(&rgba[..4], [0, 0, 255, 255], "top row first");
         assert_eq!(&rgba[8..12], [255, 0, 0, 255]);
-        assert!(doc.metadata.iter().any(|(k, v)| k == "Saved by" && v == "Blender 2.83"));
+        assert_eq!(version, "2.83");
     }
 
     #[test]
@@ -161,13 +136,14 @@ mod tests {
         let mut no_preview = b"BLENDER-v283".to_vec();
         no_preview.extend_from_slice(b"DATA\x10\0\0\0");
         no_preview.extend_from_slice(&[0; 32]);
-        assert!(BlendLoader.open(&FileSource::from_bytes("a.blend", no_preview)).is_err());
-        assert!(BlendLoader.open(&FileSource::from_bytes("a.blend", vec![0x28, 0xb5, 0x2f, 0xfd, 0])).is_err());
-        assert!(BlendLoader.open(&FileSource::from_bytes("a.blend", b"BLENDER".to_vec())).is_err());
+        let l = Limits::desktop();
+        assert!(preview(&no_preview, &l).is_err());
+        assert!(preview(&[0x28, 0xb5, 0x2f, 0xfd, 0], &l).is_err());
+        assert!(preview(b"BLENDER", &l).is_err());
         // An absurd size in the header is refused, not allocated.
         let mut huge = blend_with_preview(2, 2);
         let at = 12 + 24 + 72 + 24;
         huge[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
-        assert!(BlendLoader.open(&FileSource::from_bytes("a.blend", huge)).is_err());
+        assert!(preview(&huge, &l).is_err());
     }
 }

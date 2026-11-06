@@ -1,14 +1,14 @@
 [package]
-name = "viewer-fmt-3d"
-description = "3D models: glTF/GLB, FBX, OBJ, STL, PLY and USD into RendererX scenes; .blend preview images."
+name = "libfileparser-3d"
+description = "Any 3D file into documents with facets: glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDZ, .blend previews (docs/design/libfileparser-3d.md)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# Loaders build CPU scenes only (rendererx-scene): no GPU, so they can move to a parser
-# worker later (PLAN.md §12.4).
+# Readers build CPU scenes only (rendererx-scene): no GPU, so they can move to a parser
+# worker later (PLAN.md §12.4). Files, threads and progress go through libfileparser-core's hooks.
 [dependencies]
-viewer-core.workspace = true
+libfileparser-core.workspace = true
 anyhow.workspace = true
 rendererx-scene.workspace = true
 rendererx-gltf.workspace = true
@@ -21,3 +21,6 @@ jpeg-decoder = { version = "0.3", default-features = false }
 # EXR read pixel by pixel, shrinking as it decodes (see textures.rs); the version `image` uses.
 exr = "1.74"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "tga", "exr", "hdr"] }
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true

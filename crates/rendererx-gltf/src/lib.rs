@@ -34,6 +34,9 @@ pub enum Error {
     Format(String),
     #[error("needs {0}, which isn't supported")]
     Unsupported(String),
+    /// The scene refused what the file holds: over its limits, or inconsistent data.
+    #[error(transparent)]
+    Scene(#[from] rendererx_scene::Error),
 }
 
 /// Loads the external files a `.gltf` refers to (`.bin` buffers, images).
@@ -108,14 +111,7 @@ impl DirResolver {
 
     fn path(&self, uri: &str) -> Result<PathBuf, ResolveError> {
         let refused = |why: &str| ResolveError::new(ResolveErrorKind::Refused, format!("{uri:?}: {why}"));
-        if uri.contains(':') {
-            return Err(refused("only relative paths are allowed"));
-        }
-        let rel = PathBuf::from(percent_decode(uri));
-        if !rel.components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir)) {
-            return Err(refused("path leaves the model's folder"));
-        }
-        let path = self.dir.join(rel);
+        let path = self.dir.join(relative_path(uri)?);
         // Follow symlinks, then check the real file is still inside the real folder.
         let (real, root) = (path.canonicalize(), self.dir.canonicalize());
         match (real, root) {
@@ -144,6 +140,22 @@ impl Resolver for DirResolver {
         std::fs::File::open(&path).and_then(|f| f.take(self.max_bytes).read_to_end(&mut data)).map_err(fail)?;
         Ok(Arc::new(data))
     }
+}
+
+/// The path a buffer or image URI names, relative to the model and percent-decoded.
+/// Refused when it has a scheme, is absolute, or climbs out of the model's folder
+/// (`..`), so a file can't make a host read elsewhere. For hosts writing their own
+/// [`Resolver`].
+pub fn relative_path(uri: &str) -> Result<String, ResolveError> {
+    let refused = |why: &str| ResolveError::new(ResolveErrorKind::Refused, format!("{uri:?}: {why}"));
+    if uri.contains(':') {
+        return Err(refused("only relative paths are allowed"));
+    }
+    let rel = percent_decode(uri);
+    if !Path::new(&rel).components().all(|c| matches!(c, Component::Normal(_) | Component::CurDir)) {
+        return Err(refused("path leaves the model's folder"));
+    }
+    Ok(rel)
 }
 
 /// An image the scene is waiting for: decode `data` (PNG, JPEG, WebP, KTX2… per
@@ -214,10 +226,14 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
         images: Vec::new(),
         warnings,
         unreadable,
+        over_limit: None,
     };
     let placed = loader.placements();
     loader.set_bounds(&placed);
     loader.add_nodes(&placed);
+    if let Some(e) = loader.over_limit.take() {
+        return Err(Error::Scene(e));
+    }
     loader.builder.finish();
     Ok(Loaded { images: loader.images, warnings: loader.warnings, unreadable: loader.unreadable })
 }
@@ -312,6 +328,9 @@ struct Loader<'a> {
     textures: Vec<((usize, ColorSpace), Option<TextureId>)>,
     images: Vec<PendingImage>,
     warnings: Vec<String>,
+    /// The first scene limit a mesh went past: the whole load fails with it, rather
+    /// than showing a model with parts silently missing.
+    over_limit: Option<rendererx_scene::Error>,
 }
 
 impl<'a> Loader<'a> {
@@ -412,6 +431,9 @@ impl<'a> Loader<'a> {
         for (i, prim) in mesh.primitives.iter().enumerate() {
             match self.primitive(prim) {
                 Ok(p) => prims.push(p),
+                Err(Error::Scene(e @ rendererx_scene::Error::LimitExceeded { .. })) => {
+                    self.over_limit.get_or_insert(e);
+                }
                 Err(e) => self.warnings.push(format!("mesh {index} primitive {i}: {e}")),
             }
         }
@@ -452,7 +474,7 @@ impl<'a> Loader<'a> {
             };
             mesh.indices = rendererx_scene::Indices::U32(convert(&list).into());
         }
-        let id = self.builder.add_mesh(mesh).map_err(|e| Error::Format(e.to_string()))?;
+        let id = self.builder.add_mesh(mesh)?;
         let material = prim.material.and_then(|m| self.material(m));
         Ok((id, material))
     }

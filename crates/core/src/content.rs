@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use crate::{FileSource, Result};
 
@@ -31,28 +31,7 @@ impl Document {
     }
 }
 
-/// Why a file a document refers to couldn't be read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub enum Unreadable {
-    /// It may well be there, but Viewer isn't allowed to read it: on iOS the user
-    /// picked a single file, and its neighbours are outside that grant. Opening the
-    /// folder fixes it.
-    Blocked,
-    /// It isn't there (or isn't a file): the model names a texture that wasn't
-    /// copied along. Opening the folder won't help.
-    Missing,
-}
-
-impl Unreadable {
-    /// Classifies a failed open, read or stat of the file.
-    pub fn of(e: &std::io::Error) -> Self {
-        match e.kind() {
-            // EPERM (the iOS sandbox, macOS privacy) and EACCES (file modes).
-            std::io::ErrorKind::PermissionDenied => Unreadable::Blocked,
-            _ => Unreadable::Missing,
-        }
-    }
-}
+pub use libfileparser_core::Unreadable;
 
 /// One file a document couldn't read: its name as the document gave it, and why.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,19 +40,20 @@ pub struct UnreadableFile {
     pub reason: Unreadable,
 }
 
-/// The files a document couldn't read. Cheap to clone; every clone is the same list,
-/// so a loader can hand one to its decoder threads and the page sees what they add.
+/// The files a document couldn't read. A view of a libfileparser document's
+/// [`Dependencies`](libfileparser_core::Dependencies), so files found unreadable by
+/// background work (texture decoding) appear as they are found. Cheap to clone.
 #[derive(Clone, Default, Debug)]
-pub struct Unreadables(Arc<Mutex<Vec<UnreadableFile>>>);
+pub struct Unreadables(libfileparser_core::Dependencies);
 
 impl Unreadables {
-    /// Records `name` (once; a later report for the same name is ignored).
+    pub fn from_dependencies(deps: libfileparser_core::Dependencies) -> Self {
+        Self(deps)
+    }
+
+    /// Records `name` as unreadable for `reason`.
     pub fn add(&self, name: impl Into<String>, reason: Unreadable) {
-        let name = name.into();
-        let mut list = self.0.lock().unwrap_or_else(|e| e.into_inner());
-        if !list.iter().any(|f| f.name == name) {
-            list.push(UnreadableFile { name, reason });
-        }
+        self.0.record(name, reason.into());
     }
 
     /// Records a failed read of `path` from its error, under the path's file name.
@@ -83,16 +63,25 @@ impl Unreadables {
     }
 
     pub fn list(&self) -> Vec<UnreadableFile> {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).clone()
+        use libfileparser_core::DependencyStatus;
+        self.0
+            .list()
+            .into_iter()
+            .filter_map(|d| match d.status {
+                DependencyStatus::Blocked => Some(UnreadableFile { name: d.reference, reason: Unreadable::Blocked }),
+                DependencyStatus::Missing => Some(UnreadableFile { name: d.reference, reason: Unreadable::Missing }),
+                _ => None,
+            })
+            .collect()
     }
 
     /// The names that failed for `reason`.
     pub fn names(&self, reason: Unreadable) -> Vec<String> {
-        self.list().into_iter().filter(|f| f.reason == reason).map(|f| f.name).collect()
+        self.0.with_status(reason.into())
     }
 
     pub fn count(&self, reason: Unreadable) -> usize {
-        self.0.lock().unwrap_or_else(|e| e.into_inner()).iter().filter(|f| f.reason == reason).count()
+        self.0.count(reason.into())
     }
 }
 

@@ -106,7 +106,7 @@ The hooks are owned, not borrowed: background work (texture decoding) outlives t
 
 `-core` includes the simplest hooks, so a category library works on its own: `StdFiles` (relative references from the source's folder), `NoFiles`, `InlineSpawn` (background work runs at once on the caller's thread) and `NoNotify`. The front door adds a thread pool and folder-grant-aware files.
 
-**One place reads other files:** `Dependencies::resolve(cx, src, reference)` asks `cx.files` and records the outcome as read, blocked or missing, so a document's dependency list is complete by construction.
+**One place reads other files:** `Dependencies::resolve(cx, src, reference)` asks `cx.files` and records the outcome as read, blocked or missing, so a document's dependency list is complete by construction. A file that may be in several places (a texture stored with the exporter's path, found by name beside the model or in `textures/`) uses `Dependencies::resolve_any`, which tries the candidates in order and records one outcome under the name the document gives.
 
 | Hook | The app decides | Viewer's choice |
 |---|---|---|
@@ -335,7 +335,7 @@ Tests are written against §4's API, never against internals, so they stay the s
 The corpus passes after every step.
 
 1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse`, `FacetProvider`; the fakes and the conformance suite; API snapshots and semver checks in CI from the start.
-2. **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
+2. 🟡 **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md) (moved and on the hooks 2026-11-06; its other facets to come): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
 3. **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it.
 4. **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1.
 5. **`-thumb`** and a thumbnail CLI, as the first user outside Viewer.

@@ -20,7 +20,7 @@ Meshes = "1"
 Triangles = "12"
 Vertices = "24"
 Materials = "1"
-Warning = "image 0: corpus/files/3d/missing-texture/textures/not-here.png: No such file or directory (os error 2)"
+Warning = """image 0: "textures/not-here.png" couldn't be read"""
 Textures = "none"
 
 [unreadable]

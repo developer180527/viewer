@@ -5,17 +5,16 @@
 //! node that uses it, with the node's world transform.
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use anyhow::{Context, anyhow};
+use anyhow::{Context, Result, anyhow};
+use libfileparser_core::{Dependencies, DependencyStatus, FileSource, ParseContext};
 use rendererx_scene::glam::{Mat4, Vec2, Vec3, Vec4};
 use rendererx_scene::{
     ColorSpace, CpuScene, Indices, Material, MaterialId, MeshData, MeshId, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource, Slot,
     Stream, TextureId,
 };
-use viewer_core::{FileSource, Result, Unreadables};
 
 use crate::textures::{self, ImageJob, ImageSource};
 
@@ -25,52 +24,46 @@ pub struct Loaded {
     /// Base colour maps queued for decoding.
     pub textures: usize,
     pub pending: Arc<AtomicUsize>,
-    /// Files the model names that couldn't be read (textures, an OBJ's .mtl).
-    pub unreadable: Unreadables,
 }
 
-pub fn load(src: &FileSource, format: ufbx::FileFormat) -> Result<Loaded> {
-    let filename = src.path().map(|p| p.to_string_lossy().into_owned());
+/// Reads `src`; other files (an OBJ's `.mtl`, textures) only through `cx.files`, each
+/// recorded in `deps`. ufbx itself opens nothing: the `.mtl` data is handed to it.
+pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps: &Dependencies) -> Result<Loaded> {
+    let mtl = if format == ufbx::FileFormat::Obj { mtl_libraries(src, cx, deps) } else { Vec::new() };
     let opts = ufbx::LoadOpts {
         file_format: format,
         target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
         target_unit_meters: 1.0,
-        // OBJ's materials live in a .mtl next to it; found through `filename`.
-        load_external_files: filename.is_some(),
+        load_external_files: false,
         ignore_missing_external_files: true,
-        obj_search_mtl_by_filename: true,
-        filename: filename.as_deref().map_or_else(Default::default, Into::into),
+        obj_search_mtl_by_filename: false,
+        obj_mtl_data: if mtl.is_empty() { ufbx::BlobOpt::Unset } else { mtl.as_slice().into() },
         ..Default::default()
     };
     let root = ufbx::load_memory(src.bytes(), opts).map_err(|e| anyhow!("{}", e.description))?;
-    let (scene, mut builder) = CpuScene::new();
-    // ufbx's own notes (a missing .mtl, repaired indices…), deduplicated by its count.
+    let (scene, mut builder) = crate::new_scene(cx);
+    // ufbx's own notes (repaired indices…), deduplicated by its count.
     let mut warnings: Vec<String> = root
         .metadata
         .warnings
         .iter()
         .map(|w| if w.count > 1 { format!("{} (×{})", w.description, w.count) } else { w.description.to_string() })
         .collect();
-    let dir = src.path().and_then(|p| p.parent()).map(PathBuf::from);
-    let unreadable = Unreadables::default();
-    if format == ufbx::FileFormat::Obj
-        && let Some(dir) = &dir
-    {
-        report_mtl_libraries(src.bytes(), dir, &unreadable);
-    }
-    let mut images = Images { dir, seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new(), unreadable: unreadable.clone() };
+    let mut images = Images { from: src.clone(), cx: cx.clone(), deps: deps.clone(), seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new() };
     convert(&root, &mut builder, &mut images, &mut warnings).context("building the scene")?;
     builder.finish();
     let textures = images.jobs.len();
-    let pending = textures::spawn(builder.texture_sink(), images.jobs, unreadable.clone());
-    Ok(Loaded { scene, warnings, textures, pending, unreadable })
+    let pending = textures::spawn(builder.texture_sink(), images.jobs, cx);
+    Ok(Loaded { scene, warnings, textures, pending })
 }
 
-/// ufbx opens an OBJ's `.mtl` files itself and only says when one is missing, not
-/// why; check each `mtllib` the file names, so a refused one (iOS, a single picked
-/// file) is reported as such. Materials and their maps live in the `.mtl`.
-fn report_mtl_libraries(obj: &[u8], dir: &std::path::Path, report: &Unreadables) {
-    for line in obj.split(|&b| b == b'\n') {
+/// The `.mtl` files an OBJ names (`mtllib`), read through the files hook and joined:
+/// materials and their maps live in them. Names are space-separated, though some
+/// exporters write one name with spaces in it: the whole rest of the line is tried
+/// first, and if neither it nor any word of it is there, it's reported whole.
+fn mtl_libraries(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Vec<u8> {
+    let mut data = Vec::new();
+    for line in src.bytes().split(|&b| b == b'\n') {
         // A byte test first: this walks every line of what can be a very large file.
         if !line.trim_ascii_start().starts_with(b"mtllib") {
             continue;
@@ -80,42 +73,61 @@ fn report_mtl_libraries(obj: &[u8], dir: &std::path::Path, report: &Unreadables)
         if !names.starts_with([' ', '\t']) {
             continue;
         }
-        // Names are space-separated, though some exporters write one name with
-        // spaces in it: the whole rest of the line is tried first.
         let whole = names.trim().replace('\\', "/");
-        if whole.is_empty() || std::fs::File::open(dir.join(&whole)).is_ok() {
+        if whole.is_empty() {
             continue;
         }
-        // Open, not just stat: file modes (and some sandboxes) allow one, not the other.
-        let failed: Vec<_> = whole
-            .split_whitespace()
-            .map(|name| dir.join(name))
-            .filter_map(|path| std::fs::File::open(&path).err().map(|e| (path, e)))
-            .collect();
-        if failed.len() == whole.split_whitespace().count() {
-            // Not one of the pieces is there either: it was one name with spaces in it.
-            let path = dir.join(&whole);
-            let e = std::fs::File::open(&path).expect_err("checked above");
-            report.add_io(&path, &e);
-        } else {
-            for (path, e) in failed {
-                report.add_io(&path, &e);
+        let parts: Vec<&str> = whole.split_whitespace().collect();
+        let mut add = |file: FileSource| {
+            data.extend_from_slice(file.bytes());
+            data.push(b'\n');
+        };
+        if parts.len() == 1 {
+            if let Some(file) = deps.resolve(cx, src, &whole) {
+                add(file);
+            }
+            continue;
+        }
+        match cx.files.resolve(src, &whole) {
+            Ok(file) => {
+                deps.record(&whole, DependencyStatus::Read);
+                add(file);
+            }
+            // Refused: the words would be refused too (it's the folder that is out of
+            // reach), so the whole name is what to report.
+            Err(why @ libfileparser_core::Unreadable::Blocked) => deps.record(&whole, why.into()),
+            Err(why) => {
+                let found: Vec<_> = parts.iter().map(|p| (*p, cx.files.resolve(src, p))).collect();
+                if found.iter().all(|(_, r)| r.is_err()) {
+                    deps.record(&whole, why.into());
+                } else {
+                    for (part, result) in found {
+                        match result {
+                            Ok(file) => {
+                                deps.record(part, DependencyStatus::Read);
+                                add(file);
+                            }
+                            Err(why) => deps.record(part, why.into()),
+                        }
+                    }
+                }
             }
         }
     }
+    data
 }
 
 /// Texture images found while converting materials, each queued once.
 struct Images {
-    /// The model's folder; texture files must be inside it.
-    dir: Option<PathBuf>,
+    /// The model: texture files are looked for beside it, through `cx.files`.
+    from: FileSource,
+    cx: ParseContext,
+    deps: Dependencies,
     /// By (texture, sRGB): one image used as colour and as data is two textures.
     seen: HashMap<(u32, bool), Option<TextureId>>,
     /// Packed roughness + metalness, by the two source textures.
     packed: HashMap<(Option<u32>, Option<u32>), Option<TextureId>>,
     jobs: Vec<ImageJob>,
-    /// Texture files that couldn't be found or read.
-    unreadable: Unreadables,
 }
 
 impl Images {
@@ -127,17 +139,7 @@ impl Images {
         if !file.content.is_empty() {
             return Some(ImageSource::Bytes(Stream::from(file.content.to_vec())));
         }
-        let dir = self.dir.as_deref()?;
-        match textures::find_file(dir, &file.relative_filename, &file.absolute_filename) {
-            Ok(path) => Some(ImageSource::File(path)),
-            Err(reason) => {
-                let name = textures::report_name(&file.relative_filename, &file.absolute_filename);
-                if !name.is_empty() {
-                    self.unreadable.add(name, reason);
-                }
-                None
-            }
-        }
+        textures::find(&self.cx, &self.deps, &self.from, &file.relative_filename, &file.absolute_filename, &[""]).map(ImageSource::File)
     }
 
     fn queue(&mut self, source: ImageSource, color_space: ColorSpace, b: &mut SceneBuilder) -> Option<TextureId> {

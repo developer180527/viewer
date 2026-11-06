@@ -6,10 +6,12 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
+anyhow.workspace = true
 viewer-core.workspace = true
 viewer-fmt-image.workspace = true
 viewer-fmt-doc.workspace = true
 viewer-fmt-data.workspace = true
 viewer-fmt-archive.workspace = true
-viewer-fmt-3d.workspace = true
+libfileparser-core.workspace = true
+libfileparser-3d.workspace = true
 viewer-fmt-pdf.workspace = true

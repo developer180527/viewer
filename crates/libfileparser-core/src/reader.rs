@@ -29,6 +29,9 @@ pub enum Confidence {
     Content,
     /// A signature (magic number) matches.
     Magic,
+    /// A signature and the name both say this format: a format inside a generic
+    /// container (a USDZ, a DOCX) outranks the container's own reader.
+    Certain,
 }
 
 /// What `detect` found.

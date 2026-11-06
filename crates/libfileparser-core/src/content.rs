@@ -397,4 +397,10 @@ impl SceneDoc {
     pub fn textures_pending(&self) -> usize {
         self.pending.load(Ordering::Acquire)
     }
+
+    /// The shared count behind [`SceneDoc::textures_pending`], for hosts that keep
+    /// their own handle to it.
+    pub fn pending_counter(&self) -> Arc<AtomicUsize> {
+        self.pending.clone()
+    }
 }

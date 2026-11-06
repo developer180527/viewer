@@ -98,7 +98,7 @@ Audited 2026-11-03 from the dependency tree, headers and our source. Rows marked
 | **PDFKit, CoreGraphics** | **No control** | **No control** | OS framework | Accept; we own only the output buffer |
 | **FFmpeg libraries** (planned; libVLC dropped, PLAN.md §12.6) | `av_malloc` has no runtime hook; cap with `av_max_alloc` and count frames, which we own | `thread_count` per decoder, set by us | Reads only through our `AVIOContext` callback; network protocols not built | Build only the codecs and demuxers we list; no GPL parts |
 
-Our own code breaks the rule too: `fmt-3d/src/textures.rs` and `core/src/content.rs` start their own threads, and `alloc.rs` is a global allocator only an app can set.
+Our own code breaks the rule too: `core/src/content.rs` starts its own threads (`fmt-3d`'s texture decoding no longer does: it runs through `Spawn` in `libfileparser-3d`), and `alloc.rs` is a global allocator only an app can set.
 
 ## 6. Order
 

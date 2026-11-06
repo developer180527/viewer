@@ -93,6 +93,30 @@ impl Dependencies {
         }
     }
 
+    /// Reads the first of `candidates` that can be read, for a file the document names
+    /// `reference` but that may be in more than one place (a texture stored with the
+    /// exporter's path, found by name beside the model or in `textures/`). The outcome
+    /// is recorded once, under `reference`: blocked if any place refused, else missing.
+    pub fn resolve_any<S: AsRef<str>>(&self, cx: &ParseContext, from: &FileSource, reference: &str, candidates: &[S]) -> Option<FileSource> {
+        if !self.contains(reference) && cx.limits.check(Limit::Dependencies, self.len() as u64 + 1).is_err() {
+            self.record(reference, DependencyStatus::Missing);
+            return None;
+        }
+        let mut blocked = false;
+        for c in candidates {
+            match cx.files.resolve(from, c.as_ref()) {
+                Ok(file) => {
+                    self.record(reference, DependencyStatus::Read);
+                    return Some(file);
+                }
+                Err(Unreadable::Blocked) => blocked = true,
+                Err(_) => {}
+            }
+        }
+        self.record(reference, if blocked { DependencyStatus::Blocked } else { DependencyStatus::Missing });
+        None
+    }
+
     /// Records `reference` with `status`, replacing an earlier status for it.
     pub fn record(&self, reference: impl Into<String>, status: DependencyStatus) {
         let reference = reference.into();

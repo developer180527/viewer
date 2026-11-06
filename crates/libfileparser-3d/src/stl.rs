@@ -12,7 +12,8 @@ use std::collections::HashMap;
 use anyhow::{Context, bail};
 use rendererx_scene::glam::{Mat4, Vec3};
 use rendererx_scene::{CpuScene, Indices, MeshData, Node};
-use viewer_core::Result;
+use anyhow::Result;
+use libfileparser_core::ParseContext;
 
 /// Above this many triangles corners aren't welded: the hash map would cost more
 /// time and memory than flat shading is worth.
@@ -39,14 +40,14 @@ pub fn looks_ascii(header: &[u8]) -> bool {
     text.starts_with(b"solid") && header.windows(5).any(|w| w == b"facet")
 }
 
-pub fn load(bytes: &[u8]) -> Result<Loaded> {
+pub fn load(bytes: &[u8], cx: &ParseContext) -> Result<Loaded> {
     let binary = is_binary(bytes);
     let (positions, name) = if binary { (read_binary(bytes), None) } else { read_ascii(bytes)? };
     if positions.is_empty() {
         bail!("no triangles");
     }
     let mesh = if positions.len() / 3 <= WELD_LIMIT { weld(positions) } else { MeshData::new(positions) };
-    let (scene, mut builder) = CpuScene::new();
+    let (scene, mut builder) = crate::new_scene(cx);
     let id = builder.add_mesh(mesh).context("the mesh")?;
     // Z up (CAD, slicers) to the scene's Y up.
     let z_up = Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2);
@@ -121,6 +122,11 @@ fn weld(corners: Vec<Vec3>) -> MeshData {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// With the default context, as the tests below were written.
+    fn load(bytes: &[u8]) -> Result<Loaded> {
+        super::load(bytes, &ParseContext::new())
+    }
 
     /// A unit cube's 12 triangles as corner lists.
     pub(crate) fn cube() -> Vec<[Vec3; 3]> {
