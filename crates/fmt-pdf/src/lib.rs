@@ -46,7 +46,7 @@ impl FormatLoader for PdfLoader {
 
 type Meta = Vec<(String, String)>;
 
-#[cfg(not(target_os = "ios"))]
+#[cfg(not(any(target_os = "ios", windows)))]
 fn open_backend(src: &FileSource) -> Result<(Arc<dyn PageSource>, Meta)> {
     #[cfg(target_vendor = "apple")]
     if std::env::var("VIEWER_PDF_BACKEND").is_ok_and(|b| b.eq_ignore_ascii_case("pdfkit")) {
@@ -73,7 +73,13 @@ fn open_backend(src: &FileSource) -> Result<(Arc<dyn PageSource>, Meta)> {
     Ok((Arc::new(viewer_pdf_pdfkit::PdfKitDocument::open(src)?), Vec::new()))
 }
 
+#[cfg(windows)]
+fn open_backend(_: &FileSource) -> Result<(Arc<dyn PageSource>, Meta)> {
+    anyhow::bail!("PDF isn't available on Windows yet")
+}
+
 #[cfg(test)]
+#[cfg(not(windows))]
 mod tests {
     use super::*;
     use viewer_core::testing::pdf;

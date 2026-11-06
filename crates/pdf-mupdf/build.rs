@@ -9,6 +9,13 @@ use std::path::PathBuf;
 use std::process::Command;
 
 fn main() {
+    let target = std::env::var("TARGET").unwrap();
+    if target.contains("windows") {
+        // MuPDF builds on Windows with its Visual Studio projects (platform/win32);
+        // wiring those in is docs/design/pdf.md §10 step 7. Until then the crate is
+        // empty there and nothing depends on it (viewer-fmt-pdf has no Windows backend).
+        return;
+    }
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let src = manifest.join("../../third_party/mupdf").canonicalize().expect(
         "third_party/mupdf is missing: run `git submodule update --init --recursive`",
@@ -17,13 +24,6 @@ fn main() {
         panic!("MuPDF's own submodules are missing: run `git submodule update --init --recursive`");
     }
     let out = PathBuf::from(std::env::var("OUT_DIR").unwrap()).join("mupdf");
-    let target = std::env::var("TARGET").unwrap();
-
-    if target.contains("windows") {
-        // MuPDF builds on Windows with its Visual Studio projects (platform/win32);
-        // wiring those in is docs/design/pdf.md §10 step 7.
-        panic!("viewer-pdf-mupdf doesn't build for Windows yet (docs/design/pdf.md §10, step 7)");
-    }
 
     // The target's compiler and flags as cc-rs sees them, so cross builds (Android
     // NDK, BSD) use the same toolchain as the shim.

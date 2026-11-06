@@ -1348,6 +1348,7 @@ dependencies = [
 [[package]]
 name = "libfilepicker"
 version = "0.1.0"
+source = "git+https://github.com/developer180527/libfilepicker.git?rev=b99e3cd990e50fdeb3e96a3a703dacf77f7c8c66#b99e3cd990e50fdeb3e96a3a703dacf77f7c8c66"
 dependencies = [
  "block2 0.6.2",
  "objc2 0.6.5",

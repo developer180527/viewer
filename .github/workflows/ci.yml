@@ -32,6 +32,9 @@ jobs:
         os: [ubuntu-24.04, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v5
+        # MuPDF builds from the third_party/mupdf submodule (docs/design/pdf.md §4).
+        with:
+          submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -67,6 +70,9 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
+        # MuPDF builds from the third_party/mupdf submodule (docs/design/pdf.md §4).
+        with:
+          submodules: recursive
 
       - uses: dtolnay/rust-toolchain@stable
 

@@ -32,6 +32,16 @@ pub struct Entry {
     pub golden: bool,
     pub optional: bool,
     pub timeout: Duration,
+    /// Target OSes (`std::env::consts::OS`) the file isn't checked on, because what
+    /// opens it isn't built there yet.
+    pub skip_on: Vec<String>,
+}
+
+impl Entry {
+    /// Whether this file is checked on the OS the tests run on.
+    pub fn checked_here(&self) -> bool {
+        !self.skip_on.iter().any(|os| os == std::env::consts::OS)
+    }
 }
 
 /// The repository root.
@@ -51,7 +61,8 @@ pub fn manifest() -> anyhow::Result<Vec<Entry>> {
             let path = f.get("path").and_then(Value::as_str).ok_or_else(|| anyhow::anyhow!("a [[file]] without a path"))?;
             let flag = |k: &str| f.get(k).and_then(Value::as_bool).unwrap_or(false);
             let timeout = f.get("timeout").and_then(Value::as_integer).map_or(DEFAULT_TIMEOUT, |s| Duration::from_secs(s as u64));
-            Ok(Entry { path: path.into(), golden: flag("golden"), optional: flag("optional"), timeout })
+            let skip_on = f.get("skip_on").and_then(Value::as_array).map_or(Vec::new(), |a| a.iter().filter_map(Value::as_str).map(String::from).collect());
+            Ok(Entry { path: path.into(), golden: flag("golden"), optional: flag("optional"), timeout, skip_on })
         })
         .collect()
 }

@@ -22,7 +22,7 @@ fn expected(entry: &Entry, ext: &str) -> PathBuf {
 
 /// What differs, or `None` when the file opened as expected.
 fn check(entry: &Entry, update: bool, out: &Path) -> Option<String> {
-    if entry.optional && !root().join(&entry.path).exists() {
+    if (entry.optional && !root().join(&entry.path).exists()) || !entry.checked_here() {
         return None;
     }
     let opened = match open(entry) {
@@ -113,9 +113,9 @@ fn corpus() {
         let runs: Vec<_> = entries.iter().map(|e| s.spawn(|| check(e, update, &out))).collect();
         runs.into_iter().filter_map(|r| r.join().unwrap()).collect()
     });
-    let skipped = entries.iter().filter(|e| e.optional && !root().join(&e.path).exists()).count();
+    let skipped = entries.iter().filter(|e| (e.optional && !root().join(&e.path).exists()) || !e.checked_here()).count();
     if skipped > 0 {
-        eprintln!("corpus: skipped {skipped} optional files that aren't here");
+        eprintln!("corpus: skipped {skipped} files that aren't here or aren't checked on this OS");
     }
     assert!(failures.is_empty(), "{} of {} corpus files differ:\n{}", failures.len(), entries.len(), failures.join("\n"));
 }

@@ -3,6 +3,10 @@
 //! MuPDF is reached only through shim/shim.c, which turns its setjmp-based errors
 //! into return codes. Each document has its own MuPDF context and is used under a
 //! mutex, so the source is `Send + Sync` without giving MuPDF locks.
+//!
+//! Empty on Windows until MuPDF's Windows build is wired in (build.rs).
+
+#![cfg(not(windows))]
 
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::sync::{Mutex, OnceLock};

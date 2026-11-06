@@ -11,7 +11,8 @@ anyhow.workspace = true
 
 # MuPDF everywhere but iOS, where the App Store can't carry its AGPL; PDFKit on Apple
 # platforms (the backend on iOS, selectable on macOS for comparison). docs/design/pdf.md §2–4.
-[target.'cfg(not(target_os = "ios"))'.dependencies]
+# Not on Windows yet: MuPDF's Windows build isn't wired in (docs/design/pdf.md §10 step 7).
+[target.'cfg(not(any(target_os = "ios", windows)))'.dependencies]
 viewer-pdf-mupdf.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]

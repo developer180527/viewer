@@ -4,6 +4,7 @@
 #   golden    also compare a small render: an image's pixels, or a document's first page
 #   optional  skip when the file isn't there (large real-world files kept out of git)
 #   timeout   seconds before the open counts as hung (default 20)
+#   skip_on   OSes it isn't checked on, because what opens it isn't built there yet
 #
 # What each file is expected to open as lives in corpus/expected/, written by the
 # runner with UPDATE_CORPUS=1 and reviewed as a diff.
@@ -68,6 +69,8 @@ golden = true
 [[file]]
 path = "corpus/files/pdf/two-pages.pdf"
 golden = true
+# No PDF backend on Windows yet (docs/design/pdf.md §10 step 7).
+skip_on = ["windows"]
 
 # ---------------------------------------------------------------- data
 

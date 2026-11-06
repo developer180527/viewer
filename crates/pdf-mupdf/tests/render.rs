@@ -1,3 +1,5 @@
+#![cfg(not(windows))]
+
 use viewer_core::testing::{pdf, pixel};
 use viewer_core::{FileSource, PageRect, PageSource};
 use viewer_pdf_mupdf::MupdfDocument;
