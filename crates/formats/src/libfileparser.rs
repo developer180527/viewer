@@ -2,15 +2,16 @@
 //! document type: each libfileparser reader appears as a Viewer loader, opened with
 //! Viewer's hooks (docs/design/libfileparser.md §3), and its document converted.
 //!
-//! Viewer's policy, as hooks: other files from beside the model (with the OS's own
-//! refusals reported as blocked), texture decoding on a two-thread pool, every
+//! Viewer's policy, as hooks: other files from the model's folder and below, or one
+//! folder up (some exporters put textures in `../textures/`), never elsewhere, with
+//! the OS's own refusals reported as blocked; texture decoding on a two-thread pool, every
 //! texture that arrives waking the window, and the platform's limits.
 
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Result, anyhow, bail};
-use libfileparser_core::{Confidence, Content, Limits, Notify, ParseContext, Reader, Spawn};
+use libfileparser_core::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Reader, Spawn};
 use viewer_core::{Document, FileSource, FormatLoader, Raster, SceneDoc, Unreadables};
 
 /// A libfileparser reader as a Viewer loader.
@@ -107,5 +108,9 @@ impl Spawn for TexturePool {
 /// Viewer's hooks for one document.
 fn context() -> ParseContext {
     let limits = if cfg!(any(target_os = "ios", target_os = "android")) { Limits::mobile() } else { Limits::desktop() };
-    ParseContext::new().with_spawn(TexturePool).with_notify(AppNotify).with_limits(limits)
+    ParseContext::new()
+        .with_files(FolderFiles::new().allow_parent_levels(1))
+        .with_spawn(TexturePool)
+        .with_notify(AppNotify)
+        .with_limits(limits)
 }

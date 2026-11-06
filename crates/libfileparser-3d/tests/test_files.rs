@@ -1,12 +1,14 @@
 //! Opens the models in `test_3d_files/` (not in git) when they're present.
 
-use libfileparser_core::{Content, FileSource, ParseContext};
+use libfileparser_core::{Content, FileSource, FolderFiles, ParseContext};
 
 fn describe(src: &FileSource) {
     let t = std::time::Instant::now();
-    match libfileparser_3d::open(src, &ParseContext::new()) {
+    // Real exports often keep textures one folder up.
+    let cx = ParseContext::new().with_files(FolderFiles::new().allow_parent_levels(1));
+    match libfileparser_3d::open(src, &cx) {
         Ok(doc) => {
-            let kind = match doc.facet(0, &ParseContext::new()) {
+            let kind = match doc.facet(0, &cx) {
                 Ok(Content::Scene(s)) => format!("scene, {} MB on the CPU", s.scene().read().cpu_bytes() >> 20),
                 Ok(Content::Raster(r)) => format!("image {}×{}", r.width(), r.height()),
                 _ => "other".into(),

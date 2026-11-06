@@ -8,12 +8,19 @@ use libfileparser_core::*;
 #[test]
 fn line_text_splits_lines_and_drops_terminators() {
     let t = LineText::new(FileSource::from_bytes("a.txt", b"one\r\ntwo\n\nlast".to_vec()), Some("text"));
-    assert_eq!(t.line_count(), 4);
-    assert_eq!((t.line(0), t.line(1), t.line(2), t.line(3)), (&b"one"[..], &b"two"[..], &b""[..], &b"last"[..]));
-    assert_eq!(t.line(9), b"", "past the end is empty, not a panic");
-    assert_eq!(t.language(), Some("text"));
-    assert_eq!(LineText::new(FileSource::from_bytes("e", Vec::new()), None).line_count(), 0);
-    assert_eq!(LineText::new(FileSource::from_bytes("n", b"a\n".to_vec()), None).line_count(), 1);
+    assert_eq!(t.info().lines, Count::Exact(4));
+    let lines = t.lines(0..4).unwrap();
+    let lines: Vec<&[u8]> = lines.iter().map(|l| l.as_slice()).collect();
+    assert_eq!(lines, [&b"one"[..], b"two", b"", b"last"]);
+    assert_eq!(t.lines(2..99).unwrap().len(), 2, "fewer past the end, not an error");
+    assert!(t.lines(9..12).unwrap().is_empty());
+    assert_eq!(t.info().language.as_deref(), Some("text"));
+    assert_eq!(LineText::new(FileSource::from_bytes("e", Vec::new()), None).info().lines, Count::Exact(0));
+    assert_eq!(LineText::new(FileSource::from_bytes("n", b"a\n".to_vec()), None).info().lines, Count::Exact(1));
+    // Lines outlive the source they came from: they share its bytes.
+    let first = t.lines(0..1).unwrap().remove(0);
+    drop(t);
+    assert_eq!(first.as_slice(), b"one");
 }
 
 #[test]
@@ -43,20 +50,67 @@ fn dependencies_record_every_read_and_respect_the_limit() {
 }
 
 #[test]
-fn std_files_reads_beside_the_source_only_when_it_has_a_path() {
-    let dir = std::env::temp_dir().join(format!("lfp-core-{}", std::process::id()));
+fn folder_files_read_inside_the_folder_only() {
+    let base = std::env::temp_dir().join(format!("lfp-core-{}", std::process::id()));
+    let dir = base.join("model");
     std::fs::create_dir_all(dir.join("textures")).unwrap();
+    std::fs::create_dir_all(base.join("textures")).unwrap();
     std::fs::write(dir.join("textures/a.png"), b"png").unwrap();
+    std::fs::write(base.join("textures/up.png"), b"up").unwrap();
+    std::fs::write(base.join("secret.txt"), b"secret").unwrap();
     std::fs::write(dir.join("m.gltf"), b"{}").unwrap();
     let src = FileSource::open(dir.join("m.gltf")).unwrap();
-    assert_eq!(StdFiles.resolve(&src, "textures/a.png").unwrap().bytes(), b"png");
-    assert_eq!(StdFiles.resolve(&src, "textures\\a.png").unwrap().bytes(), b"png", "Windows separators");
-    assert_eq!(StdFiles.resolve(&src, "nope.png").unwrap_err(), Unreadable::Missing);
-    assert_eq!(StdFiles.resolve(&src, "textures").unwrap_err(), Unreadable::Missing, "a folder isn't a file");
+
+    let f = FolderFiles::new();
+    assert_eq!(f.resolve(&src, "textures/a.png").unwrap().bytes(), b"png");
+    assert_eq!(f.resolve(&src, "textures\\a.png").unwrap().bytes(), b"png", "Windows separators");
+    assert_eq!(f.resolve(&src, "./textures/../textures/a.png").unwrap().bytes(), b"png", "`..` that stays inside");
+    assert_eq!(f.resolve(&src, "nope.png").unwrap_err(), Unreadable::Missing);
+    assert_eq!(f.resolve(&src, "textures").unwrap_err(), Unreadable::Missing, "a folder isn't a file");
+    // Leaving the folder, by any spelling, isn't read.
+    for out in ["../secret.txt", "textures/../../secret.txt", "../textures/up.png", "C:/Windows/win.ini", "file:///etc/passwd"] {
+        assert_eq!(f.resolve(&src, out).unwrap_err(), Unreadable::Outside, "{out}");
+    }
+    let absolute = base.join("secret.txt").to_string_lossy().into_owned();
+    assert_eq!(f.resolve(&src, &absolute).unwrap_err(), Unreadable::Outside, "an absolute path");
+    // One level up, when allowed, and no further.
+    let up = FolderFiles::new().allow_parent_levels(1);
+    assert_eq!(up.resolve(&src, "../textures/up.png").unwrap().bytes(), b"up");
+    assert_eq!(up.resolve(&src, "../../x.png").unwrap_err(), Unreadable::Outside);
+    // A symlink inside the folder that points out of it.
+    #[cfg(unix)]
+    {
+        std::os::unix::fs::symlink(base.join("secret.txt"), dir.join("textures/link.png")).unwrap();
+        assert_eq!(f.resolve(&src, "textures/link.png").unwrap_err(), Unreadable::Outside, "a symlink out");
+    }
     let in_memory = FileSource::from_bytes("m.gltf", Vec::new());
-    assert_eq!(StdFiles.resolve(&in_memory, "textures/a.png").unwrap_err(), Unreadable::Missing);
-    std::fs::remove_dir_all(dir).unwrap();
+    assert_eq!(f.resolve(&in_memory, "textures/a.png").unwrap_err(), Unreadable::Missing, "no folder, no neighbours");
+
+    // AnyFiles reads what it's told; the default reads nothing.
+    assert_eq!(AnyFiles.resolve(&src, &absolute).unwrap().bytes(), b"secret");
+    assert_eq!(ParseContext::new().files.resolve(&src, "textures/a.png").unwrap_err(), Unreadable::Missing);
+    std::fs::remove_dir_all(base).unwrap();
 }
+
+#[test]
+fn sources_hand_out_ranges_and_reject_unknown_ids() {
+    let mut tree = OwnedTree::new();
+    let root = tree.add(None, "root", "");
+    for i in 0..10 {
+        tree.add(Some(root), format!("child {i}"), i.to_string());
+    }
+    assert_eq!(tree.child_count(Some(root)).unwrap(), Count::Exact(10));
+    let page = tree.children(Some(root), 3..5).unwrap();
+    assert_eq!(page.iter().map(|n| n.label.as_str()).collect::<Vec<_>>(), ["child 3", "child 4"]);
+    assert!(!page[0].has_children);
+    assert_eq!(tree.children(Some(root), 8..100).unwrap().len(), 2);
+    assert!(matches!(tree.children(Some(NodeId(999)), 0..1), Err(ParseError::InvalidRequest(_))));
+
+    let table = OwnedTable::new(vec!["a".into()], (0..5).map(|i| vec![i.to_string()]).collect());
+    assert_eq!(table.info().rows, Count::Exact(5));
+    assert_eq!(table.rows(3..10).unwrap(), [vec!["3".to_string()], vec!["4".to_string()]]);
+}
+
 
 #[test]
 fn a_lazy_facet_is_made_once_and_retried_after_failing() {
@@ -111,4 +165,29 @@ fn routing_tries_the_next_reader_on_damage_and_stops_on_other_errors() {
     let cancelled = ParseContext::new();
     cancelled.cancel.cancel();
     assert!(matches!(open(&[&damaged], &src, &cancelled), Err(ParseError::Cancelled)));
+}
+
+#[test]
+fn panics_in_format_code_stay_inside() {
+    let cx = ParseContext::new();
+    // A facet whose maker panics fails alone; the document and its other facets live on.
+    let doc = Document::new(FormatInfo::new("t", "Test", Category::Data))
+        .with_facet(Role::Primary, "Fine", Content::Table(Arc::new(OwnedTable::new(vec!["a".into()], Vec::new()))))
+        .with_lazy_facet(FacetInfo::new(Role::Inspector, "Broken", Model::Tree), |_| panic!("bad node"));
+    assert!(matches!(doc.facet(1, &cx), Err(ParseError::Corrupt(why)) if why.contains("bad node")));
+    assert!(doc.facet(0, &cx).is_ok());
+    assert!(matches!(doc.facet(7, &cx), Err(ParseError::InvalidRequest(_))), "a facet that doesn't exist is the caller's mistake");
+    assert!(!ParseError::invalid("x").try_next_reader() && !ParseError::unsupported("x").try_next_reader());
+
+    // A background job that panics doesn't take the caller's thread with it, and work
+    // after a caught panic still runs.
+    let done = Arc::new(AtomicUsize::new(0));
+    let d = done.clone();
+    cx.spawn_job(move || {
+        let decoded: Option<u32> = ParseContext::catching(|| panic!("decoder"));
+        assert!(decoded.is_none());
+        d.fetch_add(1, Ordering::SeqCst);
+    });
+    cx.spawn_job(|| panic!("a job that fails outright"));
+    assert_eq!(done.load(Ordering::SeqCst), 1);
 }

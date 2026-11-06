@@ -119,13 +119,14 @@ impl Document {
 
     /// The content of facet `index`, made now if it hasn't been.
     pub fn facet(&self, index: usize, cx: &ParseContext) -> Result<Content> {
-        let facet = self.facets.get(index).ok_or_else(|| crate::ParseError::corrupt(format!("no facet {index}")))?;
+        let facet = self.facets.get(index).ok_or_else(|| crate::ParseError::invalid(format!("no facet {index}")))?;
         if let Some(content) = facet.made.get() {
             return Ok(content.clone());
         }
         let make = facet.make.as_ref().expect("a facet without content has a maker");
         cx.cancel.check()?;
-        let content = make(cx)?;
+        // A panic while making a facet fails that facet alone (docs/design/document-model.md §8).
+        let content = crate::reader::guard(&facet.info.name, || make(cx))?;
         Ok(facet.made.get_or_init(|| content).clone())
     }
 

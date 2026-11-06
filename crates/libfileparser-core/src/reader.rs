@@ -147,12 +147,19 @@ pub fn open_with(readers: &[&dyn Reader], id: &str, src: &FileSource, cx: &Parse
 
 /// Runs `reader.open`, turning a panic into [`ParseError::Corrupt`].
 pub fn open_guarded(reader: &dyn Reader, src: &FileSource, cx: &ParseContext) -> Result<Document> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| reader.open(src, cx))).unwrap_or_else(|payload| {
-        let why = payload
-            .downcast_ref::<&str>()
-            .map(|s| s.to_string())
-            .or_else(|| payload.downcast_ref::<String>().cloned())
-            .unwrap_or_else(|| "unknown panic".into());
-        Err(ParseError::Corrupt(format!("{} reader panicked: {why}", reader.info().id)))
-    })
+    guard(reader.info().id, || reader.open(src, cx))
+}
+
+/// Runs `f`, turning a panic in it into [`ParseError::Corrupt`] that names `what`: no
+/// panic in format code crosses the library's boundary (docs/design/libfileparser.md §7).
+pub(crate) fn guard<T>(what: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| Err(ParseError::Corrupt(format!("{what} panicked: {}", panic_message(&*payload)))))
+}
+
+pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
+    payload
+        .downcast_ref::<&str>()
+        .map(|s| s.to_string())
+        .or_else(|| payload.downcast_ref::<String>().cloned())
+        .unwrap_or_else(|| "unknown panic".into())
 }

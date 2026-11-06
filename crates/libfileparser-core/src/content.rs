@@ -4,13 +4,14 @@
 //! however big the file. Each source trait has a simple owned implementation here for
 //! readers that build their content up front.
 
+use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rendererx_scene::CpuScene;
 
-use crate::{FileSource, ParseError, Result};
+use crate::{Bytes, FileSource, ParseError, Result};
 
 /// One facet's data. Cheap to clone: every variant shares its data.
 #[derive(Clone)]
@@ -128,27 +129,88 @@ impl Raster {
     }
 }
 
+// ---------------------------------------------------------------- counts
+
+/// How many items a source has. Counting may mean reading the whole file (lines of a
+/// huge log, rows of a huge CSV), so a source may give a lower bound first and the
+/// exact count later.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum Count {
+    Exact(u64),
+    /// At least this many; more may follow.
+    AtLeast(u64),
+}
+
+impl Count {
+    /// The count, or its lower bound.
+    pub fn known(&self) -> u64 {
+        match *self {
+            Count::Exact(n) | Count::AtLeast(n) => n,
+        }
+    }
+
+    pub fn is_exact(&self) -> bool {
+        matches!(self, Count::Exact(_))
+    }
+}
+
+impl fmt::Display for Count {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Count::Exact(n) => write!(f, "{n}"),
+            Count::AtLeast(n) => write!(f, "{n}+"),
+        }
+    }
+}
+
+/// `range` cut to `0..len`: sources return fewer items past the end, never an error.
+fn clamp(range: Range<u64>, len: u64) -> Range<usize> {
+    let end = range.end.min(len);
+    range.start.min(end) as usize..end as usize
+}
+
 // ---------------------------------------------------------------- text
+
+/// What a text is, known without reading its lines.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct TextInfo {
+    pub lines: Count,
+    pub encoding: String,
+    /// The language it's written in, if known ("usd", "json", "rust").
+    pub language: Option<String>,
+}
+
+impl TextInfo {
+    pub fn new(lines: Count) -> Self {
+        Self { lines, encoding: "UTF-8".into(), language: None }
+    }
+
+    pub fn with_encoding(mut self, encoding: impl Into<String>) -> Self {
+        self.encoding = encoding.into();
+        self
+    }
+
+    pub fn with_language(mut self, language: Option<&str>) -> Self {
+        self.language = language.map(str::to_owned);
+        self
+    }
+}
 
 /// Text read by line.
 pub trait TextSource: Send + Sync {
-    fn line_count(&self) -> usize;
-    /// Line `i` without its terminator; empty past the end.
-    fn line(&self, i: usize) -> &[u8];
-    /// The language it's written in, if known ("usd", "json", "rust").
-    fn language(&self) -> Option<&str> {
-        None
-    }
-    fn encoding(&self) -> &str {
-        "UTF-8"
-    }
+    fn info(&self) -> TextInfo;
+    /// Lines in `range`, without their terminators; fewer past the end.
+    fn lines(&self, range: Range<u64>) -> Result<Vec<Bytes>>;
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }
 }
 
 /// Text indexed by line over a file's bytes, which stay where they are (usually
-/// mapped): a 2 GB log costs only its line index.
+/// mapped): a 2 GB log costs only its line index, and lines are handed out as views
+/// into the file, not copies.
 pub struct LineText {
     source: FileSource,
     starts: Vec<usize>,
@@ -168,23 +230,23 @@ impl LineText {
 }
 
 impl TextSource for LineText {
-    fn line_count(&self) -> usize {
-        self.starts.len()
+    fn info(&self) -> TextInfo {
+        TextInfo::new(Count::Exact(self.starts.len() as u64)).with_language(self.language.as_deref())
     }
 
-    fn line(&self, i: usize) -> &[u8] {
+    fn lines(&self, range: Range<u64>) -> Result<Vec<Bytes>> {
         let bytes = self.source.bytes();
-        let Some(&start) = self.starts.get(i) else { return &[] };
-        let end = self.starts.get(i + 1).copied().unwrap_or(bytes.len());
-        let mut line = &bytes[start..end];
-        while let [rest @ .., b'\n' | b'\r'] = line {
-            line = rest;
-        }
-        line
-    }
-
-    fn language(&self) -> Option<&str> {
-        self.language.as_deref()
+        let shared = self.source.shared_bytes();
+        Ok(clamp(range, self.starts.len() as u64)
+            .map(|i| {
+                let start = self.starts[i];
+                let mut end = self.starts.get(i + 1).copied().unwrap_or(bytes.len());
+                while end > start && matches!(bytes[end - 1], b'\n' | b'\r') {
+                    end -= 1;
+                }
+                Bytes::slice_of(shared.clone(), start..end)
+            })
+            .collect())
     }
 
     fn memory(&self) -> MemoryUse {
@@ -199,9 +261,10 @@ impl TextSource for LineText {
 pub struct NodeId(pub u64);
 
 /// What a tree shows for one node.
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct TreeNode {
+    pub id: NodeId,
     /// The key or name: "Cube", "materials", "[3]".
     pub label: String,
     /// A value for leaves, or a summary for branches ("{3}", "Mesh").
@@ -209,11 +272,20 @@ pub struct TreeNode {
     pub has_children: bool,
 }
 
-/// A tree read one level at a time.
+impl TreeNode {
+    pub fn new(id: NodeId, label: impl Into<String>, value: impl Into<String>, has_children: bool) -> Self {
+        Self { id, label: label.into(), value: value.into(), has_children }
+    }
+}
+
+/// A tree read one level, and one range of children, at a time: a node may have
+/// 100,000 children (FBX records), and a view shows a screenful.
 pub trait TreeSource: Send + Sync {
-    /// The children of `parent`, or the top level for `None`.
-    fn children(&self, parent: Option<NodeId>) -> Vec<NodeId>;
-    fn node(&self, id: NodeId) -> TreeNode;
+    /// How many children `parent` has, or how many top-level nodes for `None`.
+    fn child_count(&self, parent: Option<NodeId>) -> Result<Count>;
+    /// The children of `parent` (or the top level) in `range`; fewer past the end.
+    /// An id this tree didn't hand out is [`ParseError::InvalidRequest`].
+    fn children(&self, parent: Option<NodeId>, range: Range<u64>) -> Result<Vec<TreeNode>>;
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }
@@ -234,7 +306,7 @@ impl OwnedTree {
     /// Adds a node under `parent` (or at the top) and returns its id.
     pub fn add(&mut self, parent: Option<NodeId>, label: impl Into<String>, value: impl Into<String>) -> NodeId {
         let id = NodeId(self.nodes.len() as u64);
-        self.nodes.push((TreeNode { label: label.into(), value: value.into(), has_children: false }, Vec::new()));
+        self.nodes.push((TreeNode::new(id, label, value, false), Vec::new()));
         match parent {
             Some(p) => {
                 let (node, children) = &mut self.nodes[p.0 as usize];
@@ -253,18 +325,23 @@ impl OwnedTree {
     pub fn is_empty(&self) -> bool {
         self.nodes.is_empty()
     }
+
+    fn ids(&self, parent: Option<NodeId>) -> Result<&[NodeId]> {
+        match parent {
+            None => Ok(&self.roots),
+            Some(p) => self.nodes.get(p.0 as usize).map(|(_, c)| c.as_slice()).ok_or_else(|| ParseError::invalid(format!("no node {}", p.0))),
+        }
+    }
 }
 
 impl TreeSource for OwnedTree {
-    fn children(&self, parent: Option<NodeId>) -> Vec<NodeId> {
-        match parent {
-            Some(p) => self.nodes.get(p.0 as usize).map(|(_, c)| c.clone()).unwrap_or_default(),
-            None => self.roots.clone(),
-        }
+    fn child_count(&self, parent: Option<NodeId>) -> Result<Count> {
+        Ok(Count::Exact(self.ids(parent)?.len() as u64))
     }
 
-    fn node(&self, id: NodeId) -> TreeNode {
-        self.nodes.get(id.0 as usize).map(|(n, _)| n.clone()).unwrap_or_default()
+    fn children(&self, parent: Option<NodeId>, range: Range<u64>) -> Result<Vec<TreeNode>> {
+        let ids = self.ids(parent)?;
+        Ok(ids[clamp(range, ids.len() as u64)].iter().map(|id| self.nodes[id.0 as usize].0.clone()).collect())
     }
 
     fn memory(&self) -> MemoryUse {
@@ -275,21 +352,25 @@ impl TreeSource for OwnedTree {
 
 // ---------------------------------------------------------------- table
 
-/// How many rows a table has, when counting all of them would mean reading the file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// What a table is, known without reading its rows.
+#[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum RowCount {
-    Exact(usize),
-    /// At least this many; more may follow.
-    AtLeast(usize),
+pub struct TableInfo {
+    pub columns: Vec<String>,
+    pub rows: Count,
+}
+
+impl TableInfo {
+    pub fn new(columns: Vec<String>, rows: Count) -> Self {
+        Self { columns, rows }
+    }
 }
 
 /// A table read by row range.
 pub trait TableSource: Send + Sync {
-    fn columns(&self) -> Vec<String>;
-    fn row_count(&self) -> RowCount;
-    /// The cells of rows in `range` (fewer past the end).
-    fn rows(&self, range: Range<usize>) -> Vec<Vec<String>>;
+    fn info(&self) -> TableInfo;
+    /// The cells of rows in `range`; fewer past the end.
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>>;
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }
@@ -308,17 +389,12 @@ impl OwnedTable {
 }
 
 impl TableSource for OwnedTable {
-    fn columns(&self) -> Vec<String> {
-        self.columns.clone()
+    fn info(&self) -> TableInfo {
+        TableInfo::new(self.columns.clone(), Count::Exact(self.rows.len() as u64))
     }
 
-    fn row_count(&self) -> RowCount {
-        RowCount::Exact(self.rows.len())
-    }
-
-    fn rows(&self, range: Range<usize>) -> Vec<Vec<String>> {
-        let end = range.end.min(self.rows.len());
-        self.rows.get(range.start.min(end)..end).map(<[_]>::to_vec).unwrap_or_default()
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
+        Ok(self.rows[clamp(range, self.rows.len() as u64)].to_vec())
     }
 
     fn memory(&self) -> MemoryUse {
@@ -363,11 +439,15 @@ impl Entry {
     }
 }
 
-/// Files inside a file: a zip's entries, a GLB's chunks, a USDZ's layers.
+/// Files inside a file: a zip's entries, a GLB's chunks, a USDZ's layers. Read by
+/// range, like every source: an archive may hold a million entries.
 pub trait Container: Send + Sync {
-    fn entries(&self) -> &[Entry];
-    /// The bytes of entry `index`, as a file the front door can open like any other.
-    fn open(&self, index: usize) -> Result<FileSource>;
+    fn entry_count(&self) -> Count;
+    /// Entries in `range`; fewer past the end.
+    fn entries(&self, range: Range<u64>) -> Result<Vec<Entry>>;
+    /// Entry `index` as a file the front door can open like any other. An index past
+    /// the end is [`ParseError::InvalidRequest`].
+    fn open(&self, index: u64) -> Result<FileSource>;
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }

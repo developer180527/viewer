@@ -50,7 +50,7 @@ Menus: File, Edit, View, Window, Help.
 
 ## 3. Order of work
 
-1. **Test corpus,** first with PDF, 3D and images, then growing with every format: "supported" means passing it on every platform. Its design is in [pdf.md](design/pdf.md) §8. It comes first because it guards the restructure in step 3.
+1. ✅ **Test corpus** ([corpus/README.md](../corpus/README.md)), growing with every format: "supported" means passing it on every platform. It guards the restructure in step 3.
 2. **Command list and native macOS menu.** Small, and required on the Mac.
 3. **libfileparser** ([libfileparser.md](design/libfileparser.md)): `-core`, then `-3d`, then the front door, then the other categories; a thumbnail tool as its second user. New formats from here on land in their category crate.
 4. **Formats:**

@@ -4,7 +4,7 @@
 
 use std::fmt::Write;
 
-use libfileparser_core::{Content, Document, NodeId, ParseContext, RowCount, TreeSource};
+use libfileparser_core::{Content, Document, NodeId, ParseContext, TreeSource};
 
 /// Most tree nodes, table rows, text lines or entries written per facet.
 const SHOWN: usize = 40;
@@ -40,9 +40,15 @@ pub fn content_summary(content: &Content, out: &mut String) {
             let _ = writeln!(out, "  raster {}x{} fnv {:016x}", r.width(), r.height(), fnv(r.rgba()));
         }
         Content::Text(t) => {
-            let _ = writeln!(out, "  text: {} lines, language {:?}", t.line_count(), t.language());
-            for i in 0..t.line_count().min(SHOWN) {
-                let _ = writeln!(out, "  | {}", String::from_utf8_lossy(t.line(i)));
+            let info = t.info();
+            let _ = writeln!(out, "  text: {} lines, language {:?}", info.lines, info.language);
+            match t.lines(0..SHOWN as u64) {
+                Ok(lines) => lines.iter().for_each(|l| {
+                    let _ = writeln!(out, "  | {}", String::from_utf8_lossy(l));
+                }),
+                Err(e) => {
+                    let _ = writeln!(out, "  lines failed: {e}");
+                }
             }
         }
         Content::Tree(t) => {
@@ -51,20 +57,26 @@ pub fn content_summary(content: &Content, out: &mut String) {
             tree(t.as_ref(), None, 1, &mut shown, out);
         }
         Content::Table(t) => {
-            let count = match t.row_count() {
-                RowCount::Exact(n) => format!("{n}"),
-                RowCount::AtLeast(n) => format!("{n}+"),
-                _ => "?".into(),
-            };
-            let _ = writeln!(out, "  table: {} rows; {}", count, t.columns().join(" | "));
-            for row in t.rows(0..SHOWN) {
-                let _ = writeln!(out, "  | {}", row.join(" | "));
+            let info = t.info();
+            let _ = writeln!(out, "  table: {} rows; {}", info.rows, info.columns.join(" | "));
+            match t.rows(0..SHOWN as u64) {
+                Ok(rows) => rows.iter().for_each(|row| {
+                    let _ = writeln!(out, "  | {}", row.join(" | "));
+                }),
+                Err(e) => {
+                    let _ = writeln!(out, "  rows failed: {e}");
+                }
             }
         }
         Content::Container(c) => {
-            let _ = writeln!(out, "  container: {} entries", c.entries().len());
-            for e in c.entries().iter().take(SHOWN) {
-                let _ = writeln!(out, "  - {} {:?} {} bytes", e.path, e.kind, e.size);
+            let _ = writeln!(out, "  container: {} entries", c.entry_count());
+            match c.entries(0..SHOWN as u64) {
+                Ok(entries) => entries.iter().for_each(|e| {
+                    let _ = writeln!(out, "  - {} {:?} {} bytes", e.path, e.kind, e.size);
+                }),
+                Err(e) => {
+                    let _ = writeln!(out, "  entries failed: {e}");
+                }
             }
         }
         Content::Scene(s) => {
@@ -97,15 +109,21 @@ pub fn content_summary(content: &Content, out: &mut String) {
 }
 
 fn tree(t: &dyn TreeSource, parent: Option<NodeId>, depth: usize, shown: &mut usize, out: &mut String) {
-    for id in t.children(parent) {
+    let children = match t.children(parent, 0..(SHOWN - *shown) as u64) {
+        Ok(c) => c,
+        Err(e) => {
+            let _ = writeln!(out, "  {}children failed: {e}", "  ".repeat(depth - 1));
+            return;
+        }
+    };
+    for n in children {
         if *shown >= SHOWN {
             return;
         }
         *shown += 1;
-        let n = t.node(id);
         let _ = writeln!(out, "  {}{} = {}", "  ".repeat(depth - 1), n.label, n.value);
         if n.has_children {
-            tree(t, Some(id), depth + 1, shown, out);
+            tree(t, Some(n.id), depth + 1, shown, out);
         }
     }
 }

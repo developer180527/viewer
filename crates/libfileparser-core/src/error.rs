@@ -10,7 +10,7 @@ pub type Result<T> = std::result::Result<T, ParseError>;
 ///
 /// The first two let the front door try another reader; the others are final and
 /// worth telling the user as they are (a file that is too large is not shown as hex
-/// instead).
+/// instead). `InvalidRequest` is the caller's mistake, never the file's.
 #[derive(Debug)]
 #[non_exhaustive]
 pub enum ParseError {
@@ -25,11 +25,25 @@ pub enum ParseError {
     /// The document was closed before this finished.
     Cancelled,
     Io(std::io::Error),
+    /// The format is known, but can't be read in this build or on this platform: the
+    /// reason says so plainly ("EPUB isn't available on iPhone and iPad").
+    Unsupported(String),
+    /// The caller asked for something that doesn't exist: a facet, node or entry
+    /// that wasn't handed out. A bug in the calling code, not a damaged file.
+    InvalidRequest(String),
 }
 
 impl ParseError {
     pub fn corrupt(why: impl fmt::Display) -> Self {
         ParseError::Corrupt(why.to_string())
+    }
+
+    pub fn unsupported(why: impl fmt::Display) -> Self {
+        ParseError::Unsupported(why.to_string())
+    }
+
+    pub fn invalid(why: impl fmt::Display) -> Self {
+        ParseError::InvalidRequest(why.to_string())
     }
 
     /// A limit gone past: `value` where at most `max` is allowed.
@@ -52,6 +66,8 @@ impl fmt::Display for ParseError {
             ParseError::Unreadable { reference, reason } => write!(f, "{reference}: {reason}"),
             ParseError::Cancelled => write!(f, "cancelled"),
             ParseError::Io(e) => write!(f, "{e}"),
+            ParseError::Unsupported(why) => write!(f, "{why}"),
+            ParseError::InvalidRequest(why) => write!(f, "invalid request: {why}"),
         }
     }
 }

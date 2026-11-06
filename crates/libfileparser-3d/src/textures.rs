@@ -48,11 +48,12 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, cx: &ParseContext) -> Arc<A
     let max_alloc = cx.limits.allocation;
     for job in jobs {
         let (left, sink, cancel, notify) = (Arc::downgrade(&pending), sink.clone(), cx.cancel.clone(), cx.notify.clone());
-        cx.spawn.spawn(Box::new(move || {
+        cx.spawn_job(move || {
             let wanted = || left.strong_count() > 0 && !cancel.is_cancelled();
-            // A failed image leaves its material untextured.
+            // A failed image leaves its material untextured; so does a decoder that
+            // panics, and the count below still goes down.
             if wanted()
-                && let Some(data) = decode(&job.source, job.color_space, max_alloc)
+                && let Some(data) = ParseContext::catching(|| decode(&job.source, job.color_space, max_alloc))
             {
                 let _ = sink.set_texture(job.texture, data);
             }
@@ -62,7 +63,7 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, cx: &ParseContext) -> Arc<A
             if wanted() {
                 notify.notify();
             }
-        }));
+        });
     }
     pending
 }

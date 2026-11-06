@@ -15,6 +15,9 @@ pub enum Unreadable {
     Blocked,
     /// It isn't there, or isn't a file. Opening the folder won't help.
     Missing,
+    /// It's outside the folder the app lets documents read from (a `..` path, an
+    /// absolute path, a symlink out), so it wasn't looked for.
+    Outside,
 }
 
 impl Unreadable {
@@ -33,6 +36,7 @@ impl fmt::Display for Unreadable {
         f.write_str(match self {
             Unreadable::Blocked => "not allowed to read it",
             Unreadable::Missing => "not found",
+            Unreadable::Outside => "outside the folder it may read from",
         })
     }
 }
@@ -44,6 +48,7 @@ pub enum DependencyStatus {
     Read,
     Blocked,
     Missing,
+    Outside,
 }
 
 impl From<Unreadable> for DependencyStatus {
@@ -51,6 +56,7 @@ impl From<Unreadable> for DependencyStatus {
         match u {
             Unreadable::Blocked => DependencyStatus::Blocked,
             Unreadable::Missing => DependencyStatus::Missing,
+            Unreadable::Outside => DependencyStatus::Outside,
         }
     }
 }
@@ -96,7 +102,8 @@ impl Dependencies {
     /// Reads the first of `candidates` that can be read, for a file the document names
     /// `reference` but that may be in more than one place (a texture stored with the
     /// exporter's path, found by name beside the model or in `textures/`). The outcome
-    /// is recorded once, under `reference`: blocked if any place refused, else missing.
+    /// is recorded once, under `reference`: blocked if any place refused, else missing
+    /// (a candidate outside the allowed folder just isn't one of the places).
     pub fn resolve_any<S: AsRef<str>>(&self, cx: &ParseContext, from: &FileSource, reference: &str, candidates: &[S]) -> Option<FileSource> {
         if !self.contains(reference) && cx.limits.check(Limit::Dependencies, self.len() as u64 + 1).is_err() {
             self.record(reference, DependencyStatus::Missing);

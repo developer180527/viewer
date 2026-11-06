@@ -43,14 +43,17 @@ pub trait PageSource: Send + Sync {
 **2. Parsers receive everything through hooks.**
 
 ```rust
-pub struct ParseContext<'a> {
-    pub files: &'a dyn FileResolver,  // neighbouring files: the app decides what's allowed
+#[derive(Clone)]
+pub struct ParseContext {
+    pub files: Arc<dyn FileResolver>, // neighbouring files: the app decides what's allowed
     pub limits: Limits,               // memory, sizes, nesting depth
     pub cancel: Cancel,
-    pub spawn: &'a dyn Spawn,         // background work runs where the app says
-    pub notify: &'a dyn Notify,       // "more arrived"; replaces the global WAKE
+    pub spawn: Arc<dyn Spawn>,        // background work runs where the app says
+    pub notify: Arc<dyn Notify>,      // "more arrived"; replaces the global WAKE
 }
 ```
+
+Owned, so background work can keep its own clone (docs/design/libfileparser.md §3, which has the details).
 
 An allocator hook for C libraries (§5) joins these only when a helper process doesn't already cover it.
 

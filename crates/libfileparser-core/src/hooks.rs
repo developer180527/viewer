@@ -4,7 +4,7 @@
 //! a thread, and keeps no globals: it asks these instead. Each is owned (`Arc`),
 //! because background work (texture decoding) outlives the `open` call that started it.
 
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -61,12 +61,13 @@ pub struct ParseContext {
 }
 
 impl ParseContext {
-    /// Files read from beside the source, desktop limits, background work run at
-    /// once on the caller's thread, and no notifications: enough to use a category
-    /// library on its own. The front door supplies a thread pool instead.
+    /// No other files read ([`NoFiles`]; choose [`FolderFiles`] to read a model's
+    /// textures), desktop limits, background work run at once on the caller's thread,
+    /// and no notifications: safe for any file, and enough to use a category library
+    /// on its own. The front door supplies a thread pool and folder access instead.
     pub fn new() -> Self {
         Self {
-            files: Arc::new(StdFiles),
+            files: Arc::new(NoFiles),
             limits: Limits::desktop(),
             cancel: Cancel::new(),
             spawn: Arc::new(InlineSpawn),
@@ -98,6 +99,22 @@ impl ParseContext {
         self.notify = Arc::new(notify);
         self
     }
+
+    /// Runs `job` through the spawn hook with a panic caught, so a panic in format code
+    /// (a decoder) can't take down the thread it runs on, or the caller's thread with
+    /// an inline spawner. `job` must leave things consistent either way: count
+    /// pending work in a guard or after a nested [`ParseContext::catching`].
+    pub fn spawn_job(&self, job: impl FnOnce() + Send + 'static) {
+        self.spawn.spawn(Box::new(move || {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(job));
+        }));
+    }
+
+    /// Runs `f`, giving `None` if it panics: for the part of background work that runs
+    /// format code, so the bookkeeping around it still happens.
+    pub fn catching<T>(f: impl FnOnce() -> Option<T>) -> Option<T> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).ok().flatten()
+    }
 }
 
 impl Default for ParseContext {
@@ -106,12 +123,97 @@ impl Default for ParseContext {
     }
 }
 
-/// Reads references from the file system: relative ones from the source's folder,
-/// absolute ones as given. A source with no path (in memory) has no neighbours.
+/// Reads nothing beyond the source: every reference is missing. The default, so a
+/// library opening untrusted files (a server making thumbnails of uploads) reads
+/// nothing else on its machine unless it chooses to.
 #[derive(Clone, Copy, Debug, Default)]
-pub struct StdFiles;
+pub struct NoFiles;
 
-impl FileResolver for StdFiles {
+impl FileResolver for NoFiles {
+    fn resolve(&self, _: &FileSource, _: &str) -> std::result::Result<FileSource, Unreadable> {
+        Err(Unreadable::Missing)
+    }
+}
+
+/// Reads references inside the source's folder and below: what a viewer or editor
+/// wants. A reference that leaves the folder (`../../secret.png`, an absolute path, a
+/// symlink pointing out) is [`Unreadable::Outside`], so a hostile file can't make the
+/// app read other files on the machine. Exporters that record absolute paths are
+/// still served: readers look for the file by name in the folder
+/// ([`Dependencies::resolve_any`](crate::Dependencies::resolve_any)).
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FolderFiles {
+    parent_levels: u8,
+}
+
+impl FolderFiles {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Also allows up to `levels` folders above the source's (`../textures/` is one):
+    /// some exporters put textures in a sibling folder.
+    pub fn allow_parent_levels(mut self, levels: u8) -> Self {
+        self.parent_levels = levels;
+        self
+    }
+
+    /// The folder references may not leave, and the path `reference` names, when it
+    /// stays inside by its words alone (before symlinks are followed).
+    fn place(&self, from: &FileSource, reference: &str) -> std::result::Result<(PathBuf, PathBuf), Unreadable> {
+        let reference = reference.replace('\\', "/");
+        let dir = from.path().and_then(Path::parent).ok_or(Unreadable::Missing)?;
+        let mut depth: i64 = 0;
+        for c in Path::new(&reference).components() {
+            match c {
+                Component::Normal(_) => depth += 1,
+                Component::CurDir => {}
+                Component::ParentDir => {
+                    depth -= 1;
+                    if depth < -i64::from(self.parent_levels) {
+                        return Err(Unreadable::Outside);
+                    }
+                }
+                // `/x`, `C:\x`, `\\server\x`: absolute, never inside.
+                Component::RootDir | Component::Prefix(_) => return Err(Unreadable::Outside),
+            }
+        }
+        // `C:/x` on a Unix machine parses as a relative `C:` folder; it's still absolute.
+        if reference.as_bytes().get(1) == Some(&b':') || reference.contains("://") {
+            return Err(Unreadable::Outside);
+        }
+        let mut root = dir.to_path_buf();
+        for _ in 0..self.parent_levels {
+            if !root.pop() {
+                break;
+            }
+        }
+        Ok((root, dir.join(&reference)))
+    }
+}
+
+impl FileResolver for FolderFiles {
+    fn resolve(&self, from: &FileSource, reference: &str) -> std::result::Result<FileSource, Unreadable> {
+        let (root, path) = self.place(from, reference)?;
+        // Symlinks: where it really is must be inside too. Where the root can't be
+        // resolved (a sandbox that hides the folders above a grant), the check by
+        // words above stands.
+        if let (Ok(real), Ok(root)) = (path.canonicalize(), root.canonicalize())
+            && !real.starts_with(&root)
+        {
+            return Err(Unreadable::Outside);
+        }
+        read_file(&path)
+    }
+}
+
+/// Reads any reference: relative ones from the source's folder, absolute ones as
+/// given, `..` wherever it leads. Only for files you trust (your own pipeline's), never
+/// for files from elsewhere.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct AnyFiles;
+
+impl FileResolver for AnyFiles {
     fn resolve(&self, from: &FileSource, reference: &str) -> std::result::Result<FileSource, Unreadable> {
         let reference = reference.replace('\\', "/");
         let path = Path::new(&reference);
@@ -120,22 +222,16 @@ impl FileResolver for StdFiles {
         } else {
             from.path().and_then(Path::parent).ok_or(Unreadable::Missing)?.join(path)
         };
-        if !path.is_file() {
-            // A sandbox can refuse the stat as well as the read: tell the two apart.
-            return Err(std::fs::metadata(&path).map_or_else(|e| Unreadable::of(&e), |_| Unreadable::Missing));
-        }
-        FileSource::open(&path).map_err(|e| Unreadable::of(&e))
+        read_file(&path)
     }
 }
 
-/// Reads nothing beyond the source: every reference is missing.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct NoFiles;
-
-impl FileResolver for NoFiles {
-    fn resolve(&self, _: &FileSource, _: &str) -> std::result::Result<FileSource, Unreadable> {
-        Err(Unreadable::Missing)
+fn read_file(path: &Path) -> std::result::Result<FileSource, Unreadable> {
+    if !path.is_file() {
+        // A sandbox can refuse the stat as well as the read: tell the two apart.
+        return Err(std::fs::metadata(path).map_or_else(|e| Unreadable::of(&e), |_| Unreadable::Missing));
     }
+    FileSource::open(path).map_err(|e| Unreadable::of(&e))
 }
 
 /// Runs background work at once, on the calling thread.

@@ -3,7 +3,7 @@
 
 use std::path::{Path, PathBuf};
 
-use libfileparser_core::{Document, FileSource, ParseContext, Reader};
+use libfileparser_core::{Document, FileSource, FolderFiles, ParseContext, Reader};
 use libfileparser_core::DependencyStatus::{Blocked, Missing};
 
 const TRIANGLE: &str = "v 0 0 0\nv 1 0 0\nv 0 1 0\nvt 0 0\nusemtl wood\nf 1/1 2/1 3/1\n";
@@ -16,8 +16,9 @@ fn folder(name: &str) -> PathBuf {
 }
 
 fn open_obj(path: &Path) -> Document {
-    // The default context reads neighbours from the file system (StdFiles).
-    match libfileparser_3d::ObjReader.open(&FileSource::open(path).unwrap(), &ParseContext::new()) {
+    // Neighbours from the model's folder, as a viewer reads them.
+    let cx = ParseContext::new().with_files(FolderFiles::new());
+    match libfileparser_3d::ObjReader.open(&FileSource::open(path).unwrap(), &cx) {
         Ok(doc) => doc,
         Err(e) => panic!("the triangle doesn't open: {e}"),
     }
