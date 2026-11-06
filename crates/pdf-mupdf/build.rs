@@ -2,7 +2,7 @@
 //! the shim (shim/shim.c) against it. `make` is incremental in OUT_DIR, so a rebuild
 //! with nothing changed costs a second.
 //!
-//! Configuration (docs/pdf.md §4): no JavaScript (`mujs=no`), no DOCX export, no
+//! Configuration (docs/design/pdf.md §4): no JavaScript (`mujs=no`), no DOCX export, no
 //! Brotli, and only the base fonts (the big CJK ones aren't built in).
 
 use std::path::PathBuf;
@@ -21,8 +21,8 @@ fn main() {
 
     if target.contains("windows") {
         // MuPDF builds on Windows with its Visual Studio projects (platform/win32);
-        // wiring those in is docs/pdf.md §10 step 7.
-        panic!("viewer-pdf-mupdf doesn't build for Windows yet (docs/pdf.md §10, step 7)");
+        // wiring those in is docs/design/pdf.md §10 step 7.
+        panic!("viewer-pdf-mupdf doesn't build for Windows yet (docs/design/pdf.md §10, step 7)");
     }
 
     // The target's compiler and flags as cc-rs sees them, so cross builds (Android

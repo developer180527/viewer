@@ -17,7 +17,7 @@
 //! ```
 //!
 //! Milestone 1: clay shading only; textures and the authored shading models come next.
-//! See docs/3d-renderer.md.
+//! See docs/design/3d-renderer.md.
 
 mod camera;
 mod scene;

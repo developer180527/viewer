@@ -42,7 +42,7 @@ struct Pick {
 }
 
 /// How wide the window is, which decides where the chrome goes
-/// (docs/responsive-ui.md §1). Width only: a narrow desktop window gets the phone layout.
+/// (docs/design/responsive-ui.md §1). Width only: a narrow desktop window gets the phone layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum WidthClass {
     /// Under 600: a phone upright, a narrow window.

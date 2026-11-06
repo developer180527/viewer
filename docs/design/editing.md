@@ -1,6 +1,6 @@
 # Editing UX
 
-Status: proposal. Nothing here is built yet, and it waits until Viewer opens every kind of file (roadmap-notes.md). On desktop, every command here also appears in the menu bar (roadmap-notes.md §2). 3D's scope is in roadmap-notes.md §4.
+Status: proposal. Nothing here is built yet, and it waits until Viewer opens every kind of file (docs/roadmap.md). On desktop, every command here also appears in the menu bar (docs/roadmap.md §2). 3D's scope is in docs/roadmap.md §4.
 
 **The rule: learn it once.** Someone who has edited one kind of file already knows where everything is for every other kind. Only the tools differ, never where they live or how a session starts and ends.
 
@@ -70,7 +70,7 @@ The Edit button never disappears, so nobody is left wondering whether they've mi
 - **Not on this platform:** "Redaction isn't available on iPhone and iPad. It's available on macOS, Windows, Linux and Android."
 - **Locked or encrypted:** says what would unlock it.
 
-Tools missing on one platform aren't shown greyed out. Where someone would look for one, the group has a one-line note (docs/pdf.md §2).
+Tools missing on one platform aren't shown greyed out. Where someone would look for one, the group has a one-line note (docs/design/pdf.md §2).
 
 ## 6. Structure
 

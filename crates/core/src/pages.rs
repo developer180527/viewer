@@ -1,5 +1,5 @@
 //! Paged documents (PDF first; later comics, multi-page TIFF): a page list the view
-//! lays out from sizes alone and renders a region at a time (docs/pdf.md §5).
+//! lays out from sizes alone and renders a region at a time (docs/design/pdf.md §5).
 
 use crate::Result;
 

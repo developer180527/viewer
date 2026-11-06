@@ -24,7 +24,7 @@ pub enum Error {
     GeometryFinished,
 }
 
-/// Hard caps on what a file can make the app allocate or draw (docs/3d-renderer.md §12).
+/// Hard caps on what a file can make the app allocate or draw (docs/design/3d-renderer.md §12).
 /// Going over one is an error for that item; what was already accepted stays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SceneLimits {

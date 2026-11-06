@@ -337,7 +337,7 @@ fn mesh_parts(mesh: &ufbx::Mesh, b: &mut SceneBuilder, warnings: &mut Vec<String
 }
 
 /// The material's look as authored, as far as clay can show it: shading model and base
-/// colour (docs/3d-renderer.md §6).
+/// colour (docs/design/3d-renderer.md §6).
 fn material(m: &ufbx::Material) -> Material {
     use ufbx::ShaderType as S;
     let shading = match m.shader_type {

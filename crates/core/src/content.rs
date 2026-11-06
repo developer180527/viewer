@@ -129,7 +129,7 @@ impl Content {
 }
 
 /// A 3D model. The scene is shared with the renderer, which follows it as it fills in
-/// and frees the CPU copy of what it has uploaded (docs/3d-renderer.md §11.1).
+/// and frees the CPU copy of what it has uploaded (docs/design/3d-renderer.md §11.1).
 pub struct SceneDoc {
     pub scene: rendererx_scene::CpuScene,
     /// Textures still being decoded on background threads; they arrive in `scene`

@@ -23,13 +23,13 @@ Runs on desktop, mobile, BSD and Chinese OSes, and starts fast enough to be the 
 
 ## 1. Core architecture: many formats, few renderers
 
-Every format **loader** converts a file into one of about 8 **content models**. Each model has one renderer.
+Every format **loader** converts a file into one of about 8 **content models**. Each model has one renderer. A file is often several things at once (a USDZ is a zip, a USD stage and a 3D scene), so with libfileparser a document has several **facets**, each in one of these models: docs/design/document-model.md.
 
 | Content model | Used for | Renderer |
 |---|---|---|
 | **Raster** (tiled image) | Images, RAW, DICOM | wgpu textured tiles, zoom/pan, mipmaps |
-| **Pages** (`PageSource`) | PDF, comics, DjVu, slides | Tiled scrolling page view (docs/pdf.md §7) |
-| **Scene** (meshes, materials, points) | glTF, OBJ, STL, FBX, USD, CAD, LiDAR, splats | RendererX, our wgpu renderer (docs/3d-renderer.md) |
+| **Pages** (`PageSource`) | PDF, comics, DjVu, slides | Tiled scrolling page view (docs/design/pdf.md §7) |
+| **Scene** (meshes, materials, points) | glTF, OBJ, STL, FBX, USD, CAD, LiDAR, splats | RendererX, our wgpu renderer (docs/design/3d-renderer.md) |
 | **RichText** (styled flow) | Markdown, EPUB, DOCX-lite, text, code | `parley` / `cosmic-text` + `syntect` |
 | **Table** (virtualised) | CSV, XLSX, Parquet, SQLite, Arrow | Lazy grid that fetches only visible rows |
 | **Tree** | JSON, YAML, XML, archives, HDF5 | Collapsible tree, lazy children |
@@ -52,7 +52,7 @@ struct Document {
 }
 ```
 
-This is today's shape, in `viewer-core`. Where it is heading (contracts in their own crate, loaders taking a `ParseContext` of hooks) is in docs/architecture.md.
+This is today's shape, in `viewer-core`. Where it is heading (documents with facets, contracts in their own crate, readers taking a `ParseContext` of hooks): docs/design/document-model.md and docs/design/libfileparser.md.
 
 - **Detection:** magic bytes first (`infer`, `file-format`), then the extension, then content sniffing.
 - **Recursion:** a zip holding a PDF holding images can be browsed level by level.
@@ -79,7 +79,7 @@ This is today's shape, in `viewer-core`. Where it is heading (contracts in their
 ### Documents
 | Formats | Library / approach |
 |---|---|
-| PDF | **MuPDF** built from source (a submodule), everywhere but iOS; **PDFKit** on iOS, because the App Store can't carry AGPL. Both behind `PageSource` (docs/pdf.md) — **done**. `hayro` as the pure-Rust option to watch |
+| PDF | **MuPDF** built from source (a submodule), everywhere but iOS; **PDFKit** on iOS, because the App Store can't carry AGPL. Both behind `PageSource` (docs/design/pdf.md) — **done**. `hayro` as the pure-Rust option to watch |
 | EPUB | `epub` → HTML → RichText or webview |
 | Markdown | `comrak` |
 | Text / code / logs | `syntect`, `ropey`, `memmap2`; must handle multi-GB files |
@@ -108,7 +108,7 @@ This is today's shape, in `viewer-core`. Where it is heading (contracts in their
 
 ### Audio / video
 - **Default:** FFmpeg's libraries (`libavformat`, `libavcodec`, `libswresample`; LGPL, no GPL parts) on every platform, behind our own media library: open, list streams, read metadata, decode a frame or audio samples into the caller's buffer. Reads go through our callback (so `FileResolver` and iOS grants apply), threads are set by us, and only the codecs we choose are built in. Hardware decoding through VideoToolbox, MediaCodec and D3D11VA. Getting decoded frames into wgpu is the first spike.
-- **Not libVLC** (decided 2026-11-03): it is a player rather than a library: its own threads, clock, audio output, plugins and file and network access, no allocator hook, and 20–150 MB on disk. That breaks "libraries provide mechanism, the app decides policy" (docs/architecture.md) and makes the media library heavy for every app that uses it.
+- **Not libVLC** (decided 2026-11-03): it is a player rather than a library: its own threads, clock, audio output, plugins and file and network access, no allocator hook, and 20–150 MB on disk. That breaks "libraries provide mechanism, the app decides policy" (docs/design/architecture.md) and makes the media library heavy for every app that uses it.
 - **Hardware decoding** uses each platform's decoders through FFmpeg, so there is one media path everywhere rather than per-platform players.
 - **Audio-only light path:** `symphonia` (pure Rust) for common audio; also waveform and spectrogram views with `rustfft`.
 - What plays, and what is deliberately left out: §12.6.
@@ -161,7 +161,7 @@ The fallback is always Hex.
 | GPU | `wgpu` (Metal / Vulkan / DX12 / GLES) |
 | UI | **libgui** on every platform, one shell (decided, §12.1). The egui frontend from the MVP is removed |
 | CPU fallback renderer | `softbuffer` + `tiny-skia` (instant first frame, no-GPU machines, old BSD boxes) |
-| Async / threads | Background work through the app's `Spawn` hook; libraries start no threads or global pools of their own (docs/architecture.md). `tokio` only where I/O needs it |
+| Async / threads | Background work through the app's `Spawn` hook; libraries start no threads or global pools of their own (docs/design/architecture.md). `tokio` only where I/O needs it |
 | File dialogs / clipboard | `libfilepicker` (`rfd` on desktop, `UIDocumentPickerViewController` on iOS), `arboard` |
 | Fonts | `fontdb`, which loads system fonts lazily (CJK fonts are not bundled) |
 
@@ -206,7 +206,7 @@ The fallback is always Hex.
 | `libbluray` | LGPL | OK, dynamic; unencrypted discs only |
 | `libdvdnav` / `libdvdread`, `libcdio` | GPL | Avoid: no DVD menus (titles play from their VOBs), no audio CDs |
 | H.264, HEVC, AAC (patents, not licences) | Patent pools | Prefer the platform's hardware decoders where they exist; get a proper answer before any commercial release |
-| MuPDF | AGPL | **Used, except on iOS.** Only `viewer-pdf-mupdf` and the app builds containing it are AGPL; libgui, libfilepicker, RendererX and the other crates stay MIT/Apache (docs/pdf.md §3) |
+| MuPDF | AGPL | **Used, except on iOS.** Only `viewer-pdf-mupdf` and the app builds containing it are AGPL; libgui, libfilepicker, RendererX and the other crates stay MIT/Apache (docs/design/pdf.md §3) |
 | Poppler | GPL | Avoid |
 | djvulibre | GPL | Optional plugin / converter only |
 
@@ -223,7 +223,7 @@ Nothing that serves a particular format runs before "app ready": no format modul
 
 ### Process and binary
 - **Single instance, many windows (§12.3).** A second launch hands the path to the running instance (Unix socket / named pipe) and exits in a few ms; the instance opens it in a **new window**. Optionally, a tiny resident agent keeps a hidden window warm (user setting, off by default).
-- **Small core binary.** Heavy libraries (FFmpeg, OpenCASCADE) are **not linked into the main executable**. They live in on-demand modules that are `dlopen`ed on first use (desktop/Android), or in the worker process. Opening a JPEG must never page them in. MuPDF is the exception so far: linked statically, but nothing in it runs until the first PDF (docs/pdf.md §4).
+- **Small core binary.** Heavy libraries (FFmpeg, OpenCASCADE) are **not linked into the main executable**. They live in on-demand modules that are `dlopen`ed on first use (desktop/Android), or in the worker process. Opening a JPEG must never page them in. MuPDF is the exception so far: linked statically, but nothing in it runs until the first PDF (docs/design/pdf.md §4).
 - **Release profile:** `lto = "fat"`, `codegen-units = 1`, `opt-level = 3`, strip symbols. Not `panic = "abort"`: a panicking decoder must fall back to the next loader (§12.4). Also try PGO and BOLT (`cargo-pgo`).
 - **Zero static initialisers.** The loader registry is a `const` table of function pointers. No plugin scanning at startup; WASM plugins are indexed lazily and cached.
 
@@ -263,7 +263,7 @@ Rules, and what the first memory pass found (2026-11-01):
 - **Worker process** for every C/C++ parser (desktop). Communicates over shared memory + IPC. If it crashes, show "couldn't render, showing hex" instead of crashing the app. Sandbox it with seccomp (Linux), App Sandbox (macOS), AppContainer (Windows), pledge/unveil (OpenBSD), Capsicum (FreeBSD).
   - On iOS and HarmonyOS, run in-process: pure-Rust parsers, platform backends, vetted C libraries natively, and other C libraries as WASM (§12.4).
 - **Fuzz** every loader with `cargo-fuzz`, and integrate OSS-Fuzz later.
-- **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document. The first two are in `viewer_core::limits` (256 megapixels; inflating past 64 MB at most 200:1), checked by hostile files in the corpus; they move into `ParseContext` later (docs/architecture.md).
+- **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document. The first two are in `viewer_core::limits` (256 megapixels; inflating past 64 MB at most 200:1), checked by hostile files in the corpus; they move into `ParseContext` later (docs/design/architecture.md).
 - **Never auto-execute.** Scripts and macros in documents are never run. HTML in the webview runs with JS off and no network by default.
 
 ---
@@ -290,7 +290,7 @@ crates/
   core/                 viewer-core: FileSource, Document, Content, PageSource, registry, hex fallback
   fmt-image/  fmt-doc/  fmt-data/  fmt-archive/  fmt-3d/  fmt-pdf/     format loaders
   pdf-mupdf/            MuPDF backend (AGPL)        pdf-pdfkit/   PDFKit backend
-  rendererx/  rendererx-scene/  rendererx-gltf/      the reusable 3D renderer (docs/3d-renderer.md)
+  rendererx/  rendererx-scene/  rendererx-gltf/      the reusable 3D renderer (docs/design/3d-renderer.md)
   usd-lite/             pure-Rust USD reader and composition
   formats/              viewer-formats: the registry of every loader, shared by the app and the corpus
   corpus/               viewer-corpus: the test corpus runner (corpus/README.md)
@@ -303,18 +303,18 @@ samples/                one small file per supported format
 
 Outside it: libgui (UI) and libfilepicker (pickers), each its own repo, pinned by commit.
 
-Where it is heading (contracts, parsers, renderers, isolation kit and UI adapters as separate products; platform crates; the worker process; WASM plugins): docs/architecture.md.
+Where it is heading: the parsing libraries become **libfileparser** (a contracts crate, one crate per category of file, a front door with the hooks' defaults; docs/design/libfileparser.md), beside renderers, an isolation kit and UI adapters (docs/design/architecture.md).
 
 ---
 
 ## 11. Roadmap
 
-✅ done · 🟡 partly done · ⬜ not started. Updated 2026-11-03. **Opening every kind of file comes first; editors and further GUI work follow** (docs/roadmap-notes.md, docs/editing.md).
+✅ done · 🟡 partly done · ⬜ not started. Updated 2026-11-03. **Opening every kind of file comes first; editors and further GUI work follow** (docs/roadmap.md, docs/design/editing.md).
 
-**Next, in order** (reasons in docs/roadmap-notes.md §3 and docs/architecture.md §6): the test corpus (🟡 started: `corpus/`, run by `crates/corpus` on every CI platform); the command list and macOS menu; a thin contracts slice with a thumbnailer tool as its second user; then formats (XLSX first); then MuPDF in a helper process on desktop.
+**Next, in order** (reasons in docs/roadmap.md §3 and docs/design/architecture.md §6): the test corpus (✅ `corpus/`, run by `crates/corpus` on every CI platform); the command list and macOS menu; **libfileparser** from the ground up (`-core`, `-3d` first, the front door, the other categories; docs/design/libfileparser.md) with a thumbnail tool as its second user; then formats (XLSX first) in their category crates; then MuPDF in a helper process on desktop.
 
 1. ✅ **MVP (desktop):** shell, detection, Hex, images, text/code, Markdown, JSON tree, CSV, zip. Startup tracing and benchmark from day 1. Since then: folders as containers, image streaming in bands, memory budgets in CI.
-2. 🟡 **Documents:** done: PDF (MuPDF, PDFKit on iOS) with a tiled scrolling page view. Next: XLSX, comics, EPUB/DOCX, slides, in the order in docs/roadmap-notes.md §3. DOCX/XLSX/EPUB/CBZ only open as zip listings today, and that view stays available through **View as** beside the new one, text and hex (§1 there).
+2. 🟡 **Documents:** done: PDF (MuPDF, PDFKit on iOS) with a tiled scrolling page view. Next: XLSX, comics, EPUB/DOCX, slides, in the order in docs/roadmap.md §3. DOCX/XLSX/EPUB/CBZ only open as zip listings today, and that view stays available through **View as** beside the new one, text and hex (§1 there).
 3. 🟡 **3D:** done: RendererX (wgpu, clay/PBR/unlit, textures, streaming, off-thread pipelines), glTF/GLB/VRM, FBX and OBJ via ufbx (in place of Assimp), USD/USDZ with composition via `usd-lite`, `.blend` preview, blocked/missing file reporting. STL (welded, Z-up turned Y-up) and PLY (ASCII/binary, meshes and point clouds, colours). Left: MToon shading, Gaussian splats drawn as splats (they show as coloured points), animation playback (v2).
 4. ⬜ **Media:** our media library on FFmpeg's libraries for reading, decoding and trimming; Viewer's small player on top (§12.6).
 5. 🟡 **Mobile:** iOS/iPadOS runs (libfilepicker, folder grants, Open Folder…). Left: opening files tapped in the Files app (`CFBundleDocumentTypes`), bookmarks with a Recents list, then Android.
@@ -371,13 +371,13 @@ All file parsing goes through one interface, the **parser host**. Which isolatio
 
 In-process hardening (iOS, HarmonyOS, and the first line of defence everywhere):
 - **Pure-Rust parsers by default**: memory-safe, so a hostile file can cause an error but not memory corruption.
-- **Vetted C/C++ libraries natively** (decided 2026-11-03): only libraries that are widely shipped and continuously fuzzed (OSS-Fuzz or equivalent), such as FFmpeg, `dav1d`, `libass` and ufbx, each with strict `Limits`, our own fuzzing in CI, and a pinned, regularly updated version. Each one is listed in docs/architecture.md §5 with what it may touch.
+- **Vetted C/C++ libraries natively** (decided 2026-11-03): only libraries that are widely shipped and continuously fuzzed (OSS-Fuzz or equivalent), such as FFmpeg, `dav1d`, `libass` and ufbx, each with strict `Limits`, our own fuzzing in CI, and a pinned, regularly updated version. Each one is listed in docs/design/architecture.md §5 with what it may touch.
 - **Other C/C++ libraries only as WebAssembly** run in `wasmi` / wasmtime's Pulley interpreter (no JIT, so App-Store-legal). The sandbox is the isolation: a bug in the C code can only corrupt its own linear memory. Slower than native, which is acceptable for niche formats. Platform frameworks (ImageIO, PDFKit, AVFoundation) are used directly: the OS vendor maintains them.
 - **Budgets on every parse**: size, nesting depth, decompression ratio, memory and time. A parse over budget is cancelled.
 - **Panics are caught** at the loader boundary (already done), falling back to the next loader or hex.
 - iOS / macOS **Quick Look extensions** are separate processes managed by the OS, so previews from Files or Mail get process isolation for free.
 
-Phasing: the interface exists now and runs in-process everywhere. The worker process on desktop was to arrive with the first C/C++ parser. MuPDF now is one, and it still runs in-process on its render thread (docs/pdf.md §8), so the worker is due.
+Phasing: the interface exists now and runs in-process everywhere. The worker process on desktop was to arrive with the first C/C++ parser. MuPDF now is one, and it still runs in-process on its render thread (docs/design/pdf.md §8), so the worker is due.
 
 Rules out: calling a parser directly from UI code; native C on iOS that isn't on the vetted list.
 
@@ -426,7 +426,7 @@ Editing is **deliberately basic**, using the operation model (§12.5) with the s
 Every decision above is measured against §7: the startup benchmark runs in CI, and a change that makes "first frame showing the file" slower fails the build. Today's numbers (warm, M-series Mac): ~165 ms. The system font list and the GPU device are set up on threads. What's left is mostly the OS: building the event loop (~30 ms), creating the window (~50 ms) and macOS putting it on screen (~45 ms). Target ≤ 120 ms, then the §7 target.
 
 ### 12.8 One layout for every screen size
-The chrome adapts to width classes and input kind, not to the platform: see docs/responsive-ui.md.
+The chrome adapts to width classes and input kind, not to the platform: see docs/design/responsive-ui.md.
 
 ### 12.9 Folder access (iOS, sandboxed macOS)
 

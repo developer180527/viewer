@@ -4,7 +4,7 @@ use glam::{Vec2, Vec3, Vec4};
 
 use crate::TextureId;
 
-/// Which shading model draws a material (docs/3d-renderer.md §8). An open set: the
+/// Which shading model draws a material (docs/design/3d-renderer.md §8). An open set: the
 /// built-ins have constants, external models register their own names.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ShadingId(Cow<'static, str>);

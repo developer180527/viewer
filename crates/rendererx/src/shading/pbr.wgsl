@@ -1,4 +1,4 @@
-// `pbr`: glTF metallic-roughness (docs/3d-renderer.md §8.3). GGX specular with
+// `pbr`: glTF metallic-roughness (docs/design/3d-renderer.md §8.3). GGX specular with
 // height-correlated Smith visibility and Schlick Fresnel from the key light, plus a
 // procedural sky for ambient light and reflections (split-sum with an analytic
 // environment BRDF), then Khronos PBR Neutral tone mapping.

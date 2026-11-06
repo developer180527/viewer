@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 # Depends on rendererx-scene only, never rendererx or wgpu: it must run in a parser
-# worker or sandbox before any GPU exists (docs/3d-renderer.md §2).
+# worker or sandbox before any GPU exists (docs/design/3d-renderer.md §2).
 [dependencies]
 rendererx-scene.workspace = true
 serde = { version = "1", features = ["derive"] }

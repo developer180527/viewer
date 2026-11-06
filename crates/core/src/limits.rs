@@ -1,6 +1,6 @@
 //! Caps every loader applies to what a file claims, so a small hostile file can't make
 //! Viewer allocate gigabytes (PLAN.md §8). They will move into `ParseContext`'s
-//! `Limits` (docs/architecture.md §3), where an app can set its own.
+//! `Limits` (docs/design/architecture.md §3), where an app can set its own.
 
 /// Most pixels a decoded image may have: 16384 × 16384, 1 GiB as RGBA. Above it the
 /// file is refused, not allocated; the largest real panoramas and scans fit under it.

@@ -1,4 +1,4 @@
-//! PDF pages through Apple's PDFKit (docs/pdf.md §2), behind
+//! PDF pages through Apple's PDFKit (docs/design/pdf.md §2), behind
 //! `viewer_core::PageSource`. The PDF backend on iOS, where MuPDF can't ship; on
 //! macOS it builds too, for comparing the two.
 //!

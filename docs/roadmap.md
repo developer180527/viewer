@@ -2,11 +2,11 @@
 
 Written 2026-11-02. PLAN.md §11 has the roadmap's status; this note holds the reasoning behind its next steps.
 
-**Priority: open every kind of file properly first.** Editing and further GUI work come after. The editing design waits in [editing.md](editing.md).
+**Priority: open every kind of file properly first.** Editing and further GUI work come after. The editing design waits in [editing.md](design/editing.md).
 
 ## 1. Every view of a file stays available
 
-A file can be several things at once, and **View as** offers all of them. A format-specific view never takes the others away.
+A file can be several things at once, and **View as** offers all of them. A format-specific view never takes the others away. With libfileparser this becomes the **facet** model (docs/design/document-model.md): a document lists its own facets (a DOCX's document, structure and parts), the front door adds raw and source facets, and other readings (zip) add only what's new. Until then, it works through loaders as below.
 
 A `.docx` has four views:
 
@@ -50,9 +50,9 @@ Menus: File, Edit, View, Window, Help.
 
 ## 3. Order of work
 
-1. **Test corpus,** first with PDF, 3D and images, then growing with every format: "supported" means passing it on every platform. Its design is in [pdf.md](pdf.md) §8. It comes first because it guards the restructure in step 3.
+1. **Test corpus,** first with PDF, 3D and images, then growing with every format: "supported" means passing it on every platform. Its design is in [pdf.md](design/pdf.md) §8. It comes first because it guards the restructure in step 3.
 2. **Command list and native macOS menu.** Small, and required on the Mac.
-3. **Thin contracts slice** and a thumbnailer tool as its second user ([architecture.md](architecture.md) §6, steps 2–3). Only what the next formats need; the rest of the restructure waits.
+3. **libfileparser** ([libfileparser.md](design/libfileparser.md)): `-core`, then `-3d`, then the front door, then the other categories; a thumbnail tool as its second user. New formats from here on land in their category crate.
 4. **Formats:**
 
 | Order | Formats | Why | Work |
@@ -64,7 +64,7 @@ Menus: File, Edit, View, Window, Help.
 | 5 | **Audio and video** | Core to "opens anything"; our media library on FFmpeg's libraries, not libVLC (PLAN.md §12.6) | Medium to large: the library, then a small player; a separate track |
 | 6 | **Long tail** | 7z, RAR, SQLite, fonts, HEIC, RAW, STEP, DICOM | Many small jobs |
 
-Not chosen for the App Store build: MuPDF's own EPUB, XPS and other extras, which docs/pdf.md §2 keeps off iOS. Reconsider EPUB with the flowing-document view (format 3): our own reader would work on iOS too, whereas MuPDF's wouldn't. That would change the "not on iOS" row for EPUB.
+Not chosen for the App Store build: MuPDF's own EPUB, XPS and other extras, which docs/design/pdf.md §2 keeps off iOS. Reconsider EPUB with the flowing-document view (format 3): our own reader would work on iOS too, whereas MuPDF's wouldn't. That would change the "not on iOS" row for EPUB.
 
 ## 4. 3D editing, for later
 

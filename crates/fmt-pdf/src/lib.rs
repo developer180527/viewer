@@ -1,4 +1,4 @@
-//! PDF as pages (docs/pdf.md). Opening reads the page count only; the view renders.
+//! PDF as pages (docs/design/pdf.md). Opening reads the page count only; the view renders.
 //!
 //! The backend is fixed by the build: MuPDF everywhere but iOS, PDFKit on iOS. On
 //! macOS `VIEWER_PDF_BACKEND=pdfkit` switches to PDFKit, for comparing the two.

@@ -8,7 +8,7 @@
 //! Everything a file controls is checked against [`SceneLimits`] on the way in:
 //! stream lengths, index ranges, counts and sizes. Nothing here panics on bad input.
 //!
-//! See docs/3d-renderer.md §4–§6 and §12.
+//! See docs/design/3d-renderer.md §4–§6 and §12.
 
 mod error;
 mod material;

@@ -5,7 +5,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# Must not depend on viewer-core, libgui, image or any format crate (docs/3d-renderer.md §2).
+# Must not depend on viewer-core, libgui, image or any format crate (docs/design/3d-renderer.md §2).
 [features]
 default = []
 # Orbit / pan / zoom camera controller.

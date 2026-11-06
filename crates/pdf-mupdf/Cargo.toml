@@ -4,7 +4,7 @@ description = "PDF (and XPS) pages through MuPDF, built from source."
 version.workspace = true
 edition.workspace = true
 # MuPDF is AGPL, so this crate is too. Nothing MIT/Apache depends on it except the
-# app (docs/pdf.md §3).
+# app (docs/design/pdf.md §3).
 license = "AGPL-3.0-or-later"
 links = "mupdf"
 

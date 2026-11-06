@@ -7,7 +7,7 @@
 use rendererx_scene::{AlphaMode, ColorSpace, Material, ParamValue, ShadingId, Slot, TextureData, TextureFormat, TextureId};
 use wgpu::util::DeviceExt;
 
-/// The fragment stage a material is drawn with (docs/3d-renderer.md §8.3).
+/// The fragment stage a material is drawn with (docs/design/3d-renderer.md §8.3).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub(crate) enum Model {
     Clay,

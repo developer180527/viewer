@@ -1,6 +1,6 @@
 # Architecture: several products, one repo
 
-Status: direction agreed, nothing moved yet. Crate names are placeholders. Written 2026-11-03.
+Status: direction agreed, nothing moved yet. Written 2026-11-03. The parsing libraries are designed in detail in [libfileparser.md](libfileparser.md); this note holds the principles and the products around them.
 
 **Everything here is explicitly pre-v1.** APIs change freely for months, and each library says so in its README and version (0.x). No compatibility promises yet.
 
@@ -16,10 +16,12 @@ We aren't making one product. We're making an app, parsing libraries, contracts,
 
 | Product | Contains | Depends on |
 |---|---|---|
-| **Contracts** | `Document`, `Content`, traits, hook types | Almost nothing |
-| **Parsers** | One crate per format family, plus an optional "everything" bundle | Contracts |
-| **Renderers** | Pixel and texture renderers per content type | Contracts |
-| **Isolation kit** | Wire protocol, shared memory, remote wrappers; optional | Contracts |
+| **Contracts:** `libfileparser-core` | `Document`, `Content`, the hook traits, `Limits`, errors | Almost nothing |
+| **Parsers:** `libfileparser-images`, `-3d`, `-docs`, `-data`, `-text`, `-archives`, later `-media` | One crate per category, each reading any file of its kind into a document with facets (document-model.md), each usable alone | Contracts (and `-images`, a leaf) |
+| **Front door:** `libfileparser` | Routing, default hooks, laziness, features | The categories enabled |
+| **Previews:** `libfileparser-thumb` | Any document → RGBA on the CPU | Contracts |
+| **Renderers** | GPU: RendererX for scenes; tiled images and pages later | Contracts' data types |
+| **Isolation kit:** `libfileparser-remote` | Wire protocol, shared memory, remote wrappers; optional | Contracts |
 | **UI adapters** | libgui widgets over the renderers | Renderers, libgui |
 | **Viewer** | All policy: helpers, sandboxing, lazy loading, menus | All of the above |
 
@@ -47,9 +49,10 @@ pub struct ParseContext<'a> {
     pub cancel: Cancel,
     pub spawn: &'a dyn Spawn,         // background work runs where the app says
     pub notify: &'a dyn Notify,       // "more arrived"; replaces the global WAKE
-    pub alloc: &'a dyn AllocHook,     // what C libraries allocate through (§5)
 }
 ```
+
+An allocator hook for C libraries (§5) joins these only when a helper process doesn't already cover it.
 
 **3. Registration is explicit and lazy.** The app lists what it wants, and nothing runs until a matching file opens. Backends are Cargo features.
 
@@ -62,7 +65,7 @@ let pages: Arc<dyn PageSource> = RemotePages::connect(pipe);
 
 Viewer's choice: helper on desktop, in-process on iOS.
 
-**5. Simple use stays simple.** `viewer_parse::open(path)` works with strict default limits.
+**5. Simple use stays simple.** `libfileparser::open(path)` works with strict default limits.
 
 **6. Memory is part of every contract.** Any app should be able to read any kind of file cheaply, so every library:
 - reads only what it needs: headers first, files mapped, the rest streamed; never a whole file when part will do;
@@ -99,12 +102,12 @@ Our own code breaks the rule too: `fmt-3d/src/textures.rs` and `core/src/content
 
 ## 6. Order
 
-Opening every kind of file stays the priority (roadmap-notes.md), so the restructure comes in a thin slice first, and the rest only when something needs it.
+Opening every kind of file stays the priority (docs/roadmap.md), so the restructure comes in a thin slice first, and the rest only when something needs it.
 
-1. **Test corpus** (PDF, 3D, images first): it is what proves each later step broke nothing.
-2. **Thin contracts slice:** split the contracts crate; `ParseContext` with `files`, `limits`, `cancel` and `notify` (replacing the global `WAKE`); `PageSource` in the sink and cancel form; move loaders onto it. Contracts carry data as owned bytes or a shared-memory handle, never a pointer into a parser (3D's mapped vertex data included).
-3. **A second user alongside:** a small thumbnailer command-line tool built on the contracts and parsers alone. Whatever it can't do without reaching into the app shows where a boundary is wrong.
-4. **Formats** continue on the new structure (roadmap-notes.md §3).
+1. ✅ **Test corpus** (corpus/README.md): it is what proves each later step broke nothing.
+2. **libfileparser, from the ground up** (libfileparser.md §9): `-core` with the hooks and lazy sources; `-3d` first, because it uses every hook; the front door; then the other categories one at a time. Contracts carry data as owned bytes or a shared-memory handle, never a pointer into a parser (3D's mapped vertex data included).
+3. **A second user:** `-thumb` and a thumbnail command-line tool on the libraries alone. Whatever it can't do without reaching into Viewer shows where a boundary is wrong.
+4. **Formats** continue on the new structure (docs/roadmap.md §3), each in its category crate.
 5. **MuPDF in a helper process on desktop:** the first real use of isolation, for the most common hostile format.
 6. **Only when needed:** remove `rayon` from `image` and route our threads through `Spawn`; allocator hooks for C libraries, as counting for budgets (§5); the general isolation kit; moving renderers and views out of the app.
 

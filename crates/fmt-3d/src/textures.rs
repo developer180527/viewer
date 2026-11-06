@@ -1,6 +1,6 @@
 //! Texture decoding, off the loader's critical path: a model's geometry is on screen
 //! first, then its images decode on worker threads and arrive in the scene one by one
-//! (docs/3d-renderer.md §7.1).
+//! (docs/design/3d-renderer.md §7.1).
 //!
 //! Images are scaled to at most [`MAX_SIDE`] and get a full mip chain here, so the
 //! renderer only copies bytes. Mips of colour textures are averaged in linear light.

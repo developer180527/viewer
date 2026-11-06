@@ -1,4 +1,4 @@
-//! PDF pages through MuPDF (docs/pdf.md §2), behind `viewer_core::PageSource`.
+//! PDF pages through MuPDF (docs/design/pdf.md §2), behind `viewer_core::PageSource`.
 //!
 //! MuPDF is reached only through shim/shim.c, which turns its setjmp-based errors
 //! into return codes. Each document has its own MuPDF context and is used under a

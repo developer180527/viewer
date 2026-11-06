@@ -1,4 +1,4 @@
-//! The paged view (docs/pdf.md §7): every page one after another in a vertical
+//! The paged view (docs/design/pdf.md §7): every page one after another in a vertical
 //! scroll, laid out from page sizes alone and rendered in tiles on a background
 //! thread, only where the window looks.
 //!

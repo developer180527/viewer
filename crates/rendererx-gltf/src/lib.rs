@@ -8,7 +8,7 @@
 //! - **No image decoding.** Textures are reserved in the scene and returned as encoded
 //!   [`PendingImage`]s; the host decodes them on its own threads and sets them through
 //!   a [`TextureSink`](rendererx_scene::TextureSink).
-//! - **Shading as authored** (docs/3d-renderer.md §6): core → `pbr`,
+//! - **Shading as authored** (docs/design/3d-renderer.md §6): core → `pbr`,
 //!   `KHR_materials_unlit` → `unlit`, `VRMC_materials_mtoon` → `mtoon`.
 //! - **Show what can be shown.** A broken primitive, texture or external file is a
 //!   warning; only an unreadable container or JSON fails the load.

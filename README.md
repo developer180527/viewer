@@ -54,7 +54,7 @@ Automation flags: `--benchmark` (prints startup timings and exits once the file 
 
 ## Licence
 
-MIT or Apache-2.0, except `crates/pdf-mupdf`, which links MuPDF and is AGPL-3.0-or-later. Desktop and Android builds include it, so those builds of the app are distributed under the AGPL; iOS builds use PDFKit and contain no MuPDF (docs/pdf.md §3).
+MIT or Apache-2.0, except `crates/pdf-mupdf`, which links MuPDF and is AGPL-3.0-or-later. Desktop and Android builds include it, so those builds of the app are distributed under the AGPL; iOS builds use PDFKit and contain no MuPDF (docs/design/pdf.md §3).
 
 ## Layout
 
@@ -73,7 +73,7 @@ crates/usd-lite      pure-Rust USD reader and composition
 crates/formats       the registry of every loader (app and corpus share it)
 crates/corpus        test corpus runner: opens every file in corpus/ and checks the result
 crates/app           libgui + wgpu shell and views
-docs/                design notes: architecture, roadmap notes, PDF, 3D renderer, responsive UI, editing
+docs/                design docs (start at docs/README.md): roadmap, decisions, design/ (document model, libfileparser, 3D, architecture, PDF, renderer, UI, editing)
 ios/                 Xcode wrapper and device / simulator scripts
 bench/               sample generator, startup and memory benchmarks
 samples/             one small file per supported format

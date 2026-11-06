@@ -1,4 +1,4 @@
-//! Golden screenshots: each width class (docs/responsive-ui.md) drawn headless by
+//! Golden screenshots: each width class (docs/design/responsive-ui.md) drawn headless by
 //! the CPU renderer and compared with the PNGs in `tests/goldens/`.
 //!
 //! After an intended UI change, regenerate them and look at the result:

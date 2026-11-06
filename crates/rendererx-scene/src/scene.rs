@@ -65,7 +65,7 @@ pub enum GeometryState {
 #[derive(Debug)]
 pub struct MeshEntry {
     pub info: MeshInfo,
-    /// `None` once released after upload (docs/3d-renderer.md §11.1).
+    /// `None` once released after upload (docs/design/3d-renderer.md §11.1).
     pub data: Option<MeshData>,
     pub changed: u64,
     /// Ids of the readers that have uploaded this data; it is freed once every live

@@ -91,7 +91,7 @@ pub trait PageSource: Send + Sync {
 }
 ```
 
-This is the trait as built. It moves to the sink and cancel form in docs/architecture.md §3 (`render(..., into: &mut dyn PixelSink, cancel: &Cancel)`), so a helper process can stand behind it; that is step 2 of the order there.
+This is the trait as built. It moves to the sink and cancel form in docs/design/architecture.md §3 (`render(..., into: &mut dyn PixelSink, cancel: &Cancel)`), so a helper process can stand behind it; that is step 2 of the order there.
 
 The loader only opens the file and reads page sizes. That is fast, so the page appears at once and rendering happens in the view.
 

@@ -1,4 +1,4 @@
-// Clay: the shading every model gets first (docs/3d-renderer.md §7.3), and the only
+// Clay: the shading every model gets first (docs/design/3d-renderer.md §7.3), and the only
 // one STL/PLY files need. Soft sky/ground ambient, a key light that follows the
 // camera, a faint rim; the base colour map is multiplied in. Masked materials keep
 // their cutouts here too: every model without its own stage yet (mtoon, matcap…)
