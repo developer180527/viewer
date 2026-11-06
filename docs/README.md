@@ -12,7 +12,7 @@ How the docs are organised, and what to read first.
 | [design/document-model.md](design/document-model.md) | **How a file is represented:** readings, documents and their facets. Everything below builds on it |
 | [design/libfileparser.md](design/libfileparser.md) | The parsing libraries: what every category library must be (complete, a stable flat API, trivially extended, embeddable), the crates, hooks, front door, and how they are tested |
 | [design/libfileparser-3d.md](design/libfileparser-3d.md) | The 3D parsing library, format by format |
-| [design/architecture.md](design/architecture.md) | The products around the libraries (renderers, isolation, UI adapters), the rules they follow, and the audit of third-party libraries |
+| [design/architecture.md](design/architecture.md) | The two halves, libfileparser (reading) and libviewer (rendering), the products around them, the rules they follow, and the audit of third-party libraries |
 
 Then the design of each part, as needed:
 

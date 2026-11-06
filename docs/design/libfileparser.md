@@ -18,8 +18,8 @@ These four hold for **every** category library (`-images`, `-3d`, `-docs`, `-dat
 ## 2. Crates
 
 ```
-libfileparser                  front door: detection across categories, merging readings
-   │                           into one list of views, default hooks, features
+libfileparser                  all categories together, in the shared model: detection
+   │                           across them, readings merged into one document, features
    ├── libfileparser-images    ┐
    ├── libfileparser-3d        │
    ├── libfileparser-docs      │  category libraries: each reads ANY file of its kind,
@@ -262,30 +262,27 @@ Every category library, alone or through the front door, can live inside another
 | **Not only Rust** | `libfileparser-c` exposes the core shape (§4) and the category additions to C, C++, Swift and Kotlin |
 | **No panics across the boundary** | A panic in format code fails only what it was doing: opening (`Corrupt`), making a facet (that facet alone), a background job (that job; its bookkeeping still runs) |
 
-## 8. `libfileparser`: the front door
+## 8. `libfileparser`: every category together
+
+`libfileparser` holds the category libraries together in the shared model, and does nothing else. It has no policy and no defaults of its own: it takes the same `ParseContext` as any category, with `-core`'s defaults (`NoFiles`, `InlineSpawn`, desktop limits) unless the app gives its own. An app that wants one kind of file takes that category alone (`libfileparser-3d`, `libfileparser-text`); it never needs this crate.
 
 ```rust
-let doc = libfileparser::open("scene.usdz")?;                     // the simple case
-
-let lib = libfileparser::Library::new()                          // the app decides
-    .files(MyGrants::new())
-    .spawn(engine.jobs())
-    .notify(ui.waker())
-    .limits(Limits::mobile());
-let doc = lib.open(&src)?;
+let cx = ParseContext::new().with_files(FolderFiles::new());     // the app's policy, as for any category
+let doc = libfileparser::open(&src, &cx)?;                       // the same shape as a category
 for view in doc.views() { /* role, name, content model */ }       // every facet of every reading
-let stage = doc.view(1)?;                                         // made now, on first use
+let stage = doc.view(1, &cx)?;                                    // made now, on first use
 ```
 
-It is the same flat surface as a category (§4), across all enabled categories, plus:
+What it adds is only what no single category can do:
 
-1. **Detection** across every enabled reader, best first.
+1. **Detection across categories:** every enabled reader, best first.
 2. **Open the best reading;** on `NotThisFormat` or `Corrupt`, the next.
-3. **Merged views:** the document's facets, then the generic ones (Raw always; Source when text; Package when a container the reader didn't cover), then other readings' facets that add something new, made only when asked (document-model.md §4).
-4. **Default hooks:** `-core`'s `FolderFiles` made folder-grant aware, a `ThreadPool` in place of `InlineSpawn`, `Limits::desktop()` or `Limits::mobile()`. Each replaceable alone.
-5. **Containers:** a Package entry opens through the same router, as a child document.
-6. **Features** choose categories (`images`, `3d`, `docs`, `data`, `text`, `archives`, `media`) and backends (`docs-mupdf`). Presets: `minimal` (pure Rust, permissive, WASM too), `default` (common formats, permissive), `full`.
-7. **Nothing runs at startup:** readers are a static table; no category initialises until a matching file opens.
+3. **One document from several readings:** the best reading's facets, then the generic ones (Raw always; Source when text; Package when a container the reader didn't cover), then other readings' facets that add something new, made only when asked (document-model.md §4).
+4. **Containers:** a Package entry opens through the same detection, as a child document.
+5. **Features** choose categories (`images`, `3d`, `docs`, `data`, `text`, `archives`, `media`) and backends (`docs-mupdf`). Presets: `minimal` (pure Rust, permissive, WASM too), `default` (common formats, permissive), `full`.
+6. **Nothing runs at startup:** readers are a static table; no category initialises until a matching file opens.
+
+Thread pools, folder grants, platform limits and the like are the app's, through the hooks; Viewer's are in `crates/formats/src/libfileparser.rs`.
 
 ## 9. Tests, from outside the boundary
 
@@ -328,19 +325,19 @@ Tests are written against §4's API, never against internals, so they stay the s
 
 | App | Takes | Gets |
 |---|---|---|
+| **Any app that should open and show any file** | `libfileparser` + **libviewer** (architecture.md §2) | Every kind of file read and shown, with its own policy through the hooks |
 | Chat app, mail, file manager | `libfileparser` + `-thumb` | What a file is, metadata, a preview image; no GPU, no UI |
-| IDE or editor | `libfileparser` with `text`, `data`, `images`, `docs`, `3d` | Every facet: source with its language, structure trees, tables, pages, scenes, in its own widgets |
+| IDE or editor | `libfileparser` with `text`, `data`, `images`, `docs`, `3d`; libviewer's renderers, or its views where the toolkit matches | Every facet: source with its language, structure trees, tables, pages, scenes, in its own widgets or libviewer's |
 | Game engine editor | `-3d` + `-images` alone | Scenes, structure (USD stage, glTF nodes) and dependencies as data, with its own files and jobs through the hooks |
 | A tool for one format | Its format library alone (`usd-lite`) | That format's own API, no documents or hooks |
-| Viewer | All of it, plus `-remote` for MuPDF on desktop | Everything, with its own policy |
+| Viewer | All of it, libviewer, and `-remote` for MuPDF on desktop | Everything, with its own policy and shell |
 | Non-Rust apps | `-c` | The same, through C |
 
 ## 11. What stays out
 
 | Not in libfileparser | Where |
 |---|---|
-| GPU drawing | RendererX for scenes ([3d-renderer.md](3d-renderer.md)); later a small wgpu crate for tiled images and pages |
-| Widgets | UI adapters: Viewer's libgui views, later `libfileparser-libgui` |
+| Drawing documents, and views of them | **libviewer**, the rendering half (architecture.md §2): RendererX for scenes ([3d-renderer.md](3d-renderer.md)), tiled images and pages, and views for a UI toolkit (libgui first) |
 | Syntax highlighting, themes | A small crate over `Text` + language, or the app |
 | Editing | Edit sessions per format ([editing.md](editing.md)) |
 | Process isolation | `-remote`, optional |

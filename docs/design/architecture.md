@@ -14,18 +14,25 @@ We aren't making one product. We're making an app, parsing libraries, contracts,
 
 ## 2. The products
 
+Two halves, which together let any app open and show any kind of file by embedding them:
+
+- **libfileparser** reads files: any file into a document with facets (document-model.md), as plain data.
+- **libviewer** shows them: documents into pixels and interactive views.
+
+Each half works alone. A chat app or a server making thumbnails takes libfileparser (and its CPU previews); an app that already has its documents takes libviewer; most apps take both. Viewer is the first app built from them, and holds only policy and its own shell.
+
 | Product | Contains | Depends on |
 |---|---|---|
 | **Contracts:** `libfileparser-core` | `Document`, `Content`, the hook traits, `Limits`, errors | Almost nothing |
 | **Parsers:** `libfileparser-images`, `-3d`, `-docs`, `-data`, `-text`, `-archives`, later `-media` | One crate per category, each reading any file of its kind into a document with facets (document-model.md), each usable alone | Contracts (and `-images`, a leaf) |
-| **Front door:** `libfileparser` | Routing, default hooks, laziness, features | The categories enabled |
+| **All categories:** `libfileparser` | The categories held together in the shared model: detection across them, readings merged into one document, features. No policy or defaults of its own (libfileparser.md §8) | The categories enabled |
 | **Previews:** `libfileparser-thumb` | Any document → RGBA on the CPU | Contracts |
-| **Renderers** | GPU: RendererX for scenes; tiled images and pages later | Contracts' data types |
+| **libviewer: renderers** | Each content model to pixels on the GPU: RendererX for scenes; tiled images and pages; text, tables, trees and hex. No UI toolkit | Contracts' data types, wgpu |
 | **Isolation kit:** `libfileparser-remote` | Wire protocol, shared memory, remote wrappers; optional | Contracts |
-| **UI adapters** | libgui widgets over the renderers | Renderers, libgui |
-| **Viewer** | All policy: helpers, sandboxing, lazy loading, menus | All of the above |
+| **libviewer: views** | Interactive views over the renderers for one UI toolkit: libgui first (today's views in `crates/app/src/lg/`), others later | libviewer's renderers, the toolkit |
+| **Viewer** | All policy (hooks, helpers, sandboxing, limits) and the app shell (windows, menus, navigation) | libfileparser, libviewer |
 
-Parsers and renderers don't depend on each other, so either can be used alone. Lower-level libraries (RendererX, `usd-lite`, and third-party ones) don't know the contracts at all: a thin adapter crate connects each one to them.
+libfileparser and libviewer don't depend on each other's code, only on the shared data types, so either can be used alone. libviewer's design gets its own document when its first crate is split out of the app. Lower-level libraries (RendererX, `usd-lite`, and third-party ones) don't know the contracts at all: a thin adapter crate connects each one to them.
 
 Licences: everything is MIT/Apache except optional AGPL backends such as MuPDF, which are off by default. Enabling one is the app's choice and obligation. A default build has no permissive PDF backend off Apple platforms until `hayro` or PDFium is added as an option.
 

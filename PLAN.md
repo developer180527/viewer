@@ -304,7 +304,7 @@ samples/                one small file per supported format
 
 Outside it: libgui (UI) and libfilepicker (pickers), each its own repo, pinned by commit.
 
-Where it is heading: the parsing libraries become **libfileparser** (a contracts crate, one crate per category of file, a front door with the hooks' defaults; docs/design/libfileparser.md), beside renderers, an isolation kit and UI adapters (docs/design/architecture.md).
+Where it is heading: two halves any app can embed to open and show any file. **libfileparser** reads (a contracts crate, one crate per category of file, and one crate holding them together; docs/design/libfileparser.md); **libviewer** renders (the renderers, then views for a UI toolkit). Viewer becomes policy and its shell on top of both (docs/design/architecture.md).
 
 ---
 
