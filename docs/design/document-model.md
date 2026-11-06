@@ -58,6 +58,7 @@ A format offers only the roles it has: an STL has Primary, Source (if ASCII) and
   - **Source** when the file is text: `-text`'s reader, with the language the format's reader names (USDA is "usd"; `.gltf` is "json").
   - **Package** when the file is a known container (zip, tar) and the format's reader didn't provide its own.
 - A reader may also provide a Source or Package facet itself when no generic reader could: a GLB's JSON chunk is text, but only the glTF reader can find it.
+- **Anyone else** can add facets to a format through a facet provider, without changing its reader: a game engine adds a "Physics" inspector to USD (libfileparser.md §6).
 
 ### Linked facets
 
@@ -92,7 +93,7 @@ Opening must stay cheap however many facets a file has.
 2. **Open** runs only the best reading, and only as far as its primary facet needs; it lists the other facets as descriptors (role, name, content model) without making them.
 3. **A facet is made the first time it is asked for,** and kept while the document is open (within the caller's memory budget; a facet that can be remade cheaply may be dropped).
 4. **Other readings run only when one of their facets is asked for.**
-5. **Inside a facet, big content is still read by range:** pages, rows, lines, tree children, tiles, frames (libfileparser.md §2).
+5. **Inside a facet, big content is still read by range:** pages, rows, lines, tree children, tiles, frames (libfileparser.md §3).
 
 So opening a 2 GB USDZ builds the scene and lists five other facets; the Stage tree is built only if someone opens it, and the Package listing reads only the zip's central directory.
 

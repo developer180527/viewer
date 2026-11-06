@@ -1,6 +1,6 @@
 # libfileparser-3d: any 3D file, every facet of it
 
-Status: design agreed 2026-11-06; today's code is `viewer-fmt-3d`, `rendererx-gltf` and `usd-lite`, not yet in this shape. Built on [document-model.md](document-model.md) and [libfileparser.md](libfileparser.md).
+Status: design agreed 2026-11-06; today's code is `viewer-fmt-3d`, `rendererx-gltf` and `usd-lite`, not yet in this shape. Built on [document-model.md](document-model.md), and applies [libfileparser.md](libfileparser.md): the four requirements of its §1, its flat API (§4) and its rules (§5–7). This document holds only what is particular to 3D.
 
 **Goal:** read any 3D file into everything it is: a scene to draw, its own structure (USD prims, glTF nodes, FBX records), the text it's written in, the files packed inside it, the files it depends on, and its materials and textures, so an engine editor, an IDE or a viewer can each take what it needs.
 
@@ -53,7 +53,9 @@ Each reader records cheap cross-references (indices, not copies) where they exis
 
 Links are optional per format and come after the facets themselves.
 
-## 4. Inside the crate
+## 4. Inside the crate, and adding a format
+
+Its public API is the one every category has (libfileparser.md §4): `readers()`, `detect`, `open`, `open_with`. Everything 3D-specific is reached through facets, not extra API.
 
 ```
 libfileparser-3d
@@ -64,7 +66,9 @@ libfileparser-3d
   deps/      the Dependencies list: every referenced file and its status
 ```
 
-Below it, format libraries that know nothing of libfileparser and stay reusable on their own:
+`scene/`, `textures/`, `facets/` and `deps/` are the shared helpers that keep a new reader short (libfileparser.md §6): adding 3MF is a `readers/threemf.rs` that unzips its model XML and calls `scene/` to build meshes and materials, one line in `readers()`, and a corpus file. Textures, dependencies, units, the Dependencies and Textures facets, and the conformance suite come with it.
+
+Under the readers, format libraries that know nothing of libfileparser and stay usable on their own (libfileparser.md §6). Each keeps its own extension points (glTF extensions, USD schemas, PLY properties, FBX custom properties) and keeps data no extension understands.
 
 | Library | Role | Adapter in `-3d` |
 |---|---|---|
@@ -112,10 +116,11 @@ Every reader converts to one convention so engines and renderers don't each hand
 
 The corpus passes after every step; each step adds corpus files for what it adds.
 
-1. **Move as is:** the readers into `libfileparser-3d` on `-core`, each producing a document whose only facet is the Scene. Hooks replace `std::fs`, threads and `WAKE`. Viewer opens 3D through it.
-2. **Dependencies** for every reader, and the Dependencies and Textures facets.
-3. **USD:** Stage, Layers and Variants facets; the Materials facet.
-4. **glTF/GLB:** the glTF tree, GLB chunks and JSON chunk.
-5. **FBX, OBJ, PLY, `.blend`:** Records, Objects, Header, Blocks, embedded and packed files.
-6. **Links between facets** (§3), starting with USD prim ↔ Scene node ↔ source line.
-7. **New formats** in their own readers: 3MF, STEP, LAS, splats.
+1. **Separate and audit:** `rendererx-gltf` renamed as the glTF reader it is, apart from RendererX; `usd-lite`, the glTF reader and the ufbx binding checked against libfileparser.md §5 and given spec tests, a fuzz target and a public-API snapshot. STL and PLY stay small parsers inside their readers.
+2. **Move as is:** the readers into `libfileparser-3d` on `-core`, each producing a document whose only facet is the Scene. Hooks replace `std::fs`, threads and `WAKE`. Viewer opens 3D through it.
+3. **Dependencies** for every reader, and the Dependencies and Textures facets.
+4. **USD:** Stage, Layers and Variants facets; the Materials facet.
+5. **glTF/GLB:** the glTF tree, GLB chunks and JSON chunk.
+6. **FBX, OBJ, PLY, `.blend`:** Records, Objects, Header, Blocks, embedded and packed files.
+7. **Links between facets** (§3), starting with USD prim ↔ Scene node ↔ source line.
+8. **New formats** in their own readers: 3MF, STEP, LAS, splats.

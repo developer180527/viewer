@@ -105,7 +105,7 @@ Our own code breaks the rule too: `fmt-3d/src/textures.rs` and `core/src/content
 Opening every kind of file stays the priority (docs/roadmap.md), so the restructure comes in a thin slice first, and the rest only when something needs it.
 
 1. ✅ **Test corpus** (corpus/README.md): it is what proves each later step broke nothing.
-2. **libfileparser, from the ground up** (libfileparser.md §9): `-core` with the hooks and lazy sources; `-3d` first, because it uses every hook; the front door; then the other categories one at a time. Contracts carry data as owned bytes or a shared-memory handle, never a pointer into a parser (3D's mapped vertex data included).
+2. **libfileparser, from the ground up** (libfileparser.md §12): `-core` with the hooks and lazy sources; `-3d` first, because it uses every hook; the front door; then the other categories one at a time. Contracts carry data as owned bytes or a shared-memory handle, never a pointer into a parser (3D's mapped vertex data included).
 3. **A second user:** `-thumb` and a thumbnail command-line tool on the libraries alone. Whatever it can't do without reaching into Viewer shows where a boundary is wrong.
 4. **Formats** continue on the new structure (docs/roadmap.md §3), each in its category crate.
 5. **MuPDF in a helper process on desktop:** the first real use of isolation, for the most common hostile format.
