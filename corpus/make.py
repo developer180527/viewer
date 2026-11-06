@@ -178,6 +178,38 @@ def Mesh "Tri"
     write("3d/spiral.ply", header + "\n".join(pts) + "\n")
 
 
+    # FBX as text (ASCII 7.4): one triangle, with only what ufbx needs.
+    write("3d/tri.fbx", """; FBX 7.4.0 project file
+FBXHeaderExtension:  {
+\tFBXHeaderVersion: 1003
+\tFBXVersion: 7400
+}
+Objects:  {
+\tGeometry: 1000, "Geometry::Tri", "Mesh" {
+\t\tVertices: *9 {
+\t\t\ta: 0,0,0,1,0,0,0,1,0
+\t\t}
+\t\tPolygonVertexIndex: *3 {
+\t\t\ta: 0,1,-3
+\t\t}
+\t}
+\tModel: 2000, "Model::Tri", "Mesh" {
+\t}
+}
+Connections:  {
+\tC: "OO",1000,2000
+\tC: "OO",2000,0
+}
+""")
+
+    # .blend: a legacy little-endian 64-bit header, a REND block, then the 4x4
+    # preview Blender saves in a TEST block (rows bottom-up), then ENDB.
+    def block(code, data):
+        return code + struct.pack("<I", len(data)) + bytes(8 + 4 + 4) + data
+    pixels = b"".join(bytes(checker(x * 8, y * 8)) for y in range(4) for x in range(4))
+    blend = b"BLENDER-v283" + block(b"REND", bytes(72)) + block(b"TEST", struct.pack("<II", 4, 4) + pixels) + block(b"ENDB", b"")
+    write("3d/preview.blend", blend)
+
 # ---------------------------------------------------------------- PDF
 
 def pdf(pages):

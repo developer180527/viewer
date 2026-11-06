@@ -1,4 +1,4 @@
-//! FBX and OBJ through ufbx, into a RendererX CPU scene.
+//! FBX and OBJ through ufbx, into a CPU scene (`scene-data`).
 //!
 //! ufbx converts axes and units (Y up, metres), triangulates polygons and resolves the
 //! node hierarchy. Each mesh is converted once per material part and placed by every
@@ -41,7 +41,7 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps:
         ..Default::default()
     };
     let root = ufbx::load_memory(src.bytes(), opts).map_err(|e| anyhow!("{}", e.description))?;
-    let (scene, mut builder) = crate::new_scene(cx);
+    let (scene, mut builder) = crate::build::new_scene(cx);
     // ufbx's own notes (repaired indices…), deduplicated by its count.
     let mut warnings: Vec<String> = root
         .metadata
@@ -144,7 +144,7 @@ impl Images {
 
     fn queue(&mut self, source: ImageSource, color_space: ColorSpace, b: &mut SceneBuilder) -> Option<TextureId> {
         let texture = b.reserve_texture().ok()?;
-        self.jobs.push(ImageJob { texture, source, color_space });
+        self.jobs.push(ImageJob::new(texture, source, color_space));
         Some(texture)
     }
 
@@ -378,4 +378,57 @@ fn material(m: &ufbx::Material) -> Material {
         }
     }
     out
+}
+
+// ---------------------------------------------------------------- the readers
+
+use libfileparser_core::{Category, Detection, Document, Reader, ReaderInfo};
+
+use crate::build::{SceneDocument, detect_by};
+
+/// FBX and OBJ are both read by ufbx; only the format and the wording differ.
+fn open_with_ufbx(reader: &'static str, format: ufbx::FileFormat, name: &str, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+    cx.cancel.check()?;
+    let deps = Dependencies::new();
+    let loaded = load(src, format, cx, &deps).map_err(super::parse_error)?;
+    SceneDocument::new(reader, name, loaded.scene).warnings(loaded.warnings).textures(loaded.pending, loaded.textures).dependencies(deps).build()
+}
+
+pub struct FbxReader;
+
+static FBX: ReaderInfo = ReaderInfo::new("fbx", "FBX model", Category::ThreeD).extensions(&["fbx"]);
+
+impl Reader for FbxReader {
+    fn info(&self) -> &ReaderInfo {
+        &FBX
+    }
+
+    fn detect(&self, header: &[u8], name: &str) -> Detection {
+        detect_by(&FBX, header.starts_with(b"Kaydara FBX Binary"), name)
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+        let format = if src.header().starts_with(b"Kaydara FBX Binary") { "FBX (binary)" } else { "FBX (ASCII)" };
+        open_with_ufbx("fbx", ufbx::FileFormat::Fbx, format, src, cx)
+    }
+}
+
+pub struct ObjReader;
+
+static OBJ: ReaderInfo = ReaderInfo::new("obj", "OBJ model", Category::ThreeD).extensions(&["obj"]).mime_types(&["model/obj"]);
+
+impl Reader for ObjReader {
+    fn info(&self) -> &ReaderInfo {
+        &OBJ
+    }
+
+    fn detect(&self, _: &[u8], name: &str) -> Detection {
+        // No magic: `.obj` is also a compiler object file, which fails here and falls
+        // through to the next reader.
+        detect_by(&OBJ, false, name).with_language("obj")
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+        open_with_ufbx("obj", ufbx::FileFormat::Obj, "Wavefront OBJ", src, cx)
+    }
 }

@@ -112,6 +112,12 @@ path = "corpus/files/3d/tetra.stl"
 [[file]]
 path = "corpus/files/3d/spiral.ply"
 
+[[file]]
+path = "corpus/files/3d/tri.fbx"
+
+[[file]]
+path = "corpus/files/3d/preview.blend"
+
 # ---------------------------------------------------------------- folders
 
 [[file]]

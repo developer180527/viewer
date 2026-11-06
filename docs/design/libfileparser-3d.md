@@ -1,6 +1,6 @@
 # libfileparser-3d: any 3D file, every facet of it
 
-Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` on `-core`, every reader with its Scene (or Preview) facet, files, threads and progress through the hooks, every reader with a committed sample passing conformance; Viewer opens 3D through it (§9 step 2). The other facets are §9 steps 3–7. Built on [document-model.md](document-model.md), and applies [libfileparser.md](libfileparser.md): the four requirements of its §1, its flat API (§4) and its rules (§5–7). This document holds only what is particular to 3D.
+Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` on `-core`, every reader with its Scene (or Preview) facet, files, threads and progress through the hooks, every reader passing conformance on committed samples (the suite walks `readers()`, so a reader without samples fails); one module per reader in `readers/`, the shared helpers public in `build` (§4); Viewer opens 3D through it (§9 step 2). The other facets are §9 steps 3–7. Built on [document-model.md](document-model.md), and applies [libfileparser.md](libfileparser.md): the four requirements of its §1, its flat API (§4) and its rules (§5–7). This document holds only what is particular to 3D.
 
 **Goal:** read any 3D file into everything it is: a scene to draw, its own structure (USD prims, glTF nodes, FBX records), the text it's written in, the files packed inside it, the files it depends on, and its materials and textures, so an engine editor, an IDE or a viewer can each take what it needs.
 
@@ -59,14 +59,15 @@ Its public API is the core shape every category has (libfileparser.md §4): `rea
 
 ```
 libfileparser-3d
-  readers/   gltf, fbx (+ obj via ufbx), stl, ply, usd, blend    one Reader each
-  scene/     building `scene-data` scenes: meshes, materials, nodes, bounds, up-axis and units
-  textures/  texture jobs: find (files hook), decode (-images), reduce, mips; via spawn and notify
-  facets/    tree, table and container builders shared by the readers
-  deps/      the Dependencies list: every referenced file and its status
+  readers/   gltf, fbx (+ obj, both via ufbx), stl, ply, usd, blend   ✅ one module each: its Reader and its parsing
+  build      ✅ public: new_scene (a scene within the limits), SceneDocument (the document every scene becomes),
+             scene_error, detect_by, decode_textures, find_texture, ImageJob/ImageSource
+  textures   ✅ texture jobs: find (files hook), decode, reduce, mips; via spawn and notify (later through -images)
+  facets/    ⬜ tree, table and container builders shared by the readers
+  deps/      ⬜ the Dependencies and Textures facets, from each reader's Dependencies
 ```
 
-`scene/`, `textures/`, `facets/` and `deps/` are the shared helpers that keep a new reader short (libfileparser.md §6): adding 3MF is a `readers/threemf.rs` that unzips its model XML and calls `scene/` to build meshes and materials, one line in `readers()`, and a corpus file. Textures, dependencies, units, the Dependencies and Textures facets, and the conformance suite come with it.
+`build` holds the shared pieces that keep a reader short (libfileparser.md §6), and is public, so a reader outside the crate uses the same ones (`tests/extend.rs` adds an OFF reader that way and passes conformance). Adding 3MF is a `readers/threemf.rs` that unzips its model XML, fills a scene from `new_scene` and returns a `SceneDocument`; one line in `readers()`; a corpus file listed in `tests/conformance.rs`. Textures, dependencies, limits and the counts every scene shows come with it, and the Dependencies and Textures facets will too.
 
 Under the readers, format libraries that know nothing of libfileparser and stay usable on their own (libfileparser.md §6). Each keeps its own extension points (glTF extensions, USD schemas, PLY properties, FBX custom properties) and keeps data no extension understands.
 
@@ -117,7 +118,7 @@ Every reader converts to one convention so engines and renderers don't each hand
 The corpus passes after every step; each step adds corpus files for what it adds.
 
 1. **Separate and audit:** 🟡 `gltf-lite` and `scene-data` renamed apart from RendererX (2026-11-06); still to do: `usd-lite`, the glTF reader and the ufbx binding checked against libfileparser.md §5 and given spec tests, a fuzz target and a public-API snapshot. STL and PLY stay small parsers inside their readers.
-2. ✅ **Move as is:** the readers into `libfileparser-3d` on `-core`, each producing a document whose only facet is the Scene. Hooks replace `std::fs`, threads and `WAKE`. Viewer opens 3D through it.
+2. ✅ **Move as is:** the readers into `libfileparser-3d` on `-core`, each producing a document whose only facet is the Scene. Hooks replace `std::fs`, threads and `WAKE`. Viewer opens 3D through it. Then (2026-11-06) one module per reader, the helpers public in `build`, conformance over every entry of `readers()`, and FBX (ASCII) and `.blend` samples in the corpus.
 3. **Dependencies** for every reader, and the Dependencies and Textures facets.
 4. **USD:** Stage, Layers and Variants facets; the Materials facet.
 5. **glTF/GLB:** the glTF tree, GLB chunks and JSON chunk.

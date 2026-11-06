@@ -18,6 +18,8 @@ pub const MAX_SIDE: u32 = 2048;
 /// Encoded image files larger than this aren't read.
 const MAX_FILE: u64 = 256 << 20;
 
+/// Where a texture's image comes from.
+#[non_exhaustive]
 pub enum ImageSource {
     /// Encoded bytes (embedded in the model, or in a GLB).
     Bytes(Stream<u8>),
@@ -29,10 +31,17 @@ pub enum ImageSource {
     MetalRough { roughness: Option<(Box<ImageSource>, usize)>, metalness: Option<(Box<ImageSource>, usize)> },
 }
 
+/// One image to decode into one of the scene's textures.
 pub struct ImageJob {
-    pub texture: TextureId,
-    pub source: ImageSource,
-    pub color_space: ColorSpace,
+    texture: TextureId,
+    source: ImageSource,
+    color_space: ColorSpace,
+}
+
+impl ImageJob {
+    pub fn new(texture: TextureId, source: ImageSource, color_space: ColorSpace) -> Self {
+        Self { texture, source, color_space }
+    }
 }
 
 /// Queues one background job per image (`cx.spawn`), each setting its result on the
@@ -438,8 +447,12 @@ pub fn candidates(relative: &str, absolute: &str, dirs: &[&str]) -> Vec<String> 
     out
 }
 
-/// The texture a model names, found through the files hook in [`candidates`] and
-/// recorded once in `deps` under [`report_name`].
+/// The texture a model names, found through the files hook and recorded once in
+/// `deps` under the file name it was stored with. `relative` and `absolute` are the
+/// paths the model stored (either may be empty); each of `dirs` (relative to the model,
+/// `""` for its own folder) is tried with the stored relative path, then the file name
+/// alone and in a `textures/` folder. A path that climbs out or is absolute is only
+/// tried by name.
 pub fn find(cx: &ParseContext, deps: &Dependencies, from: &FileSource, relative: &str, absolute: &str, dirs: &[&str]) -> Option<FileSource> {
     let report = report_name(relative, absolute);
     if report.is_empty() {

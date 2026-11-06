@@ -256,7 +256,7 @@ pub fn load(bytes: &[u8], cx: &ParseContext) -> Result<Loaded> {
         };
     }
 
-    let (scene, mut builder) = crate::new_scene(cx);
+    let (scene, mut builder) = crate::build::new_scene(cx);
     let id = builder.add_mesh(mesh).context("the mesh")?;
     // Vertex colours are the surface's colour: a white factor shows them as they are
     // (clay's own grey would darken them).
@@ -404,6 +404,33 @@ fn skip(body: &mut Body<'_>, el: &Element) -> Result<()> {
 fn srgb_to_linear(c: f32) -> f32 {
     let c = if c.is_finite() { c.clamp(0.0, 1.0) } else { 0.0 };
     if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055).powf(2.4) }
+}
+
+// ---------------------------------------------------------------- the reader
+
+use libfileparser_core::{Category, Detection, Document, FileSource, Reader, ReaderInfo};
+
+use crate::build::{SceneDocument, detect_by};
+
+pub struct PlyReader;
+
+static PLY: ReaderInfo = ReaderInfo::new("ply", "PLY model", Category::ThreeD).extensions(&["ply"]);
+
+impl Reader for PlyReader {
+    fn info(&self) -> &ReaderInfo {
+        &PLY
+    }
+
+    fn detect(&self, header: &[u8], name: &str) -> Detection {
+        detect_by(&PLY, is_ply(header), name)
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+        cx.cancel.check()?;
+        let loaded = load(src.bytes(), cx).map_err(super::parse_error)?;
+        let doc = SceneDocument::new("ply", loaded.format, loaded.scene).warnings(loaded.warnings).build()?;
+        Ok(if loaded.points { doc.with_meta("Kind", "point cloud") } else { doc })
+    }
 }
 
 #[cfg(test)]

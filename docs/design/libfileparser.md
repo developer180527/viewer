@@ -217,7 +217,7 @@ Adding, say, 3MF to `-3d`:
 
 Nothing else changes: the front door, detection, the generic facets, View-as, the conformance suite (§9) and every app pick it up. A format that needs a heavy dependency is behind its own feature.
 
-Each category provides the shared helpers that make step 1 short: `-3d` has scene building, texture jobs, units and axes; `-docs` has page layout and fonts; `-data` has table and tree builders; `-archives` has entry listing. A reader is mostly the format-specific part.
+Each category provides the shared helpers that make step 1 short: `-3d` has scene building, texture jobs, units and axes; `-docs` has page layout and fonts; `-data` has table and tree builders; `-archives` has entry listing. A reader is mostly the format-specific part. The helpers are **public, in the category's `build` module** (one of its §4.1 additions), so a reader written outside the crate is as short as one inside it; it joins the category's readers by passing its own list (`readers()` plus its own) to `-core`'s `open`. The conformance suite walks `readers()` and fails for a reader with no samples, so none passes unchecked.
 
 ### Format libraries underneath
 

@@ -47,7 +47,7 @@ pub fn load(bytes: &[u8], cx: &ParseContext) -> Result<Loaded> {
         bail!("no triangles");
     }
     let mesh = if positions.len() / 3 <= WELD_LIMIT { weld(positions) } else { MeshData::new(positions) };
-    let (scene, mut builder) = crate::new_scene(cx);
+    let (scene, mut builder) = crate::build::new_scene(cx);
     let id = builder.add_mesh(mesh).context("the mesh")?;
     // Z up (CAD, slicers) to the scene's Y up.
     let z_up = Mat4::from_rotation_x(-std::f32::consts::FRAC_PI_2);
@@ -117,6 +117,45 @@ fn weld(corners: Vec<Vec3>) -> MeshData {
         Indices::U32(indices.into())
     };
     MeshData::new(positions).with_indices(indices)
+}
+
+// ---------------------------------------------------------------- the reader
+
+use libfileparser_core::{Category, Confidence, Detection, Document, FileSource, Reader, ReaderInfo};
+
+use crate::build::SceneDocument;
+
+pub struct StlReader;
+
+static STL: ReaderInfo = ReaderInfo::new("stl", "STL model", Category::ThreeD).extensions(&["stl"]).mime_types(&["model/stl"]);
+
+impl Reader for StlReader {
+    fn info(&self) -> &ReaderInfo {
+        &STL
+    }
+
+    fn detect(&self, header: &[u8], name: &str) -> Detection {
+        // Binary STL has no magic number; ASCII starts with `solid` (as do some binary
+        // headers, so the size check in `load` decides).
+        if STL.matches_extension(name) {
+            Detection::new(Confidence::Extension)
+        } else if looks_ascii(header) {
+            Detection::new(Confidence::Content)
+        } else {
+            Detection::NONE
+        }
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+        cx.cancel.check()?;
+        let loaded = load(src.bytes(), cx).map_err(super::parse_error)?;
+        let format = if loaded.binary { "STL (binary)" } else { "STL (ASCII)" };
+        let doc = SceneDocument::new("stl", format, loaded.scene).build()?;
+        Ok(match loaded.name {
+            Some(name) => doc.with_meta("Name", name),
+            None => doc,
+        })
+    }
 }
 
 #[cfg(test)]

@@ -93,6 +93,35 @@ fn thumbnail(b: &[u8], h: &Header, limits: &Limits) -> Result<Raster> {
     Ok(Raster::new(w, ht, rgba)?)
 }
 
+// ---------------------------------------------------------------- the reader
+
+use libfileparser_core::{Category, Content, Detection, Document, FileSource, FormatInfo, ParseContext, Reader, ReaderInfo, Role};
+
+use crate::build::detect_by;
+
+pub struct BlendReader;
+
+static BLEND: ReaderInfo = ReaderInfo::new("blend", "Blender preview", Category::ThreeD).extensions(&["blend"]);
+
+impl Reader for BlendReader {
+    fn info(&self) -> &ReaderInfo {
+        &BLEND
+    }
+
+    fn detect(&self, header: &[u8], name: &str) -> Detection {
+        detect_by(&BLEND, header.starts_with(b"BLENDER"), name)
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+        cx.cancel.check()?;
+        let (raster, version) = preview(src.bytes(), &cx.limits).map_err(super::parse_error)?;
+        Ok(Document::new(FormatInfo::new("blend", "Blender file", Category::ThreeD))
+            .with_facet(Role::Primary, "Preview", Content::Raster(raster))
+            .with_meta("Saved by", format!("Blender {version}"))
+            .with_meta("Shown", "the preview image saved in the file; its 3D data isn't read yet"))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

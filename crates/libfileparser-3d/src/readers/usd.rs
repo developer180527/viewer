@@ -1,4 +1,4 @@
-//! USD (`.usda`, `.usdc`, `.usd`, `.usdz`) through `usd-lite`, into a RendererX scene.
+//! USD (`.usda`, `.usdc`, `.usd`, `.usdz`) through `usd-lite`, into a CPU scene (`scene-data`).
 //!
 //! The stage is composed first (sublayers, references, payloads, variants, inherits),
 //! from files next to the model or inside the package. Meshes are triangulated per
@@ -138,7 +138,7 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
     let layer = stage.layer;
     let mut warnings = stage.warnings;
     let extra_layers = stage.layers.len() - 1;
-    let (scene, mut builder) = crate::new_scene(cx);
+    let (scene, mut builder) = crate::build::new_scene(cx);
     let mut c = Converter {
         layer: &layer,
         files: &files,
@@ -486,7 +486,7 @@ impl Converter<'_, '_> {
         }
         let id = match self.files.source(&t.file) {
             Some(source) => self.b.reserve_texture().ok().inspect(|&texture| {
-                self.jobs.push(ImageJob { texture, source, color_space: if srgb { ColorSpace::Srgb } else { ColorSpace::Linear } });
+                self.jobs.push(ImageJob::new(texture, source, if srgb { ColorSpace::Srgb } else { ColorSpace::Linear }));
             }),
             None => {
                 self.missing_textures += 1;
@@ -515,7 +515,7 @@ impl Converter<'_, '_> {
             None
         } else {
             self.b.reserve_texture().ok().inspect(|&texture| {
-                self.jobs.push(ImageJob { texture, source: ImageSource::MetalRough { roughness: r, metalness: m }, color_space: ColorSpace::Linear });
+                self.jobs.push(ImageJob::new(texture, ImageSource::MetalRough { roughness: r, metalness: m }, ColorSpace::Linear));
             })
         };
         self.packed.insert(key, id);
@@ -529,5 +529,46 @@ fn channel_index(c: Channel) -> usize {
         Channel::B => 2,
         Channel::A => 3,
         _ => 0,
+    }
+}
+
+// ---------------------------------------------------------------- the reader
+
+use libfileparser_core::{Category, Confidence, Detection, Document, Reader, ReaderInfo};
+
+use crate::build::{SceneDocument, detect_by};
+
+pub struct UsdReader;
+
+static USD: ReaderInfo =
+    ReaderInfo::new("usd", "USD scene", Category::ThreeD).extensions(&["usd", "usda", "usdc", "usdz"]).mime_types(&["model/vnd.usdz+zip"]);
+
+impl Reader for UsdReader {
+    fn info(&self) -> &ReaderInfo {
+        &USD
+    }
+
+    fn detect(&self, header: &[u8], name: &str) -> Detection {
+        let ext = |e: &str| name.rsplit_once('.').is_some_and(|(_, x)| x.eq_ignore_ascii_case(e));
+        let d = match usd_lite::detect(header) {
+            // A zip is only USD when it says so, and then it beats the zip reader.
+            Some(Format::Usdz) if ext("usdz") => Detection::new(Confidence::Certain),
+            Some(Format::Usdz) => Detection::NONE,
+            Some(_) => Detection::new(Confidence::Magic),
+            None => detect_by(&USD, false, name),
+        };
+        if usd_lite::detect(header) == Some(Format::Usda) || (d.is_match() && ext("usda")) { d.with_language("usd") } else { d }
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+        cx.cancel.check()?;
+        let deps = Dependencies::new();
+        let loaded = load(src, cx, &deps).map_err(super::parse_error)?;
+        let doc = SceneDocument::new("usd", loaded.format, loaded.scene)
+            .warnings(loaded.warnings)
+            .textures(loaded.pending, loaded.textures)
+            .dependencies(deps)
+            .build()?;
+        Ok(if loaded.layers > 0 { doc.with_meta("Layers composed", loaded.layers + 1) } else { doc })
     }
 }
