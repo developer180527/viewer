@@ -9,7 +9,7 @@ use std::ops::Range;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use rendererx_scene::CpuScene;
+use scene_data::CpuScene;
 
 use crate::{Bytes, FileSource, ParseError, Result};
 
@@ -455,7 +455,7 @@ pub trait Container: Send + Sync {
 
 // ---------------------------------------------------------------- scene
 
-/// A 3D scene: `rendererx-scene` data (meshes, materials, textures, nodes), built
+/// A 3D scene: `scene-data` data (meshes, materials, textures, nodes), built
 /// without a GPU. Textures may still be arriving from background work.
 #[derive(Clone)]
 pub struct SceneDoc {

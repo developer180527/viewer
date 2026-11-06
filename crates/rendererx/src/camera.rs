@@ -1,6 +1,6 @@
-use rendererx_scene::Aabb;
-use rendererx_scene::glam::camera::rh;
-use rendererx_scene::glam::{Mat4, Vec3};
+use scene_data::Aabb;
+use scene_data::glam::camera::rh;
+use scene_data::glam::{Mat4, Vec3};
 
 /// A perspective camera. Plain data: hosts store it per view and compare it to know
 /// whether a frame is needed.

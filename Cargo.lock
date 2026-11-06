@@ -999,6 +999,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "gltf-lite"
+version = "0.1.0"
+dependencies = [
+ "base64 0.22.1",
+ "bytemuck",
+ "pollster 1.0.1",
+ "rendererx",
+ "scene-data",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "wgpu",
+]
+
+[[package]]
 name = "glutin_wgl_sys"
 version = "0.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1319,12 +1334,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "exr",
+ "gltf-lite",
  "image",
  "jpeg-decoder",
  "libfileparser-core",
  "libfileparser-testkit",
- "rendererx-gltf",
- "rendererx-scene",
+ "scene-data",
  "ufbx",
  "usd-lite",
 ]
@@ -1334,7 +1349,7 @@ name = "libfileparser-core"
 version = "0.1.0"
 dependencies = [
  "memmap2",
- "rendererx-scene",
+ "scene-data",
 ]
 
 [[package]]
@@ -1342,7 +1357,7 @@ name = "libfileparser-testkit"
 version = "0.1.0"
 dependencies = [
  "libfileparser-core",
- "rendererx-scene",
+ "scene-data",
 ]
 
 [[package]]
@@ -2606,33 +2621,9 @@ version = "0.1.0"
 dependencies = [
  "bytemuck",
  "pollster 1.0.1",
- "rendererx-scene",
+ "scene-data",
  "thiserror 2.0.21",
  "wgpu",
-]
-
-[[package]]
-name = "rendererx-gltf"
-version = "0.1.0"
-dependencies = [
- "base64 0.22.1",
- "bytemuck",
- "pollster 1.0.1",
- "rendererx",
- "rendererx-scene",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "wgpu",
-]
-
-[[package]]
-name = "rendererx-scene"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "glam",
- "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -2764,6 +2755,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "scene-data"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "glam",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3439,7 +3439,7 @@ dependencies = [
  "infer",
  "libfileparser-core",
  "memmap2",
- "rendererx-scene",
+ "scene-data",
 ]
 
 [[package]]
@@ -3448,7 +3448,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "image",
- "rendererx-scene",
+ "scene-data",
  "toml",
  "viewer-core",
  "viewer-fmt-archive",

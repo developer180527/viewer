@@ -4,7 +4,7 @@
 //! five glTF maps, with 1×1 defaults for missing ones. All shading models share the
 //! layout and use what they need (clay only the base colour).
 
-use rendererx_scene::{AlphaMode, ColorSpace, Material, ParamValue, ShadingId, Slot, TextureData, TextureFormat, TextureId};
+use scene_data::{AlphaMode, ColorSpace, Material, ParamValue, ShadingId, Slot, TextureData, TextureFormat, TextureId};
 use wgpu::util::DeviceExt;
 
 /// The fragment stage a material is drawn with (docs/design/3d-renderer.md §8.3).

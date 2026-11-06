@@ -8,8 +8,8 @@
 //! what the file can hold before anything is allocated.
 
 use anyhow::{Context, anyhow, bail};
-use rendererx_scene::glam::{Mat4, Vec3, Vec4};
-use rendererx_scene::{CpuScene, Indices, Material, MeshData, Node, ParamValue, Topology};
+use scene_data::glam::{Mat4, Vec3, Vec4};
+use scene_data::{CpuScene, Indices, Material, MeshData, Node, ParamValue, Topology};
 use anyhow::Result;
 use libfileparser_core::ParseContext;
 

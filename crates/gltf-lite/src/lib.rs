@@ -1,4 +1,6 @@
-//! glTF 2.0 (`.gltf` and `.glb`) into a RendererX CPU scene.
+//! glTF 2.0 (`.gltf` and `.glb`) into a `scene-data` scene, which RendererX draws
+//! without conversion. A format library: it knows nothing of libfileparser
+//! (docs/design/libfileparser.md §6).
 //!
 //! - **Zero-copy where possible.** Vertex and index data already in the renderer's
 //!   layout (packed `FLOAT` streams, `u16`/`u32` indices) are borrowed from the file's
@@ -7,7 +9,7 @@
 //!   is read, so the host can frame the model immediately.
 //! - **No image decoding.** Textures are reserved in the scene and returned as encoded
 //!   [`PendingImage`]s; the host decodes them on its own threads and sets them through
-//!   a [`TextureSink`](rendererx_scene::TextureSink).
+//!   a [`TextureSink`](scene_data::TextureSink).
 //! - **Shading as authored** (docs/design/3d-renderer.md §6): core → `pbr`,
 //!   `KHR_materials_unlit` → `unlit`, `VRMC_materials_mtoon` → `mtoon`.
 //! - **Show what can be shown.** A broken primitive, texture or external file is a
@@ -20,8 +22,8 @@ use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use base64::Engine;
-use rendererx_scene::glam::{Mat4, Quat, Vec3};
-use rendererx_scene::{
+use scene_data::glam::{Mat4, Quat, Vec3};
+use scene_data::{
     Aabb, AlphaMode, Bytes, ColorSpace, Material, MaterialId, MeshData, MeshId, Node, NodeId, ParamValue, SceneBuilder, ShadingId,
     ShadingSource, Slot, Stream, TextureId, Topology,
 };
@@ -36,7 +38,7 @@ pub enum Error {
     Unsupported(String),
     /// The scene refused what the file holds: over its limits, or inconsistent data.
     #[error(transparent)]
-    Scene(#[from] rendererx_scene::Error),
+    Scene(#[from] scene_data::Error),
 }
 
 /// Loads the external files a `.gltf` refers to (`.bin` buffers, images).
@@ -104,9 +106,9 @@ pub struct DirResolver {
 }
 
 impl DirResolver {
-    /// The default cap matches [`SceneLimits::max_bytes`](rendererx_scene::SceneLimits).
+    /// The default cap matches [`SceneLimits::max_bytes`](scene_data::SceneLimits).
     pub fn new(dir: impl Into<PathBuf>) -> Self {
-        Self { dir: dir.into(), max_bytes: rendererx_scene::SceneLimits::default().max_bytes }
+        Self { dir: dir.into(), max_bytes: scene_data::SceneLimits::default().max_bytes }
     }
 
     fn path(&self, uri: &str) -> Result<PathBuf, ResolveError> {
@@ -330,7 +332,7 @@ struct Loader<'a> {
     warnings: Vec<String>,
     /// The first scene limit a mesh went past: the whole load fails with it, rather
     /// than showing a model with parts silently missing.
-    over_limit: Option<rendererx_scene::Error>,
+    over_limit: Option<scene_data::Error>,
 }
 
 impl<'a> Loader<'a> {
@@ -431,7 +433,7 @@ impl<'a> Loader<'a> {
         for (i, prim) in mesh.primitives.iter().enumerate() {
             match self.primitive(prim) {
                 Ok(p) => prims.push(p),
-                Err(Error::Scene(e @ rendererx_scene::Error::LimitExceeded { .. })) => {
+                Err(Error::Scene(e @ scene_data::Error::LimitExceeded { .. })) => {
                     self.over_limit.get_or_insert(e);
                 }
                 Err(e) => self.warnings.push(format!("mesh {index} primitive {i}: {e}")),
@@ -468,11 +470,11 @@ impl<'a> Loader<'a> {
         mesh.topology = topology;
         if let Some(convert) = convert {
             let list: Vec<u32> = match &mesh.indices {
-                rendererx_scene::Indices::None => (0..mesh.positions.len() as u32).collect(),
-                rendererx_scene::Indices::U16(s) => s.as_slice().iter().map(|&i| i as u32).collect(),
-                rendererx_scene::Indices::U32(s) => s.as_slice().to_vec(),
+                scene_data::Indices::None => (0..mesh.positions.len() as u32).collect(),
+                scene_data::Indices::U16(s) => s.as_slice().iter().map(|&i| i as u32).collect(),
+                scene_data::Indices::U32(s) => s.as_slice().to_vec(),
             };
-            mesh.indices = rendererx_scene::Indices::U32(convert(&list).into());
+            mesh.indices = scene_data::Indices::U32(convert(&list).into());
         }
         let id = self.builder.add_mesh(mesh)?;
         let material = prim.material.and_then(|m| self.material(m));

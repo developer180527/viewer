@@ -1,4 +1,5 @@
-//! RendererX's CPU scene: what a model is, as plain data.
+//! What a 3D model is, as plain data: meshes, materials, textures and nodes. Parsers
+//! build it (libfileparser-3d, gltf-lite); RendererX draws it. It knows neither.
 //!
 //! A loader fills a [`SceneBuilder`] on any thread, before any GPU exists; the host
 //! keeps the matching [`CpuScene`] handle and hands it to the renderer whenever the

@@ -95,7 +95,7 @@ pub fn content_summary(content: &Content, out: &mut String) {
                 read.geometry(),
             );
             if let Some(b) = read.bounds() {
-                let v = |v: rendererx_scene::glam::Vec3| format!("{:.3} {:.3} {:.3}", v.x, v.y, v.z).replace("-0.000", "0.000");
+                let v = |v: scene_data::glam::Vec3| format!("{:.3} {:.3} {:.3}", v.x, v.y, v.z).replace("-0.000", "0.000");
                 let _ = writeln!(out, "  bounds: {} .. {}", v(b.min), v(b.max));
             }
         }

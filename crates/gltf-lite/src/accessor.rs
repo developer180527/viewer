@@ -1,8 +1,8 @@
 //! Reading accessors into scene streams: borrowed straight from the buffer when the
 //! data is already in the renderer's layout, converted otherwise.
 
-use rendererx_scene::glam::{Vec2, Vec3, Vec4};
-use rendererx_scene::{Bytes, Indices, Stream};
+use scene_data::glam::{Vec2, Vec3, Vec4};
+use scene_data::{Bytes, Indices, Stream};
 
 use crate::Error;
 use crate::json::{Accessor, Root};
@@ -240,7 +240,7 @@ impl<'a> Reader<'a> {
         if let (Some(view), None) = (a.buffer_view, &a.sparse) {
             let at = self.locate(view, a.byte_offset, a.count, size)?;
             let start = at.buffer.start + at.offset;
-            let shared = |e: rendererx_scene::Error| Error::Format(e.to_string());
+            let shared = |e: scene_data::Error| Error::Format(e.to_string());
             if at.stride == size {
                 match a.component_type {
                     UNSIGNED_SHORT => return Ok(Indices::U16(Stream::from_bytes(at.buffer.bytes.clone(), start, a.count).map_err(shared)?)),

@@ -20,9 +20,9 @@ libfileparser-3d = { path = "crates/libfileparser-3d" }
 viewer-formats = { path = "crates/formats" }
 # Pre-1.0, pinned to a commit like libgui.
 libfilepicker = { git = "https://github.com/developer180527/libfilepicker.git", rev = "b99e3cd990e50fdeb3e96a3a703dacf77f7c8c66" }
-rendererx-scene = { path = "crates/rendererx-scene" }
+scene-data = { path = "crates/scene-data" }
 rendererx = { path = "crates/rendererx" }
-rendererx-gltf = { path = "crates/rendererx-gltf" }
+gltf-lite = { path = "crates/gltf-lite" }
 usd-lite = { path = "crates/usd-lite" }
 viewer-pdf-mupdf = { path = "crates/pdf-mupdf" }
 viewer-pdf-pdfkit = { path = "crates/pdf-pdfkit" }

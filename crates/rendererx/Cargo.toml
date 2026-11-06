@@ -12,7 +12,7 @@ default = []
 controls = []
 
 [dependencies]
-rendererx-scene.workspace = true
+scene-data.workspace = true
 wgpu = "30"
 bytemuck = "1"
 thiserror = "2"

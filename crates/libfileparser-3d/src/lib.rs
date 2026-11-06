@@ -22,7 +22,7 @@ use libfileparser_core::{
     Category, Confidence, Content, Dependencies, DependencyStatus, Detection, Document, FileSource, FormatInfo, Limit, ParseContext,
     ParseError, Reader, ReaderInfo, Result, Role, SceneDoc, Unreadable,
 };
-use rendererx_scene::{CpuScene, SceneBuilder, SceneLimits, SceneRead, Topology};
+use scene_data::{CpuScene, SceneBuilder, SceneLimits, SceneRead, Topology};
 
 /// Every format this category reads, in the order ties are broken.
 pub fn readers() -> &'static [&'static dyn Reader] {
@@ -70,10 +70,10 @@ pub(crate) fn new_scene(cx: &ParseContext) -> (CpuScene, SceneBuilder) {
 /// cancellation stays cancellation, anything else is damage.
 fn parse_error(e: anyhow::Error) -> ParseError {
     for cause in e.chain() {
-        if let Some(rendererx_scene::Error::LimitExceeded { limit, .. }) = cause.downcast_ref::<rendererx_scene::Error>() {
+        if let Some(scene_data::Error::LimitExceeded { limit, .. }) = cause.downcast_ref::<scene_data::Error>() {
             return ParseError::too_large(Limit::Items, limit.saturating_add(1), *limit);
         }
-        if let Some(rendererx_gltf::Error::Scene(rendererx_scene::Error::LimitExceeded { limit, .. })) = cause.downcast_ref::<rendererx_gltf::Error>() {
+        if let Some(gltf_lite::Error::Scene(scene_data::Error::LimitExceeded { limit, .. })) = cause.downcast_ref::<gltf_lite::Error>() {
             return ParseError::too_large(Limit::Items, limit.saturating_add(1), *limit);
         }
         if let Some(p) = cause.downcast_ref::<ParseError>()
@@ -196,10 +196,10 @@ struct GltfFiles<'a> {
     deps: &'a Dependencies,
 }
 
-impl rendererx_gltf::Resolver for GltfFiles<'_> {
-    fn resolve(&self, uri: &str) -> std::result::Result<rendererx_scene::Bytes, rendererx_gltf::ResolveError> {
-        use rendererx_gltf::{ResolveError, ResolveErrorKind};
-        let path = rendererx_gltf::relative_path(uri)?;
+impl gltf_lite::Resolver for GltfFiles<'_> {
+    fn resolve(&self, uri: &str) -> std::result::Result<scene_data::Bytes, gltf_lite::ResolveError> {
+        use gltf_lite::{ResolveError, ResolveErrorKind};
+        let path = gltf_lite::relative_path(uri)?;
         let name = textures::report_name(&path, "");
         match self.deps.resolve_any(self.cx, self.from, &name, &[path.as_str()]) {
             Some(file) if file.len() > self.cx.limits.allocation => {
@@ -229,7 +229,7 @@ impl Reader for GltfReader {
         let deps = Dependencies::new();
         let (scene, mut builder) = new_scene(cx);
         let files = GltfFiles { from: src, cx, deps: &deps };
-        let loaded = rendererx_gltf::load(src.shared_bytes(), &files, &mut builder).map_err(|e| parse_error(e.into()))?;
+        let loaded = gltf_lite::load(src.shared_bytes(), &files, &mut builder).map_err(|e| parse_error(e.into()))?;
         let format = if src.header().starts_with(b"glTF") { "glTF binary (GLB)" } else { "glTF 2.0" };
         let jobs: Vec<_> = loaded
             .images
@@ -442,7 +442,7 @@ f 4 1 5 8
         let read = scene.read();
         assert_eq!(read.meshes().iter().map(|m| m.info.primitives).sum::<u64>(), 12);
         let b = read.bounds().unwrap();
-        assert!((b.size() - rendererx_scene::glam::Vec3::splat(2.0)).length() < 1e-4);
+        assert!((b.size() - scene_data::glam::Vec3::splat(2.0)).length() < 1e-4);
         // `usemtl missing` names a material that no .mtl defines: no colour, so clay.
         assert!(read.materials().iter().all(|m| m.material.params.get("base_color").is_none()));
     }

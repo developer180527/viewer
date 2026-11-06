@@ -8,4 +8,4 @@ license.workspace = true
 [dependencies]
 memmap2.workspace = true
 # The scene content model: plain data (glam, bytemuck), no GPU.
-rendererx-scene.workspace = true
+scene-data.workspace = true

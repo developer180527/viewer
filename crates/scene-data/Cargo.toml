@@ -1,6 +1,6 @@
 [package]
-name = "rendererx-scene"
-description = "RendererX's CPU scene: plain mesh, material, texture and node data, built without a GPU."
+name = "scene-data"
+description = "3D scene data: plain mesh, material, texture and node data, built without a GPU. Shared by parsers and RendererX."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

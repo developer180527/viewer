@@ -29,7 +29,7 @@ Every file also gets **Raw** (hex) from the front door. A **MTL** opened on its 
 
 | Facet | Content model | Notes |
 |---|---|---|
-| Scene | `Scene` (`rendererx-scene` data) | Geometry first, textures arrive later (§5) |
+| Scene | `Scene` (`scene-data`) | Geometry first, textures arrive later (§5) |
 | Stage, glTF, Records, Objects, Header, Blocks, Crate | `Tree` | Nodes carry a label, a type, a value or summary, and children made on demand. Large trees (an FBX with 100,000 records) list children lazily |
 | Layers | `Tree` | Layer → its sublayers and arcs, each with its file and status |
 | Variants | `Tree` | Variant set → variants, with the current selection marked |
@@ -60,7 +60,7 @@ Its public API is the core shape every category has (libfileparser.md §4): `rea
 ```
 libfileparser-3d
   readers/   gltf, fbx (+ obj via ufbx), stl, ply, usd, blend    one Reader each
-  scene/     building rendererx-scene data: meshes, materials, nodes, bounds, up-axis and units
+  scene/     building `scene-data` scenes: meshes, materials, nodes, bounds, up-axis and units
   textures/  texture jobs: find (files hook), decode (-images), reduce, mips; via spawn and notify
   facets/    tree, table and container builders shared by the readers
   deps/      the Dependencies list: every referenced file and its status
@@ -73,9 +73,9 @@ Under the readers, format libraries that know nothing of libfileparser and stay 
 | Library | Role | Adapter in `-3d` |
 |---|---|---|
 | `usd-lite` (ours) | USD layers (text, crate, USDZ), composition into a stage | `readers/usd`: its `Resolver` is backed by `cx.files`; its stage becomes the Stage, Layers and Variants facets and the Scene |
-| `rendererx-gltf` (ours) | glTF/GLB reading, zero-copy from the mapped file | `readers/gltf`; its JSON tree becomes the glTF facet. Renamed to describe what it is (a glTF reader), since it isn't part of the renderer |
+| `gltf-lite` (ours) | glTF/GLB reading, zero-copy from the mapped file | `readers/gltf`; its JSON tree becomes the glTF facet. Was `rendererx-gltf`; renamed 2026-11-06 for what it is, a glTF reader, apart from the renderer |
 | `ufbx` (C, vetted) | FBX and OBJ | `readers/fbx`: file-open, allocator and thread hooks routed to `cx` (architecture.md §5) |
-| `rendererx-scene` | The scene data model; no GPU | Shared with RendererX, so a scene goes to the renderer without conversion |
+| `scene-data` (was `rendererx-scene`) | The scene data model; no GPU | Shared with RendererX, so a scene goes to the renderer without conversion |
 
 ## 5. How the hooks are used
 
@@ -109,14 +109,14 @@ Every reader converts to one convention so engines and renderers don't each hand
 | `viewer-fmt-3d/textures.rs` | `libfileparser-3d/textures`, decoding through `-images` |
 | `Unreadables` | `Dependencies` (every referenced file, not only failures) |
 | The global `WAKE`, `std::thread::spawn` in texture decoding | `cx.notify`, `cx.spawn` |
-| `rendererx-gltf` | Kept as the glTF reader library (renamed later); adapted by `readers/gltf` |
+| ✅ `rendererx-gltf`, `rendererx-scene` | Renamed `gltf-lite` and `scene-data` (2026-11-06): format and data libraries, apart from the renderer. `gltf-lite` is adapted by `readers/gltf` |
 | `usd-lite` | Unchanged as a library; `readers/usd` adds the facets |
 
 ## 9. Order of work
 
 The corpus passes after every step; each step adds corpus files for what it adds.
 
-1. **Separate and audit:** `rendererx-gltf` renamed as the glTF reader it is, apart from RendererX; `usd-lite`, the glTF reader and the ufbx binding checked against libfileparser.md §5 and given spec tests, a fuzz target and a public-API snapshot. STL and PLY stay small parsers inside their readers.
+1. **Separate and audit:** 🟡 `gltf-lite` and `scene-data` renamed apart from RendererX (2026-11-06); still to do: `usd-lite`, the glTF reader and the ufbx binding checked against libfileparser.md §5 and given spec tests, a fuzz target and a public-API snapshot. STL and PLY stay small parsers inside their readers.
 2. ✅ **Move as is:** the readers into `libfileparser-3d` on `-core`, each producing a document whose only facet is the Scene. Hooks replace `std::fs`, threads and `WAKE`. Viewer opens 3D through it.
 3. **Dependencies** for every reader, and the Dependencies and Textures facets.
 4. **USD:** Stage, Layers and Variants facets; the Materials facet.

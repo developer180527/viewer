@@ -10,8 +10,8 @@ use std::sync::atomic::AtomicUsize;
 
 use anyhow::{Context, Result, anyhow};
 use libfileparser_core::{Dependencies, DependencyStatus, FileSource, ParseContext};
-use rendererx_scene::glam::{Mat4, Vec2, Vec3, Vec4};
-use rendererx_scene::{
+use scene_data::glam::{Mat4, Vec2, Vec3, Vec4};
+use scene_data::{
     ColorSpace, CpuScene, Indices, Material, MaterialId, MeshData, MeshId, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource, Slot,
     Stream, TextureId,
 };
@@ -242,7 +242,7 @@ fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, images: &mut Images, warnin
             if let Err(e) = b.add_node(Node::mesh(id, material, world, None)) {
                 warnings.push(format!("node {}: {e}", node.element.name));
                 // Every later node would hit the same limit.
-                if matches!(e, rendererx_scene::Error::LimitExceeded { .. }) {
+                if matches!(e, scene_data::Error::LimitExceeded { .. }) {
                     return Ok(());
                 }
             }

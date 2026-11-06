@@ -5,13 +5,13 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# Readers build CPU scenes only (rendererx-scene): no GPU, so they can move to a parser
+# Readers build CPU scenes only (scene-data): no GPU, so they can move to a parser
 # worker later (PLAN.md §12.4). Files, threads and progress go through libfileparser-core's hooks.
 [dependencies]
 libfileparser-core.workspace = true
 anyhow.workspace = true
-rendererx-scene.workspace = true
-rendererx-gltf.workspace = true
+scene-data.workspace = true
+gltf-lite.workspace = true
 usd-lite.workspace = true
 # Official bindings to ufbx, a single-file C loader for FBX (and OBJ/MTL).
 ufbx = "0.11"

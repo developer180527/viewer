@@ -2,7 +2,7 @@
 //!
 //! It uses the host's device and queue, draws into a texture per [`View`], and owns no
 //! window, event loop or threads. Scenes are built on the CPU with
-//! [`rendererx_scene`] (re-exported as [`scene_data`]) and attached here when the GPU is
+//! [`scene_data`] (re-exported here) and attached here when the GPU is
 //! ready:
 //!
 //! ```ignore
@@ -30,11 +30,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 pub use camera::Camera;
 #[cfg(feature = "controls")]
 pub use camera::OrbitControls;
-pub use rendererx_scene as scene_data;
+pub use scene_data;
 pub use scene::GpuScene;
 pub use view::{TARGET_FORMAT, View, ViewDesc};
 
-use rendererx_scene::{CpuScene, Topology};
+use scene_data::{CpuScene, Topology};
 use scene::INSTANCE_FLOATS;
 use textures::Model;
 use view::{DEPTH_FORMAT, FrameKey, LINEAR_FORMAT, Targets, UNIFORM_BYTES};

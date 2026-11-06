@@ -1,11 +1,11 @@
 //! Loads a glTF/GLB and renders it with clay to a PPM image.
 //!
-//!     cargo run -p rendererx-gltf --example render -- model.glb out.ppm [size]
+//!     cargo run -p gltf-lite --example render -- model.glb out.ppm [size]
 
 use std::sync::Arc;
 use std::time::Instant;
 
-use rendererx_scene::CpuScene;
+use scene_data::CpuScene;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -18,7 +18,7 @@ fn main() {
     let start = Instant::now();
     let file = Arc::new(std::fs::read(input).expect("read model"));
     let (scene, mut builder) = CpuScene::new();
-    let loaded = rendererx_gltf::load(file, &rendererx_gltf::resolver_for(input.as_ref()), &mut builder).expect("load");
+    let loaded = gltf_lite::load(file, &gltf_lite::resolver_for(input.as_ref()), &mut builder).expect("load");
     let parsed = start.elapsed();
     {
         let read = scene.read();

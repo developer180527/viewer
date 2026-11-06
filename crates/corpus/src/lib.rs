@@ -199,7 +199,7 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
     Ok(render)
 }
 
-fn scene_summary(scene: &rendererx_scene::CpuScene, t: &mut Table) {
+fn scene_summary(scene: &scene_data::CpuScene, t: &mut Table) {
     let read = scene.read();
     t.insert("geometry".into(), format!("{:?}", read.geometry()).into());
     let meshes = read.meshes();
@@ -218,7 +218,7 @@ fn scene_summary(scene: &rendererx_scene::CpuScene, t: &mut Table) {
     t.insert("textures_decoded".into(), list(decoded.iter().cloned(), decoded.len()));
     if let Some(b) = read.bounds() {
         // Rounded, so float noise between platforms and compilers doesn't show.
-        let v = |v: rendererx_scene::glam::Vec3| format!("{:.3} {:.3} {:.3}", v.x, v.y, v.z).replace("-0.000", "0.000");
+        let v = |v: scene_data::glam::Vec3| format!("{:.3} {:.3} {:.3}", v.x, v.y, v.z).replace("-0.000", "0.000");
         t.insert("bounds".into(), Value::Array(vec![v(b.min).into(), v(b.max).into()]));
     }
 }

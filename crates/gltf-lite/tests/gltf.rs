@@ -1,9 +1,9 @@
 use std::sync::Arc;
 
 use base64::Engine;
-use rendererx_gltf::{Error, NoResolver, Resolver, load, resolver_for};
-use rendererx_scene::glam::Vec3;
-use rendererx_scene::*;
+use gltf_lite::{Error, NoResolver, Resolver, load, resolver_for};
+use scene_data::glam::Vec3;
+use scene_data::*;
 use serde_json::json;
 
 /// A GLB container: JSON chunk, then BIN chunk, both padded to 4 bytes.
@@ -139,7 +139,7 @@ fn gltf_text_with_data_uris_strips_quantized_colours_and_images() {
 
     struct Images;
     impl Resolver for Images {
-        fn resolve(&self, uri: &str) -> std::result::Result<Bytes, rendererx_gltf::ResolveError> {
+        fn resolve(&self, uri: &str) -> std::result::Result<Bytes, gltf_lite::ResolveError> {
             assert_eq!(uri, "albedo%20map.png");
             Ok(Arc::new(b"\x89PNG fake".to_vec()))
         }
@@ -242,7 +242,7 @@ fn vrm0_mtoon_materials_are_toon() {
 
 #[test]
 fn external_files_stay_inside_the_models_folder() {
-    let dir = std::env::temp_dir().join(format!("rendererx-gltf-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("gltf-lite-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     std::fs::write(dir.join("a b.bin"), [1u8, 2, 3]).unwrap();
     let r = resolver_for(&dir.join("model.gltf"));
@@ -260,8 +260,8 @@ fn external_files_stay_inside_the_models_folder() {
         assert!(r.resolve("sub").err().unwrap().message.contains("not a regular file"));
     }
     // Missing and refused files say which they are, so a host can tell the user.
-    assert_eq!(r.resolve("gone.bin").err().unwrap().kind, rendererx_gltf::ResolveErrorKind::NotFound);
-    assert_eq!(r.resolve("../x.bin").err().unwrap().kind, rendererx_gltf::ResolveErrorKind::Refused);
+    assert_eq!(r.resolve("gone.bin").err().unwrap().kind, gltf_lite::ResolveErrorKind::NotFound);
+    assert_eq!(r.resolve("../x.bin").err().unwrap().kind, gltf_lite::ResolveErrorKind::Refused);
     let mut capped = resolver_for(&dir.join("model.gltf"));
     capped.max_bytes = 2;
     assert!(capped.resolve("a%20b.bin").err().unwrap().message.contains("limit"));
@@ -299,7 +299,7 @@ fn loaded_model_renders_in_its_material_colour() {
 #[test]
 fn external_files_that_cant_be_read_are_reported_by_kind() {
     use std::os::unix::fs::PermissionsExt;
-    let dir = std::env::temp_dir().join(format!("rendererx-gltf-blocked-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("gltf-lite-blocked-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(dir.join("locked")).unwrap();
     std::fs::write(dir.join("locked/mesh.bin"), [0u8; 36]).unwrap();
@@ -319,7 +319,7 @@ fn external_files_that_cant_be_read_are_reported_by_kind() {
     let loaded = load(file, &resolver_for(&dir.join("model.gltf")), &mut b);
     std::fs::set_permissions(dir.join("locked"), std::fs::Permissions::from_mode(0o755)).unwrap();
     let loaded = loaded.unwrap();
-    use rendererx_gltf::ResolveErrorKind::*;
+    use gltf_lite::ResolveErrorKind::*;
     assert!(loaded.unreadable.contains(&("absent.bin".into(), NotFound)), "{:?}", loaded.unreadable);
     // Root (some CI images) can read the locked folder anyway.
     if loaded.unreadable.len() > 1 {

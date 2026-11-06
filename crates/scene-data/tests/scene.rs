@@ -1,8 +1,8 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use rendererx_scene::glam::{Mat4, Vec3};
-use rendererx_scene::*;
+use scene_data::glam::{Mat4, Vec3};
+use scene_data::*;
 
 fn triangle() -> MeshData {
     MeshData::new(vec![Vec3::ZERO, Vec3::X, Vec3::Y])

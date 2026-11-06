@@ -13,8 +13,8 @@ use std::sync::atomic::AtomicUsize;
 
 use anyhow::{Result, anyhow};
 use libfileparser_core::{Dependencies, DependencyStatus, FileSource, ParseContext};
-use rendererx_scene::glam::{DMat4, Mat4, Vec2, Vec3, Vec4};
-use rendererx_scene::{
+use scene_data::glam::{DMat4, Mat4, Vec2, Vec3, Vec4};
+use scene_data::{
     AlphaMode, ColorSpace, CpuScene, Indices, Material, MaterialId, MeshData, MeshId, Node, ParamValue, SceneBuilder, ShadingId, ShadingSource, Slot, Stream,
     TextureId,
 };
@@ -195,7 +195,7 @@ impl Converter<'_, '_> {
             geom::UpAxis::Z => DMat4::from_rotation_x(-std::f64::consts::FRAC_PI_2),
             geom::UpAxis::Y => DMat4::IDENTITY,
         };
-        let root = DMat4::from_scale(rendererx_scene::glam::DVec3::splat(geom::meters_per_unit(self.layer))) * up;
+        let root = DMat4::from_scale(scene_data::glam::DVec3::splat(geom::meters_per_unit(self.layer))) * up;
         let mut stack: Vec<(String, DMat4)> = self.layer.root_prims().into_iter().rev().map(|p| (p, root)).collect();
         let mut visited = 0usize;
         while let Some((prim, parent)) = stack.pop() {

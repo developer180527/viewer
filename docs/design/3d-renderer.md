@@ -1,6 +1,6 @@
 # RendererX — a reusable 3D renderer on wgpu
 
-Status: milestone 1 steps 1–3 and 5 implemented: `rendererx-scene`, `rendererx` core, `rendererx-gltf`, and Viewer's 3D view (libgui frontend, orbit/pan/zoom) with loaders in `viewer-fmt-3d` for glTF/GLB, FBX and OBJ (via ufbx), and USD/USDA/USDC/USDZ via our own `usd-lite` crate, composed (sublayers, references, payloads, inherits, variants; instances share meshes and materials). Shading: `clay`, `pbr` (all five glTF maps, procedural sky, key light, PBR Neutral tone mapping) and `unlit`; FBX Lambert/Phong draw through `pbr` with the factors ufbx translates them to; `mtoon`, `matcap` and `wireframe` still fall back to clay. Textures decode off-thread (capped at 2048 px, mips in linear light; EXRs stream into the reduced size). `.blend` shows Blender's saved preview image. Not yet: the shading-model registry API (§8.2; models are fixed entry points for now), image-based lighting from a real environment map, alpha blending (Blend draws as a cutout), `.blend` geometry.
+Status: milestone 1 steps 1–3 and 5 implemented: `scene-data`, `rendererx` core, `gltf-lite`, and Viewer's 3D view (libgui frontend, orbit/pan/zoom) with loaders in `viewer-fmt-3d` for glTF/GLB, FBX and OBJ (via ufbx), and USD/USDA/USDC/USDZ via our own `usd-lite` crate, composed (sublayers, references, payloads, inherits, variants; instances share meshes and materials). Shading: `clay`, `pbr` (all five glTF maps, procedural sky, key light, PBR Neutral tone mapping) and `unlit`; FBX Lambert/Phong draw through `pbr` with the factors ufbx translates them to; `mtoon`, `matcap` and `wireframe` still fall back to clay. Textures decode off-thread (capped at 2048 px, mips in linear light; EXRs stream into the reduced size). `.blend` shows Blender's saved preview image. Not yet: the shading-model registry API (§8.2; models are fixed entry points for now), image-based lighting from a real environment map, alpha blending (Blend draws as a cutout), `.blend` geometry.
 
 The product name is **RendererX**; the Cargo package and Rust crate are `rendererx`
 (Rust warns on non-snake-case crate names, and lowercase names avoid case clashes on crates.io and in paths).
@@ -35,7 +35,7 @@ nothing about Viewer, libgui or any file format.
 
 ```
 crates/
-  rendererx-scene/        the CPU scene (§5): plain data, no wgpu. Loaders and viewer-core depend on this only
+  scene-data/        the CPU scene (§5): plain data, no wgpu. Loaders and viewer-core depend on this only
   rendererx/              the renderer. Depends on wgpu, glam, bytemuck, and nothing else heavy
     src/
       lib.rs             public API (§4)
@@ -47,12 +47,12 @@ crates/
       camera.rs          camera + optional orbit controller (feature `controls`)
       pick.rs            ray picking (feature `pick`, for editors)
       soft/              CPU fallback rasteriser (feature `soft`, §13)
-  rendererx-gltf/         optional: glTF/GLB → rendererx scene (zero-copy, §6)
+  gltf-lite/         optional: glTF/GLB → rendererx scene (zero-copy, §6)
   libfileparser-3d/      3D readers (glTF, OBJ, STL, PLY, FBX via ufbx, USD) → rendererx scene
   app/                   Viewer: shows the target texture as a libgui image
 ```
 
-`rendererx` must **not** depend on `viewer-core`, libgui, `image` or any format crate. The adapters (`rendererx-gltf`, `viewer-fmt-3d`) depend on **`rendererx-scene` only**, never on `rendererx` or wgpu: a loader must be able to run before any GPU exists, in a worker process, or in a WASM sandbox (PLAN.md §12.4).
+`rendererx` must **not** depend on `viewer-core`, libgui, `image` or any format crate. The adapters (`gltf-lite`, `viewer-fmt-3d`) depend on **`scene-data` only**, never on `rendererx` or wgpu: a loader must be able to run before any GPU exists, in a worker process, or in a WASM sandbox (PLAN.md §12.4).
 
 **Cargo features** (all off by default except `wgsl-builtin`):
 
@@ -72,7 +72,7 @@ crates/
 | Who | Does |
 |---|---|
 | Host app | Owns window, device, queue, event loop, threads. Calls `render()` when needed, shows the target. |
-| Loader (adapter) | Parses a file into a CPU `SceneBuilder` (`rendererx-scene`), geometry first, then textures as they decode. Needs no GPU. |
+| Loader (adapter) | Parses a file into a CPU `SceneBuilder` (`scene-data`), geometry first, then textures as they decode. Needs no GPU. |
 | `rendererx` | Uploads CPU scenes, GPU resources, shader registry, pipelines, the frame, camera, picking. |
 
 ---
@@ -80,7 +80,7 @@ crates/
 ## 4. Public API (sketch)
 
 ```rust
-// Loader thread, at launch, before any window or GPU exists (rendererx-scene: no wgpu).
+// Loader thread, at launch, before any window or GPU exists (scene-data: no wgpu).
 let (scene, mut builder) = CpuScene::new();       // `scene` is a cheap handle (Arc) the host keeps
 builder.set_bounds(aabb);                         // optional, frames the camera before any mesh exists
 let mesh = builder.add_mesh(MeshData { .. })?;    // may arrive in chunks
@@ -122,7 +122,7 @@ Rules:
 
 ## 5. Scene model
 
-Kept small and close to glTF, because glTF already maps the formats we care about. These types live in **`rendererx-scene`** and are plain data: `Send`, no GPU handles, and serialisable, so a scene can be built in a parser worker process and handed over in shared memory (PLAN.md §12.4).
+Kept small and close to glTF, because glTF already maps the formats we care about. These types live in **`scene-data`** and are plain data: `Send`, no GPU handles, and serialisable, so a scene can be built in a parser worker process and handed over in shared memory (PLAN.md §12.4).
 
 ```rust
 pub struct MeshData {
@@ -168,7 +168,7 @@ The renderer doesn't parse files, but its input types are shaped so loaders can 
 - Loaders should call `set_bounds` early (glTF accessors carry min/max), so the camera frames the model before the meshes arrive. It is only a hint: mesh bounds are always measured from the positions, and once geometry is done the measured scene bounds replace it (stored min/max can be wrong).
 - Texture decoding happens in the loader (it owns the image decoders). The renderer accepts RGBA8, RGBA16F and **GPU-compressed blocks** (BC1–7, ETC2, ASTC) when the device supports them.
 
-`rendererx-gltf` (implemented) follows these rules:
+`gltf-lite` (implemented) follows these rules:
 - Its own reader for the glTF subset we use (serde_json), not the `gltf` crate, which copies the GLB binary chunk. Every offset, stride and count is checked against its buffer view and buffer.
 - Images aren't decoded by the adapter: it reserves a `TextureId` per (image, colour space) and returns the encoded bytes (`PendingImage`) for the host's decoders and threads.
 - External files go through a `Resolver`. `DirResolver` refuses absolute paths, URI schemes, `..` and symlinks leading out of the folder, so a model can't make the app read outside its folder; it reads only regular files, up to `max_bytes`. Its errors carry a kind (`NotPermitted`, `NotFound`, `Refused`, `Other`), and `Loaded::unreadable` lists the buffers and images that were missing or not permitted, so a host can tell the user whether granting the folder would help (on iOS, picking a single file grants that file alone).
@@ -361,7 +361,7 @@ Going over a limit returns `Error::LimitExceeded { what, limit }`; the host can 
 
 The renderer stays a viewer, but leaves the hooks editors need. Editing follows the app's one editing model (PLAN.md §12.5): **views never mutate the scene; they send operations.**
 - `pick(ray) -> Option<Hit { node, triangle, position }>` (feature `pick`).
-- Scene operations live in `rendererx-scene`, so they are plain data: `SetTransform { node, from, to }`, `SetMaterial { node, from, to }`, `SetParam { material, name, from, to }`, `AddNode`, `RemoveNode`. Each carries what is needed to reverse it (undo/redo).
+- Scene operations live in `scene-data`, so they are plain data: `SetTransform { node, from, to }`, `SetMaterial { node, from, to }`, `SetParam { material, name, from, to }`, `AddNode`, `RemoveNode`. Each carries what is needed to reverse it (undo/redo).
 - Applying an operation to the CPU scene marks only what changed as dirty; every attached GPU scene re-uploads just that on the next frame. Two windows showing the same model stay in sync for free.
 - Selection highlight and a transform gizmo drawn in the overlay pass (per view).
 - Saving is not the renderer's job: the host writes the file (e.g. Viewer exports glTF from the CPU scene).
@@ -377,9 +377,9 @@ The renderer stays a viewer, but leaves the hooks editors need. Editing follows 
 
 ## 16. Milestones
 
-1. Core: `rendererx-scene` (CPU scene + builder), `Renderer` with `attach` and views, streaming upload, `clay`, on-demand rendering, camera + `controls`. Viewer shows a glTF with clay shading.
+1. Core: `scene-data` (CPU scene + builder), `Renderer` with `attach` and views, streaming upload, `clay`, on-demand rendering, camera + `controls`. Viewer shows a glTF with clay shading.
 2. Shading system: registry, pipeline cache, `unlit`, `lambert`, `blinn_phong`, `pbr` + SH ambient; texture streaming.
-3. Adapters: `rendererx-gltf` (zero-copy), then OBJ, STL, PLY, and FBX via `ufbx` (now in `libfileparser-3d`).
+3. Adapters: `gltf-lite` (zero-copy), then OBJ, STL, PLY, and FBX via `ufbx` (now in `libfileparser-3d`).
 4. `mtoon` with the outline pass; environment-map lighting; KHR material extensions.
 5. `pick`, mutable scene and overlays (ready for editors); `simplify`; `soft` fallback.
 

@@ -1,14 +1,14 @@
 [package]
-name = "rendererx-gltf"
-description = "glTF 2.0 / GLB to a RendererX CPU scene. No GPU, no image decoding."
+name = "gltf-lite"
+description = "A glTF 2.0 / GLB reader, zero-copy from the mapped file, into a scene-data scene. No GPU, no image decoding."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-# Depends on rendererx-scene only, never rendererx or wgpu: it must run in a parser
+# Depends on scene-data only, never rendererx or wgpu: it must run in a parser
 # worker or sandbox before any GPU exists (docs/design/3d-renderer.md §2).
 [dependencies]
-rendererx-scene.workspace = true
+scene-data.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bytemuck = "1"

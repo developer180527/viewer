@@ -10,7 +10,7 @@ publish = false
 viewer-core.workspace = true
 viewer-formats.workspace = true
 viewer-fmt-archive.workspace = true
-rendererx-scene.workspace = true
+scene-data.workspace = true
 anyhow.workspace = true
 toml = { version = "1", default-features = false, features = ["parse", "display", "preserve_order"] }
 image = { version = "0.25", default-features = false, features = ["png"] }

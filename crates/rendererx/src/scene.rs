@@ -4,8 +4,8 @@ use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
-use rendererx_scene::glam::{Mat3, Vec4};
-use rendererx_scene::{CpuScene, Indices, MaterialId, MeshData, MeshId, ParamValue, ReaderGuard, SceneRead, TextureId, Topology};
+use scene_data::glam::{Mat3, Vec4};
+use scene_data::{CpuScene, Indices, MaterialId, MeshData, MeshId, ParamValue, ReaderGuard, SceneRead, TextureId, Topology};
 use wgpu::util::DeviceExt;
 
 use crate::textures::{GpuTexture, MaterialBinding, Model, SLOTS, texture_for, upload_texture};
@@ -83,7 +83,7 @@ pub struct GpuScene {
     /// [`SceneRead::bounds_revision`] the cached bounds were computed at.
     bounds_seen: Option<u64>,
     pending: bool,
-    bounds: Option<rendererx_scene::Aabb>,
+    bounds: Option<scene_data::Aabb>,
     pub(crate) first_mesh_traced: bool,
     pub(crate) first_frame_traced: AtomicBool,
 }
@@ -135,7 +135,7 @@ impl GpuScene {
     }
 
     /// The scene's bounds as of the last sync, for framing the camera.
-    pub fn bounds(&self) -> Option<rendererx_scene::Aabb> {
+    pub fn bounds(&self) -> Option<scene_data::Aabb> {
         self.bounds
     }
 
@@ -364,11 +364,11 @@ impl GpuScene {
 /// The material's `base_color` parameter when it has one. Without one: the clay
 /// colour for clay materials, and white for the rest (glTF's default factor), so a
 /// map or an unlit colour isn't darkened to clay grey.
-fn base_color(material: &rendererx_scene::Material) -> Vec4 {
+fn base_color(material: &scene_data::Material) -> Vec4 {
     match material.params.get("base_color") {
         Some(ParamValue::Vec4(c)) => c,
         Some(ParamValue::Vec3(c)) => c.extend(1.0),
-        _ if material.shading == rendererx_scene::ShadingId::CLAY => CLAY,
+        _ if material.shading == scene_data::ShadingId::CLAY => CLAY,
         _ => Vec4::ONE,
     }
 }
@@ -388,7 +388,7 @@ fn upload_mesh(device: &wgpu::Device, limits: &wgpu::Limits, data: &MeshData, el
     let normals: &[_] = match &data.normals {
         Some(n) => n.as_slice(),
         None => {
-            zeros = vec![rendererx_scene::glam::Vec3::ZERO; positions.len()];
+            zeros = vec![scene_data::glam::Vec3::ZERO; positions.len()];
             &zeros
         }
     };

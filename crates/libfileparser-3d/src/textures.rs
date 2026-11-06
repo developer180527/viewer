@@ -10,7 +10,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use libfileparser_core::{Dependencies, FileSource, ParseContext};
-use rendererx_scene::{ColorSpace, Stream, TextureData, TextureId, TextureSink};
+use scene_data::{ColorSpace, Stream, TextureData, TextureId, TextureSink};
 
 /// Longest side kept. A 4K base colour map is 64 MB as RGBA8 (85 MB with mips); for a
 /// viewer 2048 (21 MB) is sharp enough and a quarter of the memory.
@@ -398,7 +398,7 @@ pub fn with_mips(width: u32, height: u32, rgba: Vec<u8>, color_space: ColorSpace
     TextureData {
         width,
         height,
-        format: rendererx_scene::TextureFormat::Rgba8,
+        format: scene_data::TextureFormat::Rgba8,
         color_space,
         levels: levels.into_iter().map(Stream::from).collect(),
     }
@@ -524,7 +524,7 @@ mod tests {
             out
         };
         for close in ["drop", "cancel"] {
-            let (scene, mut b) = rendererx_scene::CpuScene::new();
+            let (scene, mut b) = scene_data::CpuScene::new();
             let jobs: Vec<ImageJob> = (0..20)
                 .map(|i| ImageJob { texture: b.reserve_texture().unwrap(), source: ImageSource::Bytes(png(i as u8).into()), color_space: ColorSpace::Srgb })
                 .collect();

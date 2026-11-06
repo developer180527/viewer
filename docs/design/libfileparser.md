@@ -79,7 +79,7 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 | `Table` (`TableSource`) | `info()`: columns, row count (maybe estimated); later sheets | `rows(a..b)` |
 | `Tree` (`TreeSource`) | Nodes with an id, a label, a value and whether they have children | `child_count(node)`, then `children(node, a..b)` |
 | `Container` | `entry_count()`; entries (path, size, packed size, kind) | `entries(a..b)`; open one entry as a file |
-| `Scene` | `rendererx-scene` data: meshes, materials, textures, nodes; no GPU | Arrives progressively |
+| `Scene` | `scene-data` data: meshes, materials, textures, nodes; no GPU | Arrives progressively |
 | `Media` (later) | Streams and metadata; decode a frame or samples into the caller's buffer | Time |
 | `Hex` | The bytes | Offset ranges |
 

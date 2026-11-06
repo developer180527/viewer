@@ -94,7 +94,7 @@ This is today's shape, in `viewer-core`. Where it is heading (documents with fac
 ### 3D
 | Formats | Library |
 |---|---|
-| glTF / GLB (primary) | `rendererx-gltf` (own reader, zero-copy from the mapped file) — **done** |
+| glTF / GLB (primary) | `gltf-lite` (own reader, zero-copy from the mapped file) — **done** |
 | OBJ (+ MTL) | `ufbx` (one C file, official Rust bindings) — **done** |
 | STL | Our own parser (binary and ASCII, welded, Z-up) — **done** |
 | PLY + Gaussian splats | Our own parser (meshes, point clouds, colours) — **done**; splats drawn as splats later |
@@ -291,7 +291,7 @@ crates/
   libfileparser-core/  libfileparser-testkit/  libfileparser-3d/      libfileparser (docs/design/libfileparser.md)
   fmt-image/  fmt-doc/  fmt-data/  fmt-archive/  fmt-pdf/             format loaders, moving to libfileparser
   pdf-mupdf/            MuPDF backend (AGPL)        pdf-pdfkit/   PDFKit backend
-  rendererx/  rendererx-scene/  rendererx-gltf/      the reusable 3D renderer (docs/design/3d-renderer.md)
+  rendererx/  scene-data/  gltf-lite/      the reusable 3D renderer (docs/design/3d-renderer.md)
   usd-lite/             pure-Rust USD reader and composition
   formats/              viewer-formats: the registry of every loader, shared by the app and the corpus
   corpus/               viewer-corpus: the test corpus runner (corpus/README.md)

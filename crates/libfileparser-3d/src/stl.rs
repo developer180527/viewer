@@ -4,14 +4,14 @@
 //!
 //! STL stores every triangle's three corners separately. Shared corners are welded
 //! back together, so normals can be smoothed across gentle edges and kept hard across
-//! sharp ones (rendererx-scene generates them); the file's facet normals are ignored,
+//! sharp ones (scene-data generates them); the file's facet normals are ignored,
 //! as exporters often leave them zero or wrong.
 
 use std::collections::HashMap;
 
 use anyhow::{Context, bail};
-use rendererx_scene::glam::{Mat4, Vec3};
-use rendererx_scene::{CpuScene, Indices, MeshData, Node};
+use scene_data::glam::{Mat4, Vec3};
+use scene_data::{CpuScene, Indices, MeshData, Node};
 use anyhow::Result;
 use libfileparser_core::ParseContext;
 

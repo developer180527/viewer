@@ -122,7 +122,7 @@ jobs:
         run: >
           cargo ndk -t arm64-v8a build
           -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
-          -p libfileparser-core -p libfileparser-3d -p rendererx-scene -p rendererx -p rendererx-gltf -p usd-lite
+          -p libfileparser-core -p libfileparser-3d -p scene-data -p rendererx -p gltf-lite -p usd-lite
 
   # The shared crates and the app itself (ios/run-sim.sh runs it on a simulator).
   ios:
@@ -141,4 +141,4 @@ jobs:
         run: >
           cargo build --target aarch64-apple-ios -p viewer
           -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
-          -p libfileparser-core -p libfileparser-3d -p rendererx-scene -p rendererx -p rendererx-gltf -p usd-lite
+          -p libfileparser-core -p libfileparser-3d -p scene-data -p rendererx -p gltf-lite -p usd-lite
