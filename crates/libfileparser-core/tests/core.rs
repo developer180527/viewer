@@ -73,10 +73,21 @@ fn folder_files_read_inside_the_folder_only() {
     }
     let absolute = base.join("secret.txt").to_string_lossy().into_owned();
     assert_eq!(f.resolve(&src, &absolute).unwrap_err(), Unreadable::Outside, "an absolute path");
-    // One level up, when allowed, and no further.
-    let up = FolderFiles::new().allow_parent_levels(1);
-    assert_eq!(up.resolve(&src, "../textures/up.png").unwrap().bytes(), b"up");
-    assert_eq!(up.resolve(&src, "../../x.png").unwrap_err(), Unreadable::Outside);
+    // A granted folder: climbing is fine while it stays inside, and nowhere else.
+    let granted = FolderFiles::within(&base);
+    assert_eq!(granted.resolve(&src, "../textures/up.png").unwrap().bytes(), b"up");
+    assert_eq!(granted.resolve(&src, "../../x.png").unwrap_err(), Unreadable::Outside);
+    // A model straight in a broad folder (~/Downloads) can't reach that folder's
+    // siblings (~/.ssh) by climbing one level and coming back down.
+    std::fs::create_dir_all(base.join(".ssh")).unwrap();
+    std::fs::write(base.join(".ssh/id_rsa"), b"key").unwrap();
+    std::fs::write(base.join("downloads.gltf"), b"{}").unwrap();
+    let in_downloads = FileSource::open(base.join("model/m.gltf")).unwrap();
+    for sibling in ["../.ssh/id_rsa", "textures/../../.ssh/id_rsa"] {
+        assert_eq!(FolderFiles::new().resolve(&in_downloads, sibling).unwrap_err(), Unreadable::Outside, "{sibling}");
+    }
+    let elsewhere = FileSource::open(base.join("downloads.gltf")).unwrap();
+    assert_eq!(FolderFiles::within(base.join("model")).resolve(&elsewhere, "secret.txt").unwrap_err(), Unreadable::Outside, "a source outside its granted folder reads nothing");
     // A symlink inside the folder that points out of it.
     #[cfg(unix)]
     {

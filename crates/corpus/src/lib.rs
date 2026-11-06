@@ -225,7 +225,7 @@ fn scene_summary(scene: &scene_data::CpuScene, t: &mut Table) {
 
 fn unreadable(doc: &Document, summary: &mut Table) {
     let mut t = Table::new();
-    for (key, reason) in [("blocked", Unreadable::Blocked), ("missing", Unreadable::Missing)] {
+    for (key, reason) in [("blocked", Unreadable::Blocked), ("missing", Unreadable::Missing), ("outside", Unreadable::Outside)] {
         let mut names = doc.unreadable.names(reason);
         names.sort();
         if !names.is_empty() {

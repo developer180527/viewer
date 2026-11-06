@@ -4,8 +4,10 @@ use libfileparser_core::{Content, FileSource, FolderFiles, ParseContext};
 
 fn describe(src: &FileSource) {
     let t = std::time::Instant::now();
-    // Real exports often keep textures one folder up.
-    let cx = ParseContext::new().with_files(FolderFiles::new().allow_parent_levels(1));
+    // These models are ours: let them read anywhere in the test folder, including a
+    // sibling `../textures/` (a granted folder, as an app would set from what the user opened).
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../test_3d_files");
+    let cx = ParseContext::new().with_files(FolderFiles::within(root));
     match libfileparser_3d::open(src, &cx) {
         Ok(doc) => {
             let kind = match doc.facet(0, &cx) {

@@ -135,60 +135,72 @@ impl FileResolver for NoFiles {
     }
 }
 
-/// Reads references inside the source's folder and below: what a viewer or editor
-/// wants. A reference that leaves the folder (`../../secret.png`, an absolute path, a
-/// symlink pointing out) is [`Unreadable::Outside`], so a hostile file can't make the
-/// app read other files on the machine. Exporters that record absolute paths are
-/// still served: readers look for the file by name in the folder
-/// ([`Dependencies::resolve_any`](crate::Dependencies::resolve_any)).
-#[derive(Clone, Copy, Debug, Default)]
+/// Reads references inside one folder: by default the source's own folder and
+/// everything below it, which is what a viewer or editor wants. A reference that
+/// leaves it (`../secret.png`, an absolute path, a symlink pointing out) is
+/// [`Unreadable::Outside`], so a hostile file can't make the app read other files on
+/// the machine. Exporters that record absolute paths are still served: readers look
+/// for the file by name in the folder ([`Dependencies::resolve_any`](crate::Dependencies::resolve_any)).
+///
+/// [`FolderFiles::within`] widens the folder to one the user granted (a folder they
+/// opened or picked), so `../textures/` works for a model in a subfolder of it. The
+/// root is always a folder someone chose, never "n levels up from wherever the file
+/// is": one level up from a model in `~/Downloads` is the whole home folder.
+#[derive(Clone, Debug, Default)]
 pub struct FolderFiles {
-    parent_levels: u8,
+    root: Option<PathBuf>,
 }
 
 impl FolderFiles {
+    /// The source's own folder and below.
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Also allows up to `levels` folders above the source's (`../textures/` is one):
-    /// some exporters put textures in a sibling folder.
-    pub fn allow_parent_levels(mut self, levels: u8) -> Self {
-        self.parent_levels = levels;
-        self
+    /// Everything inside `root`, which should contain the sources opened with it (a
+    /// source outside `root` reads nothing). References may climb (`../textures/a.png`)
+    /// as long as they stay inside.
+    pub fn within(root: impl Into<PathBuf>) -> Self {
+        Self { root: Some(root.into()) }
     }
 
     /// The folder references may not leave, and the path `reference` names, when it
     /// stays inside by its words alone (before symlinks are followed).
     fn place(&self, from: &FileSource, reference: &str) -> std::result::Result<(PathBuf, PathBuf), Unreadable> {
         let reference = reference.replace('\\', "/");
+        // `C:/x` on a Unix machine parses as a relative `C:` folder; it's still absolute.
+        if reference.as_bytes().get(1) == Some(&b':') || reference.contains("://") {
+            return Err(Unreadable::Outside);
+        }
         let dir = from.path().and_then(Path::parent).ok_or(Unreadable::Missing)?;
-        let mut depth: i64 = 0;
+        // Absolute, so a relative source path and an absolute root compare.
+        let dir = std::path::absolute(dir).map_err(|_| Unreadable::Missing)?;
+        let root = match &self.root {
+            Some(root) => std::path::absolute(root).map_err(|_| Unreadable::Missing)?,
+            None => dir.clone(),
+        };
+        let mut path = dir;
         for c in Path::new(&reference).components() {
             match c {
-                Component::Normal(_) => depth += 1,
+                Component::Normal(name) => path.push(name),
                 Component::CurDir => {}
                 Component::ParentDir => {
-                    depth -= 1;
-                    if depth < -i64::from(self.parent_levels) {
+                    if !path.pop() {
                         return Err(Unreadable::Outside);
                     }
                 }
                 // `/x`, `C:\x`, `\\server\x`: absolute, never inside.
                 Component::RootDir | Component::Prefix(_) => return Err(Unreadable::Outside),
             }
-        }
-        // `C:/x` on a Unix machine parses as a relative `C:` folder; it's still absolute.
-        if reference.as_bytes().get(1) == Some(&b':') || reference.contains("://") {
-            return Err(Unreadable::Outside);
-        }
-        let mut root = dir.to_path_buf();
-        for _ in 0..self.parent_levels {
-            if !root.pop() {
-                break;
+            // Checked at every step: `a/../../secret` must not pass by coming back.
+            if !path.starts_with(&root) {
+                return Err(Unreadable::Outside);
             }
         }
-        Ok((root, dir.join(&reference)))
+        if !path.starts_with(&root) {
+            return Err(Unreadable::Outside);
+        }
+        Ok((root, path))
     }
 }
 

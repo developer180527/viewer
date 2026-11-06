@@ -497,7 +497,12 @@ impl ViewerApp {
             // Files the document refers to but couldn't read. Blocked ones also get the
             // banner over the content; missing ones only this quiet note, since no
             // permission brings them back.
-            for (reason, title) in [(Unreadable::Missing, "Not found"), (Unreadable::Blocked, "Not allowed to read")] {
+            for (reason, title) in [
+                (Unreadable::Missing, "Not found"),
+                (Unreadable::Blocked, "Not allowed to read"),
+                // Not looked for: the model points outside its folder, which Viewer never reads.
+                (Unreadable::Outside, "Outside the model's folder"),
+            ] {
                 let names = page.doc.unreadable.names(reason);
                 if !names.is_empty() {
                     ui.space(8.0);

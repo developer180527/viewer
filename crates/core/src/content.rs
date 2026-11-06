@@ -69,8 +69,8 @@ impl Unreadables {
             .into_iter()
             .filter_map(|d| match d.status {
                 DependencyStatus::Blocked => Some(UnreadableFile { name: d.reference, reason: Unreadable::Blocked }),
-                // Outside the folder Viewer reads from: not looked for, so shown as not found.
-                DependencyStatus::Missing | DependencyStatus::Outside => Some(UnreadableFile { name: d.reference, reason: Unreadable::Missing }),
+                DependencyStatus::Missing => Some(UnreadableFile { name: d.reference, reason: Unreadable::Missing }),
+                DependencyStatus::Outside => Some(UnreadableFile { name: d.reference, reason: Unreadable::Outside }),
                 _ => None,
             })
             .collect()
