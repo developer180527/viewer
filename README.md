@@ -69,6 +69,7 @@ crates/libfileparser-3d       glTF, FBX/OBJ (ufbx), STL, PLY, USD, .blend; their
 crates/libfileparser-images   PNG, JPEG, WebP, GIF, TIFF, EXR, HDR… and SVG, decoded band by band when shown
 crates/libfileparser-text     text by lines and its language; the Source facet
 crates/libfileparser-archives zip / tar / gzip containers, folders; the Package facet
+crates/libviewer              views for every content model (text, hex, tree, table, container, raster, scene), libgui
 crates/fmt-pdf       PDF loader; picks the backend by target
 crates/pdf-mupdf     MuPDF backend (AGPL; not in iOS builds)
 crates/pdf-pdfkit    PDFKit backend (Apple)
@@ -76,7 +77,7 @@ crates/rendererx*    RendererX: the reusable 3D renderer, its CPU scene and glTF
 crates/usd-lite      pure-Rust USD reader and composition
 crates/formats       the registry of every loader (app and corpus share it)
 crates/corpus        test corpus runner: opens every file in corpus/ and checks the result
-crates/app           libgui + wgpu shell and views
+crates/app           libgui + wgpu shell: windows, navigation, its policy; hosts libviewer
 docs/                design docs (start at docs/README.md): roadmap, decisions, design/ (document model, libfileparser, 3D, architecture, PDF, renderer, UI, editing)
 ios/                 Xcode wrapper and device / simulator scripts
 bench/               sample generator, startup and memory benchmarks

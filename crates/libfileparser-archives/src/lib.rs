@@ -42,13 +42,14 @@ pub fn open_with(id: &str, src: &FileSource, cx: &ParseContext) -> Result<Docume
     libfileparser_core::open_with(readers(), id, src, cx)
 }
 
-fn document(id: &'static str, format: &str, container: Arc<dyn Container>, entries: &[Entry]) -> Document {
+fn document(id: &'static str, format: &str, src: &FileSource, container: Arc<dyn Container>, entries: &[Entry]) -> Document {
     let files = entries.iter().filter(|e| e.kind == EntryKind::File).count();
     let total: u64 = entries.iter().map(|e| e.size).sum();
     Document::new(FormatInfo::new(id, format, Category::Archives))
         .with_facet(Role::Primary, "Files", Content::Container(container))
         .with_meta("Files", files)
         .with_meta("Uncompressed size", format!("{total} bytes"))
+        .with_file_facets(src, None)
 }
 
 /// Most reserved up front from a size hint. Hints come from the archive itself, so a
@@ -105,7 +106,7 @@ impl Reader for ZipReader {
         cx.cancel.check()?;
         let container = ZipContainer::new(src, cx)?;
         let entries = container.entries.clone();
-        Ok(document("zip", "Zip archive", Arc::new(container), &entries))
+        Ok(document("zip", "Zip archive", src, Arc::new(container), &entries))
     }
 }
 
@@ -218,7 +219,7 @@ impl Reader for TarReader {
             ranges.push(start..start.saturating_add(size as usize));
         }
         let listed = entries.clone();
-        Ok(document("tar", format, Arc::new(TarContainer { data, entries, ranges }), &listed))
+        Ok(document("tar", format, src, Arc::new(TarContainer { data, entries, ranges }), &listed))
     }
 }
 
@@ -282,7 +283,7 @@ impl Reader for GzipReader {
         let inner = src.name().strip_suffix(".gz").or_else(|| src.name().strip_suffix(".GZ")).unwrap_or("decompressed").to_owned();
         let entries = vec![Entry::file(inner.clone(), raw.len() as u64).with_packed(src.len())];
         let inner = FileSource::from_bytes(inner, raw);
-        Ok(document("gzip", "Gzip", Arc::new(GzipContainer { inner, entries: entries.clone() }), &entries))
+        Ok(document("gzip", "Gzip", src, Arc::new(GzipContainer { inner, entries: entries.clone() }), &entries))
     }
 }
 

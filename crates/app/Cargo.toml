@@ -11,6 +11,7 @@ path = "src/main.rs"
 
 [dependencies]
 libfileparser-core.workspace = true
+libviewer.workspace = true
 viewer-core.workspace = true
 viewer-fmt-doc.workspace = true
 viewer-fmt-data.workspace = true

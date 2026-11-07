@@ -33,91 +33,8 @@ const HACK: &[u8] = include_bytes!("../../assets/Hack-Regular.ttf");
 /// Window size in logical px, for the window and for headless screenshots.
 const SIZE: (f32, f32) = (1100.0, 760.0);
 
-/// Where views put their images: the GPU, or the CPU renderer's texture table.
-pub trait Textures {
-    fn max_side(&self) -> u32;
-    /// `rgba` is straight (not premultiplied) RGBA8, `width * height * 4` bytes.
-    fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId;
-    /// Physical pixels per logical point, for views that render at native resolution.
-    fn pixels_per_point(&self) -> f32;
-    /// This frame's trackpad pinch over the window, as a zoom ratio minus 1 (0 = none).
-    /// libgui's `Response::pinch` is touch only; winit reports trackpads separately.
-    fn trackpad_pinch(&self) -> f32 {
-        0.0
-    }
-    /// Waits for background work (texture decoding) before drawing, for screenshots.
-    fn settles(&self) -> bool {
-        false
-    }
-    /// A view finished uploading something big: after this frame's submit, wait for
-    /// the GPU once, so wgpu frees the upload staging now (it frees it only when a
-    /// later submit finds the GPU done, and an idle window makes none).
-    fn uploads_done(&mut self) {}
-    /// Frees a texture this view uploaded and no longer draws (from this frame on).
-    fn free(&mut self, id: TextureId);
-
-    /// Draws a 3D scene from `camera` into a `size`-pixel frame (RendererX on the
-    /// shared device) and returns the texture to show.
-    fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d;
-}
-
-/// What a 3D view keeps on the GPU between frames. Dropping it frees the uploaded
-/// model and the view's buffers; the registered texture is retired by the page.
-#[derive(Default)]
-pub struct SceneGpu {
-    gpu: Option<rendererx::GpuScene>,
-    view: Option<rendererx::View>,
-    /// The frame registered with the UI renderer, and the view target generation it shows.
-    texture: Option<(TextureId, u64)>,
-}
-
-impl SceneGpu {
-    pub fn texture(&self) -> Option<TextureId> {
-        self.texture.map(|(t, _)| t)
-    }
-}
-
-#[derive(Default)]
-pub struct Frame3d {
-    pub texture: Option<TextureId>,
-    /// Still uploading: draw again soon.
-    pub busy: bool,
-    /// Why nothing can be drawn (no GPU).
-    pub error: Option<String>,
-}
-
-/// Uploads what's new (everything at once when `block`), then renders if the frame
-/// would change. Returns whether uploads remain.
-fn draw_scene(
-    (rx, device, queue): (&rendererx::Renderer, &wgpu::Device, &wgpu::Queue),
-    st: &mut SceneGpu,
-    scene: &CpuScene,
-    (w, h): (u32, u32),
-    camera: &Camera,
-    background: [f32; 4],
-    block: bool,
-) -> bool {
-    let gpu = st.gpu.get_or_insert_with(|| rx.attach(scene));
-    rx.sync(gpu);
-    while block && gpu.needs_sync() {
-        rx.sync(gpu);
-    }
-    let view = st.view.get_or_insert_with(|| rx.create_view(rendererx::ViewDesc { width: w, height: h }));
-    view.resize(w, h);
-    let opts = rendererx::RenderOptions { background };
-    if block {
-        // A blocking draw (screenshots) shows the final shading, not clay stand-ins.
-        rx.prepare(gpu);
-    }
-    if rx.needs_redraw(gpu, view, camera, &opts) {
-        let mut encoder = device.create_command_encoder(&Default::default());
-        rx.render(&mut encoder, gpu, view, camera, &opts);
-        queue.submit([encoder.finish()]);
-    }
-    // Pipelines aren't counted: windows compile them on `Rx`'s worker, which wakes the
-    // window as each is ready; screenshots compiled them in `prepare` above.
-    gpu.needs_sync() || scene.read().geometry() == rendererx::scene_data::GeometryState::Loading
-}
+// Views are libviewer's; this file is their host (`Host`), on the GPU or the CPU.
+use libviewer::{Frame3d, Host as ViewHost, SceneGpu, draw_scene};
 
 fn new_ui(dark: bool) -> anyhow::Result<Ui> {
     let theme = if dark { Theme::dark() } else { Theme::light() };
@@ -286,7 +203,7 @@ struct Headless {
     gpu: Option<Result<(wgpu::Device, wgpu::Queue, rendererx::Renderer), String>>,
 }
 
-impl Textures for Headless {
+impl ViewHost for Headless {
     fn max_side(&self) -> u32 {
         8192
     }
@@ -437,13 +354,21 @@ struct Gpu<'a> {
     settle: &'a mut bool,
     /// Textures views freed this frame; unregistered once the frame is prepared.
     freed: &'a mut Vec<TextureId>,
-    /// See `Textures::trackpad_pinch`.
+    /// See `ViewHost::trackpad_pinch`.
     pinch: f32,
 }
 
-impl Textures for Gpu<'_> {
+impl ViewHost for Gpu<'_> {
     fn trackpad_pinch(&self) -> f32 {
         self.pinch
+    }
+
+    fn waker(&self) -> libviewer::Waker {
+        std::sync::Arc::new(|| {
+            if let Some(wake) = WAKE.get() {
+                wake();
+            }
+        })
     }
 
     fn max_side(&self) -> u32 {

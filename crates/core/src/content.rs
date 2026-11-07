@@ -1,7 +1,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::{FileSource, Result};
+use crate::FileSource;
 
 /// The result of loading a file: one content model plus descriptive metadata.
 pub struct Document {
@@ -97,175 +97,40 @@ impl Unreadables {
     }
 }
 
-/// The content models. Every format maps onto one of these; see PLAN.md §1.
+/// What a page shows: one of libfileparser's content models (shown by libviewer's
+/// views), or one of Viewer's own that libfileparser has no model for yet.
 pub enum Content {
-    Raster(Raster),
+    /// Raster, Text, Tree, Table, Container, Hex or Scene: libfileparser's models.
+    Model(libfileparser_core::Content),
+    /// Text with Viewer's syntax highlighting (its text loader).
     Text(TextDoc),
     Markdown(String),
-    Tree(TreeNode),
-    Table(Table),
-    Container(Arc<dyn Container>),
-    /// Raw bytes of the source file.
-    Hex(FileSource),
-    /// A 3D model: meshes, materials and nodes, built without a GPU.
-    Scene(SceneDoc),
     /// Pages laid out one after another and rendered on demand (PDF).
-    Pages(std::sync::Arc<dyn crate::PageSource>),
+    Pages(Arc<dyn crate::PageSource>),
 }
 
 impl Content {
     pub fn model_name(&self) -> &'static str {
         match self {
-            Content::Raster(_) => "Raster",
+            Content::Model(c) => match c {
+                libfileparser_core::Content::Raster(_) => "Raster",
+                libfileparser_core::Content::Text(_) => "Text",
+                libfileparser_core::Content::Tree(_) => "Tree",
+                libfileparser_core::Content::Table(_) => "Table",
+                libfileparser_core::Content::Container(_) => "Container",
+                libfileparser_core::Content::Hex(_) => "Hex",
+                libfileparser_core::Content::Scene(_) => "3D scene",
+                _ => "Other",
+            },
             Content::Text(_) => "Text",
             Content::Markdown(_) => "Rich text",
-            Content::Tree(_) => "Tree",
-            Content::Table(_) => "Table",
-            Content::Container(_) => "Container",
-            Content::Hex(_) => "Hex",
-            Content::Scene(_) => "3D scene",
             Content::Pages(_) => "Pages",
         }
     }
-}
 
-/// A 3D model. The scene is shared with the renderer, which follows it as it fills in
-/// and frees the CPU copy of what it has uploaded (docs/design/3d-renderer.md §11.1).
-pub struct SceneDoc {
-    pub scene: scene_data::CpuScene,
-    /// Textures still being decoded on background threads; they arrive in `scene`
-    /// one by one.
-    pub textures_pending: Arc<std::sync::atomic::AtomicUsize>,
-}
-
-/// An image in straight (non-premultiplied) RGBA8: whole, or arriving in bands of
-/// rows from a decoder thread (big images, so the whole never sits in memory).
-pub struct Raster {
-    pub width: u32,
-    pub height: u32,
-    pub pixels: Pixels,
-}
-
-pub enum Pixels {
-    /// Every row, `width * height * 4` bytes.
-    Full(Vec<u8>),
-    /// Rows still coming, top to bottom.
-    Bands(BandStream),
-    /// The view has what it needs (e.g. on the GPU) and dropped the CPU copy.
-    Released,
-}
-
-impl Raster {
-    pub fn full(width: u32, height: u32, rgba: Vec<u8>) -> Self {
-        Self { width, height, pixels: Pixels::Full(rgba) }
-    }
-
-    /// The pixels when they are all here.
-    pub fn rgba(&self) -> Option<&[u8]> {
-        match &self.pixels {
-            Pixels::Full(p) => Some(p),
-            _ => None,
-        }
-    }
-
-    /// Waits for a streamed image's remaining bands and assembles the whole (for
-    /// views that need every pixel at once).
-    pub fn make_full(&mut self) -> std::result::Result<(), String> {
-        let Pixels::Bands(stream) = &self.pixels else { return Ok(()) };
-        let mut rgba = vec![0u8; self.width as usize * self.height as usize * 4];
-        let row = self.width as usize * 4;
-        loop {
-            match stream.wait_next() {
-                Next::Band(b) => {
-                    let start = b.y as usize * row;
-                    let end = (start + b.rgba.len()).min(rgba.len());
-                    rgba[start..end].copy_from_slice(&b.rgba[..end - start]);
-                }
-                Next::Done | Next::Pending => break,
-                Next::Failed(e) => return Err(e),
-            }
-        }
-        self.pixels = Pixels::Full(rgba);
-        Ok(())
-    }
-}
-
-/// Rows `y..y + rgba.len() / (width * 4)` of an image: libfileparser's, so its bands
-/// come through unchanged.
-pub use libfileparser_core::Band;
-
-pub enum Next {
-    Band(Band),
-    /// More is coming; not decoded yet.
-    Pending,
-    /// Every band has been delivered.
-    Done,
-    /// The decoder stopped: what came before is all there is.
-    Failed(String),
-}
-
-type Wake = Arc<std::sync::Mutex<Option<Arc<dyn Fn() + Send + Sync>>>>;
-
-/// Bands from a decoder thread. At most two wait at a time: a view that isn't
-/// consuming them (hidden window) makes the decoder wait, so memory stays bounded,
-/// and dropping the stream (closing the page) stops the decoder.
-pub struct BandStream {
-    rx: std::sync::Mutex<std::sync::mpsc::Receiver<std::result::Result<Band, String>>>,
-    wake: Wake,
-}
-
-impl BandStream {
-    /// Runs `produce` on a new thread. It hands each band to `emit`, which returns
-    /// false once nobody is listening (stop then); an error ends the stream.
-    pub fn spawn(produce: impl FnOnce(&mut dyn FnMut(Band) -> bool) -> std::result::Result<(), String> + Send + 'static) -> Self {
-        let (tx, rx) = std::sync::mpsc::sync_channel(2);
-        let wake: Wake = Arc::default();
-        let notify = wake.clone();
-        let ping = move || {
-            let f = notify.lock().unwrap_or_else(|e| e.into_inner()).clone();
-            if let Some(f) = f {
-                f();
-            }
-        };
-        std::thread::Builder::new()
-            .name("image decode".into())
-            .spawn(move || {
-                let mut emit = |band: Band| {
-                    let ok = tx.send(Ok(band)).is_ok();
-                    ping();
-                    ok
-                };
-                if let Err(e) = produce(&mut emit) {
-                    let _ = tx.send(Err(e));
-                }
-                drop(tx);
-                ping();
-            })
-            .expect("spawning the image decoder");
-        Self { rx: std::sync::Mutex::new(rx), wake }
-    }
-
-    /// Called (from the decoder thread) whenever a band arrives or the stream ends.
-    pub fn set_wake(&self, f: impl Fn() + Send + Sync + 'static) {
-        *self.wake.lock().unwrap_or_else(|e| e.into_inner()) = Some(Arc::new(f));
-    }
-
-    pub fn try_next(&self) -> Next {
-        use std::sync::mpsc::TryRecvError;
-        match self.rx.lock().unwrap_or_else(|e| e.into_inner()).try_recv() {
-            Ok(Ok(b)) => Next::Band(b),
-            Ok(Err(e)) => Next::Failed(e),
-            Err(TryRecvError::Empty) => Next::Pending,
-            Err(TryRecvError::Disconnected) => Next::Done,
-        }
-    }
-
-    pub fn wait_next(&self) -> Next {
-        match self.rx.lock().unwrap_or_else(|e| e.into_inner()).recv() {
-            Ok(Ok(b)) => Next::Band(b),
-            Ok(Err(e)) => Next::Failed(e),
-            Err(_) => Next::Done,
-        }
+    /// A file's bytes, shown raw.
+    pub fn hex(src: FileSource) -> Self {
+        Content::Model(libfileparser_core::Content::Hex(src))
     }
 }
 
@@ -314,47 +179,26 @@ pub struct Span {
     pub italic: bool,
 }
 
-/// A node in a hierarchical document (JSON, TOML, ...).
-#[derive(Debug, Default)]
-pub struct TreeNode {
-    pub key: String,
-    /// Displayed value for leaves, or a summary such as "{3}" / "[10]" for branches.
-    pub value: String,
-    pub children: Vec<TreeNode>,
-}
 
-impl TreeNode {
-    pub fn count(&self) -> usize {
-        1 + self.children.iter().map(TreeNode::count).sum::<usize>()
+/// A highlighted text read as libfileparser's text, so libviewer's text view shows it.
+impl libfileparser_core::TextSource for TextDoc {
+    fn info(&self) -> libfileparser_core::TextInfo {
+        libfileparser_core::TextInfo::new(libfileparser_core::Count::Exact(self.line_count() as u64))
     }
-}
 
-pub struct Table {
-    pub headers: Vec<String>,
-    pub rows: Vec<Vec<String>>,
-    /// Widest row (or the header), computed once so views don't rescan every frame.
-    pub columns: usize,
-}
-
-impl Table {
-    pub fn new(headers: Vec<String>, rows: Vec<Vec<String>>) -> Self {
-        let columns = rows.iter().map(Vec::len).chain([headers.len()]).max().unwrap_or(0);
-        Self { headers, rows, columns }
+    fn lines(&self, range: Range<u64>) -> libfileparser_core::Result<Vec<libfileparser_core::Bytes>> {
+        let end = range.end.min(self.line_count() as u64) as usize;
+        let start = (range.start as usize).min(end);
+        let shared = self.source.shared_bytes();
+        Ok((start..end)
+            .map(|i| {
+                let from = self.line_starts[i];
+                libfileparser_core::Bytes::slice_of(shared.clone(), from..from + self.line(i).len())
+            })
+            .collect())
     }
-}
 
-/// One item inside a container (archive entry, embedded file, ...).
-#[derive(Clone, Debug)]
-pub struct Entry {
-    pub path: String,
-    pub size: u64,
-    pub compressed_size: Option<u64>,
-    pub is_dir: bool,
-}
-
-/// Anything that holds other files. Opening an entry yields a new source that goes
-/// through detection again, so containers nest arbitrarily (zip in tar in gz...).
-pub trait Container: Send + Sync {
-    fn entries(&self) -> &[Entry];
-    fn open_entry(&self, index: usize) -> Result<FileSource>;
+    fn memory(&self) -> libfileparser_core::MemoryUse {
+        libfileparser_core::MemoryUse::heap((self.line_starts.len() * size_of::<usize>()) as u64)
+    }
 }

@@ -11,7 +11,7 @@
 use std::sync::Arc;
 
 use libfileparser_core::{
-    Category, Confidence, Content, Detection, Document, FileSource, FormatInfo, Limit, LineText, ParseContext, ParseError, Reader,
+    Category, Confidence, Content, Detection, Document, FileSource, FormatInfo, LineText, ParseContext, ParseError, Reader,
     ReaderInfo, Result, Role,
 };
 
@@ -32,17 +32,9 @@ pub fn open_with(id: &str, src: &FileSource, cx: &ParseContext) -> Result<Docume
     libfileparser_core::open_with(readers(), id, src, cx)
 }
 
-/// Whether bytes (a file's first few KB) are text: no NUL, and UTF-8 apart from a
-/// character cut off at the end.
-pub fn is_text(header: &[u8]) -> bool {
-    if header.is_empty() || memchr::memchr(0, header).is_some() {
-        return false;
-    }
-    match std::str::from_utf8(header) {
-        Ok(_) => true,
-        Err(e) => e.error_len().is_none() && header.len() - e.valid_up_to() < 4,
-    }
-}
+/// Whether bytes (a file's first few KB) are text: `-core`'s test, which every
+/// category's Source facet uses.
+pub use libfileparser_core::is_text;
 
 /// The language a text is in, from its name, else its first line (`#!/bin/sh`,
 /// `#usda 1.0`): an id like `rust`, `json`, `usd`, as an app's highlighter knows them.
@@ -145,14 +137,8 @@ pub fn source(src: &FileSource, language: Option<&str>, cx: &ParseContext) -> Re
     Ok(Some(Content::Text(Arc::new(lines(src, language, cx)?))))
 }
 
-/// The text indexed by line, once the index is known to fit the limits: one offset per
-/// line, counted before anything is allocated.
 fn lines(src: &FileSource, language: Option<&str>, cx: &ParseContext) -> Result<LineText> {
-    let lines = memchr::memchr_iter(b'\n', src.bytes()).count() as u64 + 1;
-    let bytes = lines.saturating_mul(size_of::<usize>() as u64);
-    cx.limits.check(Limit::Allocation, bytes)?;
-    cx.limits.check(Limit::Memory, bytes)?;
-    Ok(LineText::new(src.clone(), language))
+    LineText::within(src.clone(), language, &cx.limits)
 }
 
 /// Plain text, code and logs.
@@ -199,7 +185,8 @@ impl Reader for TextReader {
         Ok(Document::new(FormatInfo::new("text", format, Category::Text))
             .with_facet(Role::Primary, "Text", Content::Text(Arc::new(text)))
             .with_meta("Lines", lines)
-            .with_meta("Encoding", if utf8 { "UTF-8" } else { "UTF-8, with bytes that aren't" }))
+            .with_meta("Encoding", if utf8 { "UTF-8" } else { "UTF-8, with bytes that aren't" })
+            .with_file_facets(src, language))
     }
 }
 

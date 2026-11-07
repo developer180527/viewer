@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use gltf_lite::{ExtensionSupport, GlbChunk};
 use libfileparser_core::{
-    Container, Count, Entry, FileSource, LineText, MemoryUse, NodeId, OwnedTable, ParseError, Result, TreeNode, TreeSource,
+    Count, FileParts, FileSource, LineText, MemoryUse, NodeId, OwnedTable, ParseError, Result, TreeNode, TreeSource,
 };
 use serde_json::Value;
 
@@ -255,85 +255,57 @@ fn stem(name: &str) -> &str {
 }
 
 /// A GLB's chunks, and the images stored in its BIN chunk, as files.
-pub struct GlbChunks {
-    src: FileSource,
-    entries: Vec<(Entry, Range<usize>)>,
-}
-
-impl GlbChunks {
-    pub fn new(src: &FileSource, json: Option<&Value>) -> Result<Self> {
-        let chunks = gltf_lite::glb_chunks(src.bytes()).map_err(ParseError::corrupt)?.unwrap_or_default();
-        let mut entries = Vec::new();
-        let mut bin = None;
-        for c in &chunks {
-            let path = match c.kind {
-                GlbChunk::JSON => "JSON.json".to_string(),
-                GlbChunk::BIN => {
-                    bin.get_or_insert(c.range.clone());
-                    "BIN.bin".to_string()
-                }
-                _ => format!("{}.chunk", c.name()),
-            };
-            entries.push((Entry::file(path, c.range.len() as u64), c.range.clone()));
-        }
-        // Images in a buffer view of the BIN chunk (buffer 0, with no URI).
-        if let (Some(bin), Some(json)) = (bin, json) {
-            let empty = Vec::new();
-            let list = |key: &str| json.get(key).and_then(Value::as_array).unwrap_or(&empty);
-            let (images, views) = (list("images"), list("bufferViews"));
-            let mut used = std::collections::HashSet::new();
-            for (i, image) in images.iter().enumerate() {
-                let Some(view) = image.get("bufferView").and_then(Value::as_u64).and_then(|v| views.get(v as usize)) else { continue };
-                if view.get("buffer").and_then(Value::as_u64) != Some(0) {
-                    continue;
-                }
-                let at = |k: &str| view.get(k).and_then(Value::as_u64).unwrap_or(0) as usize;
-                let (offset, len) = (at("byteOffset"), at("byteLength"));
-                let Some(start) = bin.start.checked_add(offset) else { continue };
-                let Some(end) = start.checked_add(len).filter(|&e| e <= bin.end) else { continue };
-                let ext = match image.get("mimeType").and_then(Value::as_str) {
-                    Some("image/png") => "png",
-                    Some("image/jpeg") => "jpg",
-                    Some("image/webp") => "webp",
-                    Some("image/ktx2") => "ktx2",
-                    Some("image/avif") => "avif",
-                    _ => "bin",
-                };
-                let name = image.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).map_or_else(|| format!("image {i}"), |n| n.replace(['/', '\\'], "_"));
-                // Two images may share a name.
-                let mut path = format!("images/{name}.{ext}");
-                if !used.insert(path.clone()) {
-                    path = format!("images/{name} ({i}).{ext}");
-                    used.insert(path.clone());
-                }
-                entries.push((Entry::file(path, len as u64), start..end));
+pub fn glb_parts(src: &FileSource, json: Option<&Value>) -> Result<FileParts> {
+    let chunks = gltf_lite::glb_chunks(src.bytes()).map_err(ParseError::corrupt)?.unwrap_or_default();
+    let mut entries = Vec::new();
+    let mut bin = None;
+    for c in &chunks {
+        let path = match c.kind {
+            GlbChunk::JSON => "JSON.json".to_string(),
+            GlbChunk::BIN => {
+                bin.get_or_insert(c.range.clone());
+                "BIN.bin".to_string()
             }
+            _ => format!("{}.chunk", c.name()),
+        };
+        entries.push((path, c.range.clone()));
+    }
+    // Images in a buffer view of the BIN chunk (buffer 0, with no URI).
+    if let (Some(bin), Some(json)) = (bin, json) {
+        let empty = Vec::new();
+        let list = |key: &str| json.get(key).and_then(Value::as_array).unwrap_or(&empty);
+        let (images, views) = (list("images"), list("bufferViews"));
+        let mut used = std::collections::HashSet::new();
+        for (i, image) in images.iter().enumerate() {
+            let Some(view) = image.get("bufferView").and_then(Value::as_u64).and_then(|v| views.get(v as usize)) else { continue };
+            if view.get("buffer").and_then(Value::as_u64) != Some(0) {
+                continue;
+            }
+            let at = |k: &str| view.get(k).and_then(Value::as_u64).unwrap_or(0) as usize;
+            let (offset, len) = (at("byteOffset"), at("byteLength"));
+            let Some(start) = bin.start.checked_add(offset) else { continue };
+            let Some(end) = start.checked_add(len).filter(|&e| e <= bin.end) else { continue };
+            let ext = match image.get("mimeType").and_then(Value::as_str) {
+                Some("image/png") => "png",
+                Some("image/jpeg") => "jpg",
+                Some("image/webp") => "webp",
+                Some("image/ktx2") => "ktx2",
+                Some("image/avif") => "avif",
+                _ => "bin",
+            };
+            let name = image.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()).map_or_else(|| format!("image {i}"), |n| n.replace(['/', '\\'], "_"));
+            // Two images may share a name.
+            let mut path = format!("images/{name}.{ext}");
+            if !used.insert(path.clone()) {
+                path = format!("images/{name} ({i}).{ext}");
+                used.insert(path.clone());
+            }
+            entries.push((path, start..end));
         }
-        Ok(Self { src: src.clone(), entries })
     }
+    Ok(FileParts::new(src, entries))
 }
 
-impl Container for GlbChunks {
-    fn entry_count(&self) -> Count {
-        Count::Exact(self.entries.len() as u64)
-    }
-
-    fn entries(&self, range: Range<u64>) -> Result<Vec<Entry>> {
-        let end = range.end.min(self.entries.len() as u64) as usize;
-        let start = (range.start as usize).min(end);
-        Ok(self.entries[start..end].iter().map(|(e, _)| e.clone()).collect())
-    }
-
-    fn open(&self, index: u64) -> Result<FileSource> {
-        let (entry, range) = self.entries.get(index as usize).ok_or_else(|| ParseError::invalid(format!("no entry {index}")))?;
-        let name = entry.path.rsplit('/').next().unwrap_or(&entry.path);
-        Ok(self.src.part(name, range.clone()))
-    }
-
-    fn memory(&self) -> MemoryUse {
-        MemoryUse::heap((self.entries.len() * 96) as u64)
-    }
-}
 
 // ---------------------------------------------------------------- extensions
 

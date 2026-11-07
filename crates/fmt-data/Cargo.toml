@@ -7,6 +7,7 @@ license.workspace = true
 
 [dependencies]
 viewer-core.workspace = true
+libfileparser-core.workspace = true
 anyhow.workspace = true
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = { version = "1", default-features = false, features = ["parse", "display", "serde", "preserve_order"] }

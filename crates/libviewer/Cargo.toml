@@ -1,0 +1,14 @@
+[package]
+name = "libviewer"
+description = "Views for libfileparser's content models (text, hex, tree, table, container, raster, scene), drawn with libgui: any app shows any facet of any file with them (docs/design/libviewer.md)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libfileparser-core.workspace = true
+# RendererX draws scenes; its orbit controls drive the 3D view's camera.
+rendererx = { workspace = true, features = ["controls"] }
+wgpu = { version = "30" }
+# Pinned to the same commit as the app (libgui is pre-1.0).
+libgui = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }

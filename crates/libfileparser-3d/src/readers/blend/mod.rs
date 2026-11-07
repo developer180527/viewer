@@ -138,14 +138,15 @@ impl Reader for BlendReader {
             let packed = file.packed();
             if !packed.is_empty() {
                 doc = doc
-                    .with_facet(Role::Package, "Packed files", Content::Container(Arc::new(blocks::PackedFiles::new(src, packed.clone()))))
+                    .with_facet(Role::Package, "Packed files", Content::Container(Arc::new(libfileparser_core::FileParts::new(src, packed.clone()))))
                     .with_meta("Packed files", packed.len());
             }
             if file.dna.is_none() {
                 doc = doc.with_meta("Warning", "no readable SDNA: blocks are listed by code only");
             }
         }
-        Ok(doc)
+        // A .blend is binary: its Raw, no Source.
+        Ok(doc.with_file_facets(src, None))
     }
 }
 

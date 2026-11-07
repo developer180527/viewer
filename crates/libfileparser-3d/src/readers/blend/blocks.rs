@@ -10,7 +10,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use anyhow::{Context, Result, bail};
-use libfileparser_core::{Container, Count, Entry, FileSource, MemoryUse, OwnedTree, ParseError};
+use libfileparser_core::{OwnedTree, ParseError};
 
 use super::Header;
 
@@ -357,35 +357,3 @@ fn bytes(n: u64) -> String {
     }
 }
 
-/// The Packed files facet.
-pub struct PackedFiles {
-    src: FileSource,
-    entries: Vec<(String, Range<usize>)>,
-}
-
-impl PackedFiles {
-    pub fn new(src: &FileSource, entries: Vec<(String, Range<usize>)>) -> Self {
-        Self { src: src.clone(), entries }
-    }
-}
-
-impl Container for PackedFiles {
-    fn entry_count(&self) -> Count {
-        Count::Exact(self.entries.len() as u64)
-    }
-
-    fn entries(&self, range: Range<u64>) -> libfileparser_core::Result<Vec<Entry>> {
-        let end = range.end.min(self.entries.len() as u64) as usize;
-        let start = (range.start as usize).min(end);
-        Ok(self.entries[start..end].iter().map(|(p, r)| Entry::file(p.clone(), r.len() as u64)).collect())
-    }
-
-    fn open(&self, index: u64) -> libfileparser_core::Result<FileSource> {
-        let (path, range) = self.entries.get(index as usize).ok_or_else(|| ParseError::invalid(format!("no entry {index}")))?;
-        Ok(self.src.part(path.rsplit('/').next().unwrap_or(path), range.clone()))
-    }
-
-    fn memory(&self) -> MemoryUse {
-        MemoryUse::heap(self.entries.iter().map(|(p, _)| p.len() as u64 + 40).sum())
-    }
-}

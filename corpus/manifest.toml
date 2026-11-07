@@ -104,6 +104,9 @@ path = "corpus/files/3d/spaced-mtl-missing/tri.obj"
 path = "corpus/files/3d/tri.usda"
 
 [[file]]
+path = "corpus/files/3d/tri.usdz"
+
+[[file]]
 path = "corpus/files/3d/cube.stl"
 
 [[file]]

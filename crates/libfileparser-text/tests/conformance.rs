@@ -24,7 +24,7 @@ fn every_reader_conforms() {
 fn text_opens_by_line_in_its_language() {
     let cx = ParseContext::new();
     let doc = libfileparser_text::open(&FileSource::from_bytes("main.rs", b"fn main() {\r\n}\n".to_vec()), &cx).unwrap();
-    assert_eq!(doc.facets().map(|f| (f.role, f.name.as_str())).collect::<Vec<_>>(), [(Role::Primary, "Text")]);
+    assert_eq!(doc.facets().map(|f| (f.role, f.name.as_str())).collect::<Vec<_>>(), [(Role::Primary, "Text"), (Role::Raw, "Raw")]);
     let Ok(Content::Text(t)) = doc.facet(0, &cx) else { panic!() };
     assert_eq!(t.info().language.as_deref(), Some("rust"));
     let lines: Vec<Vec<u8>> = t.lines(0..10).unwrap().iter().map(|l| l.as_slice().to_vec()).collect();

@@ -6,7 +6,7 @@ Usage: python3 corpus/make.py
 The output is committed: rerun this only to add or change a file, then refresh the
 expected summaries with UPDATE_CORPUS=1 (corpus/README.md).
 """
-import gzip, json, math, os, struct, zlib
+import gzip, io, json, math, os, struct, zipfile, zlib
 
 ROOT = os.path.dirname(os.path.abspath(__file__))
 OUT = os.path.join(ROOT, "files")
@@ -276,6 +276,15 @@ Connections:  {
         + block64(b"DATA", texture, 0x3000, 0)
         + block64(b"DNA1", dna) + block64(b"ENDB", b""))
     write("3d/packed.blend", blend)
+
+    # USDZ: the triangle layer and a texture, stored (never compressed), as the format
+    # requires.
+    usdz = io.BytesIO()
+    with zipfile.ZipFile(usdz, "w", zipfile.ZIP_STORED) as z:
+        # A fixed date, so the file is the same every time it's made.
+        for name, data in [("tri.usda", open(os.path.join(OUT, "3d/tri.usda"), "rb").read()), ("textures/checker.png", png(8, 8, checker))]:
+            z.writestr(zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0)), data)
+    write("3d/tri.usdz", usdz.getvalue())
 
 # ---------------------------------------------------------------- PDF
 

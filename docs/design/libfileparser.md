@@ -51,7 +51,7 @@ optional, beside them:
 **Boundaries between categories:**
 
 1. **A category reads its formats completely,** including structure, packages, dependencies and inspector facets. The USD reader, not a generic one, knows prims, layers and variants.
-2. **Generic facets live in one place:** Raw (hex) in `-core`, plain Source (text by lines) in `-text`, container listings in `-archives`. The front door attaches them; categories don't repeat them.
+2. **Generic facets live in one place:** Source (the file's text by line) and Raw (its bytes) in `-core`, which every category's documents end with (`Document::with_file_facets`), so a category used alone has them; container listings in `-archives`, which the front door adds to a zip no category listed. No category writes its own. (Until 2026-11-07 Source came from the front door only, so `-3d` alone had none.)
 3. **Sideways only toward leaves:** `-3d` and `-docs` may use `-images` and `-core`'s generic types; nothing may use `-3d` or `-docs`.
 4. **Heavy or copyleft parts are features inside their category** (`-docs` + `mupdf`, `-media` + FFmpeg), named in the feature list, never on by accident. A default build is MIT/Apache throughout.
 
@@ -231,7 +231,7 @@ Format libraries follow §5's rules too, and keep their own extension points: gl
 |---|---|---|
 | **Register a reader** | Add a format to the front door without forking a category | A proprietary format |
 | **Replace a reader** by id | Swap a built-in reader | An in-house FBX reader in place of ufbx |
-| **Facet providers** | Add a facet to a format without changing its reader | A game engine adds a "Physics" inspector to USD |
+| **Facet providers** | Add a facet to a format without changing its reader | A game engine adds a "Physics" inspector to USD. ✅ Built (2026-11-07): an app puts them on its `ParseContext` (`with_facet_provider`), not on the front door, so they reach a category used alone too; `-core`'s `open`, `open_with` and `open_guarded` add their facets to every document, before Source and Raw; one that fails or panics fails its facet alone |
 | **Hooks** | Decide files, limits, threads, progress, cancellation | iOS grants; an engine's job system |
 
 ```rust
@@ -241,11 +241,13 @@ pub trait FacetProvider: Sync {
     fn make(&self, doc: &Document, facet: &FacetInfo, cx: &ParseContext) -> Result<Facet, ParseError>;
 }
 
-let lib = libfileparser::Library::new()
-    .reader(MyFormatReader)
-    .replace_reader("fbx", InHouseFbx)
-    .facets(PhysicsInspector);
+let lib = libfileparser::Library::new()          // ✅ built (2026-11-07)
+    .reader(&MyFormatReader)                     // ahead of plain text, behind the built-ins
+    .replace("fbx", &InHouseFbx);
+let cx = ParseContext::new().with_facet_provider(PhysicsInspector);
 ```
+
+`FacetProvider::make` is given the document, so a provider builds on the reader's facets (the Stage, say) instead of reading the file again.
 
 ## 7. Embeddable
 
@@ -322,6 +324,9 @@ Tests are written against §4's API, never against internals, so they stay the s
 6. After `cancel`, background work stops and nothing more is notified.
 7. The same file gives the same document.
 8. `memory()` is reported and within budget for its samples.
+9. ✅ The document ends with Raw, and has Source when the file is text (unless its primary facet is the text).
+10. ✅ Trees: the same children when asked twice, a count that matches them, and every node's `path` found again by `find` (up to 2,000 nodes per tree).
+11. ✅ Links: from tree nodes, table rows, scene items and Source lines, every place `Document::links` gives exists (its facet, node, row, entry, scene item or line).
 
 ## 10. Who uses what
 
@@ -349,9 +354,9 @@ Tests are written against §4's API, never against internals, so they stay the s
 
 The corpus passes after every step.
 
-1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse`, `FacetProvider`; the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ⬜ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI: planned, not running yet.
+1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse` (`FacetProvider` was listed here but only written 2026-11-07, §6); the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ⬜ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI: planned, not running yet.
 2. 🟡 **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md) (moved and on the hooks 2026-11-06; its other facets to come): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
-3. ✅ **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it (2026-11-07). `-archives` is Viewer's former `fmt-archive`, moved: limits come from the context, tar entries are views of the archive. Viewer keeps the front door's document with the page, so View as lists its facets (Scene, Stage, Layers…, Source, Raw) and switches between them without reading the file again; `--view-as` takes a facet name too. Viewer still converts a facet to its own content to show it (trees and tables built up front, at most 50,000 nodes and 100,000 rows), until its views read libfileparser's content models directly.
+3. ✅ **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it (2026-11-07). `-archives` is Viewer's former `fmt-archive`, moved: limits come from the context, tar entries are views of the archive. Viewer keeps the front door's document with the page, so View as lists its facets (Scene, Stage, Layers…, Source, Raw) and switches between them without reading the file again; `--view-as` takes a facet name too. Until 2026-11-07 Viewer converted a facet to its own content to show it; now libviewer's views read the content models directly ([libviewer.md](libviewer.md)).
 4. 🟡 **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1. ✅ `-images` (2026-11-07): Viewer's `fmt-image` moved. Opening reads the header only (size, colour type, the image-pixel limit); pixels are a band source: non-interlaced PNGs row by row, other formats decoded whole in their own layout and converted to RGBA a band at a time, SVG rendered when asked. Viewer decodes images up to 16 megapixels whole on its loader thread and streams bigger ones band by band to the GPU from a thread of its own, as before. Not yet: `-3d` decoding its textures through `-images` (§2's "sideways toward leaves"), §4.1's reduced-size and region decoding.
 5. **`-thumb`** and a thumbnail CLI, as the first user outside Viewer.
 6. **`-remote`** (MuPDF in a helper on desktop), then **`-c`**.

@@ -21,4 +21,5 @@ libfileparser-archives = { workspace = true, optional = true }
 
 [dev-dependencies]
 libfileparser-testkit.workspace = true
+scene-data.workspace = true
 zip = { version = "9", default-features = false }

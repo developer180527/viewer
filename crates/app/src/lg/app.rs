@@ -12,11 +12,11 @@ use libgui_keymap::{Chord, Keymap};
 use libfilepicker::{PickOptions, Picked};
 use viewer_core::{Document, FileSource, Unreadable};
 
-use super::Textures;
+use libviewer::Host;
 use super::views::{self, Action, ViewState};
 use crate::formats::registry;
 use crate::loading::{Job, Loaded, Target};
-use crate::util::human_bytes;
+use libviewer::human_bytes;
 
 /// One level of navigation: a file, or an entry opened from a container.
 /// One way to show a page: a facet of its document, or the file read by a loader.
@@ -184,9 +184,9 @@ impl ViewerApp {
         libfilepicker::pick_with(opts, move |picked| deliver(&slot, picked, Some(model)));
     }
 
-    fn open_entry(&mut self, container: Arc<dyn viewer_core::Container>, index: usize) {
-        let name = container.entries()[index].path.clone();
-        self.job = Some(Job::spawn(name, Target::Push, None, move || container.open_entry(index)));
+    fn open_entry(&mut self, container: Arc<dyn libfileparser_core::Container>, index: u64) {
+        let name = container.entries(index..index + 1).ok().and_then(|mut e| e.pop()).map_or_else(|| format!("entry {index}"), |e| e.path);
+        self.job = Some(Job::spawn(name, Target::Push, None, move || container.open(index).map_err(|e| anyhow::anyhow!("{e}"))));
         self.pending_access = None;
     }
 
@@ -278,7 +278,7 @@ impl ViewerApp {
         true
     }
 
-    pub fn ui(&mut self, ui: &mut Ui, tex: &mut dyn Textures) {
+    pub fn ui(&mut self, ui: &mut Ui, tex: &mut dyn Host) {
         let pal = ui.theme.palette;
         let safe = self.safe_area;
         // Layout works in the safe rect; the backgrounds still fill the screen.
@@ -563,7 +563,7 @@ impl ViewerApp {
         });
     }
 
-    fn central(&mut self, ui: &mut Ui, tex: &mut dyn Textures) -> Option<Action> {
+    fn central(&mut self, ui: &mut Ui, tex: &mut dyn Host) -> Option<Action> {
         if let Some(err) = &self.error {
             let danger = ui.theme.palette.danger;
             ui.container(Layout::row().padding(Insets::all(8.0)), Frame::none(), |ui| {

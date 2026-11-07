@@ -453,14 +453,14 @@ impl Reader for PlyReader {
     }
 
     fn detect(&self, header: &[u8], name: &str) -> Detection {
-        detect_by(&PLY, is_ply(header), name)
+        detect_by(&PLY, is_ply(header), name).with_language("ply")
     }
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
         cx.cancel.check()?;
         let loaded = load(src.bytes(), cx).map_err(super::parse_error)?;
         let header = header_tree(src.bytes());
-        let doc = SceneDocument::new("ply", loaded.format, loaded.scene)
+        let doc = SceneDocument::new(self, src, loaded.format, loaded.scene)
             .warnings(loaded.warnings)
             .facets(move |doc| match header {
                 Some(tree) => doc.with_facet(Role::Structure, "Header", Content::Tree(Arc::new(tree))),

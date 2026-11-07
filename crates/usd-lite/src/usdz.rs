@@ -52,6 +52,11 @@ impl<'a> Package<'a> {
         self.files.iter().find(|(n, _)| *n == joined || *n == name).map(|(_, r)| &self.bytes[r.clone()])
     }
 
+    /// Every stored file: its name, and where its bytes are in the package.
+    pub fn files(&self) -> impl Iterator<Item = (&str, std::ops::Range<usize>)> {
+        self.files.iter().map(|(n, r)| (n.as_str(), r.clone()))
+    }
+
     pub fn file_names(&self) -> impl Iterator<Item = &str> {
         self.files.iter().map(|(n, _)| n.as_str())
     }

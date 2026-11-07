@@ -29,10 +29,10 @@ Each half works alone. A chat app or a server making thumbnails takes libfilepar
 | **Previews:** `libfileparser-thumb` | Any document → RGBA on the CPU | Contracts |
 | **libviewer: renderers** | Each content model to pixels on the GPU: RendererX for scenes; tiled images and pages; text, tables, trees and hex. No UI toolkit | Contracts' data types, wgpu |
 | **Isolation kit:** `libfileparser-remote` | Wire protocol, shared memory, remote wrappers; optional | Contracts |
-| **libviewer: views** | Interactive views over the renderers for one UI toolkit: libgui first (today's views in `crates/app/src/lg/`), others later | libviewer's renderers, the toolkit |
+| **libviewer: views** | Interactive views over the renderers for one UI toolkit: libgui first (`crates/libviewer`, split out 2026-11-07, [libviewer.md](libviewer.md)), others later | libviewer's renderers, the toolkit |
 | **Viewer** | All policy (hooks, helpers, sandboxing, limits) and the app shell (windows, menus, navigation) | libfileparser, libviewer |
 
-libfileparser and libviewer don't depend on each other's code, only on the shared data types, so either can be used alone. libviewer's design gets its own document when its first crate is split out of the app. Lower-level libraries (RendererX, `usd-lite`, and third-party ones) don't know the contracts at all: a thin adapter crate connects each one to them.
+libfileparser and libviewer don't depend on each other's code, only on the shared data types, so either can be used alone. libviewer's design is in [libviewer.md](libviewer.md); today its renderers and libgui views are one crate, to be split when a second toolkit needs the renderers. Lower-level libraries (RendererX, `usd-lite`, and third-party ones) don't know the contracts at all: a thin adapter crate connects each one to them.
 
 Licences: everything is MIT/Apache except optional AGPL backends such as MuPDF, which are off by default. Enabling one is the app's choice and obligation. A default build has no permissive PDF backend off Apple platforms until `hayro` or PDFium is added as an option.
 

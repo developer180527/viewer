@@ -19,6 +19,7 @@ libfileparser-text = { path = "crates/libfileparser-text" }
 libfileparser-archives = { path = "crates/libfileparser-archives" }
 libfileparser = { path = "crates/libfileparser" }
 libfileparser-images = { path = "crates/libfileparser-images" }
+libviewer = { path = "crates/libviewer" }
 viewer-formats = { path = "crates/formats" }
 # Pre-1.0, pinned to a commit like libgui.
 libfilepicker = { git = "https://github.com/developer180527/libfilepicker.git", rev = "b99e3cd990e50fdeb3e96a3a703dacf77f7c8c66" }

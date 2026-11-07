@@ -13,7 +13,6 @@ static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 mod formats;
 mod loading;
 mod startup;
-mod util;
 
 mod lg;
 

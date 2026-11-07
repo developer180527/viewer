@@ -74,7 +74,7 @@ impl Reader for KvReader {
         } else {
             doc.with_facet(Role::Primary, "Keys", Content::Tree(Arc::new(tree))).with_lazy_facet(inspector, make_table)
         };
-        Ok(doc.with_meta("Pairs", pairs.len()))
+        Ok(doc.with_meta("Pairs", pairs.len()).with_file_facets(src, Some("kv")))
     }
 }
 
@@ -137,6 +137,6 @@ fn readers_route_through_core() {
     let src = FileSource::from_bytes("x.kv", b"#kv\na = 1\n".to_vec());
     let doc = open(&readers, &src, &ParseContext::new()).unwrap();
     assert_eq!(doc.format().reader, "kv");
-    assert_eq!(doc.facets().map(|f| f.role).collect::<Vec<_>>(), [Role::Primary, Role::Inspector]);
+    assert_eq!(doc.facets().map(|f| f.role).collect::<Vec<_>>(), [Role::Primary, Role::Inspector, Role::Source, Role::Raw]);
     assert!(!doc.is_made(1), "the inspector is made on demand");
 }

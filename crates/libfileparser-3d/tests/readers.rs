@@ -120,7 +120,7 @@ fn dependencies_say_what_each_file_is_for_and_where_it_was_found() {
     let (doc, cx) = open_in_corpus("3d/cube-gltf/cube.gltf", libfileparser_core::InlineSpawn);
     let facets: Vec<_> = doc.facets().map(|f| (f.role, f.name.as_str())).collect();
     use libfileparser_core::Role::*;
-    assert_eq!(facets, [(Primary, "Scene"), (Structure, "glTF"), (Dependencies, "Dependencies"), (Inspector, "Materials"), (Inspector, "Textures")]);
+    assert_eq!(facets, [(Primary, "Scene"), (Structure, "glTF"), (Dependencies, "Dependencies"), (Inspector, "Materials"), (Inspector, "Textures"), (Source, "Source"), (Raw, "Raw")]);
     assert_eq!(
         table(&doc, &cx, "Dependencies").unwrap(),
         [row(&["cube.bin", "buffer", "", "read"]), row(&["checker.png", "texture", "textures/checker.png", "read"])]
@@ -182,7 +182,9 @@ fn usd_shows_its_stage_layers_and_variants() {
             (Inspector, "Variants"),
             (Dependencies, "Dependencies"),
             (Inspector, "Materials"),
-            (Inspector, "Textures")
+            (Inspector, "Textures"),
+            (Source, "Source"),
+            (Raw, "Raw")
         ]
     );
 
@@ -257,7 +259,7 @@ fn glb_shows_its_gltf_json_chunk_and_chunks() {
     use libfileparser_core::Role::*;
     let (doc, cx) = open_in_corpus("3d/cube.glb", libfileparser_core::InlineSpawn);
     let facets: Vec<_> = doc.facets().map(|f| (f.role, f.name.as_str())).collect();
-    assert_eq!(facets, [(Primary, "Scene"), (Structure, "glTF"), (Source, "JSON chunk"), (Package, "Chunks"), (Inspector, "Materials"), (Inspector, "Textures")]);
+    assert_eq!(facets, [(Primary, "Scene"), (Structure, "glTF"), (Source, "JSON chunk"), (Package, "Chunks"), (Inspector, "Materials"), (Inspector, "Textures"), (Raw, "Raw")]);
 
     let gltf = tree(&doc, &cx, "glTF", 1);
     assert!(gltf.iter().any(|l| l.starts_with("asset = ")) && gltf.iter().any(|l| l.starts_with("meshes = [")), "{gltf:?}");
@@ -329,7 +331,7 @@ fn container(doc: &Document, cx: &ParseContext, name: &str) -> (Vec<(String, u64
 #[test]
 fn fbx_shows_its_records_and_embedded_media() {
     let (doc, cx) = open_in_corpus("3d/tri-binary.fbx", libfileparser_core::InlineSpawn);
-    assert_eq!(names(&doc), ["Scene", "Records", "Embedded media"]);
+    assert_eq!(names(&doc), ["Scene", "Records", "Embedded media", "Raw"]);
     let records = tree(&doc, &cx, "Records", 3);
     for line in [
         "FBXHeaderExtension = ",
@@ -349,7 +351,7 @@ fn fbx_shows_its_records_and_embedded_media() {
 
     // ASCII FBX: the same tree, parsed when it's opened; nothing embedded.
     let (doc, cx) = open_in_corpus("3d/tri.fbx", libfileparser_core::InlineSpawn);
-    assert_eq!(names(&doc), ["Scene", "Records"]);
+    assert_eq!(names(&doc), ["Scene", "Records", "Source", "Raw"]);
     let records = tree(&doc, &cx, "Records", 3);
     assert!(records.contains(&"    Vertices = [9]".to_string()) && records.contains(&"  Model = 2000, \"Model::Tri\", \"Mesh\"".to_string()), "{records:?}");
 }
@@ -357,11 +359,11 @@ fn fbx_shows_its_records_and_embedded_media() {
 #[test]
 fn obj_lists_its_objects_and_ply_its_header() {
     let (doc, cx) = open_in_corpus("3d/tri-obj/tri.obj", libfileparser_core::InlineSpawn);
-    assert_eq!(names(&doc), ["Scene", "Objects", "Dependencies", "Materials", "Textures"]);
+    assert_eq!(names(&doc), ["Scene", "Objects", "Dependencies", "Materials", "Textures", "Source", "Raw"]);
     assert_eq!(tree(&doc, &cx, "Objects", 3), ["mtllib = tri.mtl · line 1", "Tri = 1 face · line 2", "  usemtl Paint = 1 face"]);
 
     let (doc, cx) = open_in_corpus("3d/spiral.ply", libfileparser_core::InlineSpawn);
-    assert_eq!(names(&doc), ["Scene", "Header"]);
+    assert_eq!(names(&doc), ["Scene", "Header", "Source", "Raw"]);
     let header = tree(&doc, &cx, "Header", 2);
     assert_eq!(header[..3], ["format = ascii 1.0", "vertex = 100 items", "  x = float"]);
     assert_eq!(header.last().unwrap(), "  blue = uchar");
@@ -370,7 +372,7 @@ fn obj_lists_its_objects_and_ply_its_header() {
 #[test]
 fn blend_lists_its_blocks_and_packed_files() {
     let (doc, cx) = open_in_corpus("3d/packed.blend", libfileparser_core::InlineSpawn);
-    assert_eq!(names(&doc), ["Preview", "Blocks", "Packed files"]);
+    assert_eq!(names(&doc), ["Preview", "Blocks", "Packed files", "Raw"]);
     let blocks = tree(&doc, &cx, "Blocks", 2);
     for line in ["Object = 1 datablock", "  Tri = 74 bytes", "Image = 1 datablock", "  checker.png = 1.1 KB", "  DATA · PackedFile = 1 block · 16 bytes", "  DATA · raw data = 1 block · 75 bytes", "  DNA1 = 1 block · 228 bytes"] {
         assert!(blocks.contains(&line.to_string()), "no {line:?} in\n{}", blocks.join("\n"));
@@ -383,7 +385,7 @@ fn blend_lists_its_blocks_and_packed_files() {
 
     // Without an SDNA, blocks are listed by code, and nothing is packed.
     let (doc, cx) = open_in_corpus("3d/preview.blend", libfileparser_core::InlineSpawn);
-    assert_eq!(names(&doc), ["Preview", "Blocks"]);
+    assert_eq!(names(&doc), ["Preview", "Blocks", "Raw"]);
     assert_eq!(tree(&doc, &cx, "Blocks", 2), ["Other blocks = 2 blocks", "  REND = 1 block · 72 bytes", "  TEST = 1 block · 72 bytes"]);
 }
 
@@ -556,4 +558,46 @@ fn obj_objects_link_to_scene_nodes_lines_and_materials() {
     let Some(Place::Scene { item: SceneItem::Material(m), .. }) = links.first().cloned() else { panic!("{links:?}") };
     let row = doc.links(&Place::Scene { facet: scene, item: SceneItem::Material(m) }, &cx).unwrap();
     assert!(row.contains(&Place::Row { facet: materials, row: 0 }) && row.contains(&paint), "{row:?}");
+}
+
+#[test]
+fn every_text_format_has_its_source_in_its_language_and_every_file_its_raw() {
+    for (path, language) in [
+        ("3d/cube-gltf/cube.gltf", Some("json")),
+        ("3d/tri.usda", Some("usd")),
+        ("3d/tri-obj/tri.obj", Some("obj")),
+        ("3d/tri.fbx", Some("fbx")),
+        ("3d/spiral.ply", Some("ply")),
+        ("3d/tetra.stl", Some("stl")),
+        // Binary: no Source, but its bytes.
+        ("3d/cube.stl", None),
+        ("3d/tri-binary.fbx", None),
+        ("3d/packed.blend", None),
+    ] {
+        let (doc, cx) = open_in_corpus(path, libfileparser_core::InlineSpawn);
+        let raw = doc.facet_index("Raw").unwrap_or_else(|| panic!("{path}: no Raw"));
+        assert_eq!(raw, doc.facets().count() - 1, "{path}: Raw comes last");
+        match (doc.facet_index("Source"), language) {
+            (Some(i), Some(language)) => {
+                let Ok(Content::Text(t)) = doc.facet(i, &cx) else { panic!("{path}: Source isn't text") };
+                assert_eq!(t.info().language.as_deref(), Some(language), "{path}");
+            }
+            (None, None) => {}
+            (got, want) => panic!("{path}: Source {got:?}, expected {want:?}"),
+        }
+    }
+}
+
+#[test]
+fn a_usdz_lists_its_files_and_they_open_in_place() {
+    let (doc, cx) = open_in_corpus("3d/tri.usdz", libfileparser_core::InlineSpawn);
+    assert_eq!(names(&doc), ["Scene", "Stage", "Package", "Raw"]);
+    let (entries, package) = container(&doc, &cx, "Package");
+    assert_eq!(entries.iter().map(|(p, _)| p.as_str()).collect::<Vec<_>>(), ["tri.usda", "textures/checker.png"]);
+    let layer = package.open(0).unwrap();
+    assert!(layer.bytes().starts_with(b"#usda"));
+    assert!(package.open(1).unwrap().bytes().starts_with(b"\x89PNG"));
+    // A zip isn't text: no Source; its bytes are Raw, last.
+    assert!(doc.facet_index("Source").is_none());
+    assert_eq!(doc.facet_index("Raw"), Some(doc.facets().count() - 1));
 }

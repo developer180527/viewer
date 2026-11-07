@@ -1,11 +1,10 @@
-loader = "hex"
-failed = ["image"]
-format = "Binary data"
-model = "Hex"
+loader = "image"
+format = "PNG image"
+model = "Raster"
 
-[hex]
-bytes = 120
+[raster]
+size = "64x64"
 
 [metadata]
-"Detected type" = "image/png (png)"
-"Entropy (first 64 KiB)" = "4.94 bits/byte"
+Dimensions = "64 × 64"
+Color = "Rgba8"

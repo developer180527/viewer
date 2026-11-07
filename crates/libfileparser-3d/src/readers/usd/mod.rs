@@ -39,6 +39,8 @@ pub struct Loaded {
     pub variant_sets: Vec<usd_lite::VariantSet>,
     /// Scene items by the prim they came from.
     pub origins: crate::build::SceneOrigins,
+    /// A USDZ's files: (name, where its bytes are in the package).
+    pub package: Option<Vec<(String, std::ops::Range<usize>)>>,
 }
 
 /// Where texture files come from: inside the package, or next to the layers.
@@ -194,9 +196,13 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
     }
     let jobs = std::mem::take(&mut c.jobs);
     let origins = std::mem::take(&mut c.origins);
+    let package = match &files {
+        Files::Package { package, .. } => Some(package.files().map(|(n, r)| (n.to_string(), r)).collect()),
+        Files::Dir { .. } => None,
+    };
     builder.finish();
     let textures = textures::spawn(builder.texture_sink(), jobs, cx);
-    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers, root, arcs, variant_sets, origins })
+    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers, root, arcs, variant_sets, origins, package })
 }
 
 struct Converter<'a, 'f> {
@@ -615,7 +621,9 @@ impl Reader for UsdReader {
         let composed = Arc::new(facets::Composed::new(src, &deps));
         let for_stage = composed.clone();
         let text = usd_lite::detect(src.bytes()) == Some(Format::Usda);
-        let doc = SceneDocument::new("usd", loaded.format, loaded.scene)
+        // A USDZ's files, as views of the package (they're stored, never compressed).
+        let package = loaded.package.clone().map(|files| libfileparser_core::FileParts::new(src, files));
+        let doc = SceneDocument::new(self, src, loaded.format, loaded.scene)
             .origins(loaded.origins, "Stage")
             .warnings(loaded.warnings)
             .textures(loaded.textures)
@@ -628,6 +636,9 @@ impl Reader for UsdReader {
                 }
                 if let Some(variants) = variants {
                     doc = doc.with_facet(Role::Inspector, "Variants", Content::Tree(Arc::new(variants)));
+                }
+                if let Some(package) = package {
+                    doc = doc.with_facet(Role::Package, "Package", Content::Container(Arc::new(package)));
                 }
                 doc
             })

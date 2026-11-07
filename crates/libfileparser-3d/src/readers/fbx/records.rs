@@ -11,7 +11,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::{Arc, Mutex};
 
-use libfileparser_core::{Container, Count, Entry, FileSource, MemoryUse, NodeId, OwnedTree, ParseError, Result, TreeNode, TreeSource};
+use libfileparser_core::{Count, FileSource, MemoryUse, NodeId, OwnedTree, ParseError, Result, TreeNode, TreeSource};
 
 const MAGIC: &[u8] = b"Kaydara FBX Binary  \0";
 /// Records start after the magic, two bytes and the version.
@@ -414,40 +414,6 @@ pub fn ascii_records(text: &[u8], max_nodes: u64, max_depth: u64) -> Result<Owne
     Ok(tree)
 }
 
-// ---------------------------------------------------------------- media
-
-/// The Embedded media facet.
-pub struct Media {
-    src: FileSource,
-    entries: Vec<(String, Range<usize>)>,
-}
-
-impl Media {
-    pub fn new(src: &FileSource, entries: Vec<(String, Range<usize>)>) -> Self {
-        Self { src: src.clone(), entries }
-    }
-}
-
-impl Container for Media {
-    fn entry_count(&self) -> Count {
-        Count::Exact(self.entries.len() as u64)
-    }
-
-    fn entries(&self, range: Range<u64>) -> Result<Vec<Entry>> {
-        let end = range.end.min(self.entries.len() as u64) as usize;
-        let start = (range.start as usize).min(end);
-        Ok(self.entries[start..end].iter().map(|(p, r)| Entry::file(p.clone(), r.len() as u64)).collect())
-    }
-
-    fn open(&self, index: u64) -> Result<FileSource> {
-        let (path, range) = self.entries.get(index as usize).ok_or_else(|| ParseError::invalid(format!("no entry {index}")))?;
-        Ok(self.src.part(path.rsplit('/').next().unwrap_or(path), range.clone()))
-    }
-
-    fn memory(&self) -> MemoryUse {
-        MemoryUse::heap(self.entries.iter().map(|(p, _)| p.len() as u64 + 40).sum())
-    }
-}
 
 #[cfg(test)]
 mod tests {

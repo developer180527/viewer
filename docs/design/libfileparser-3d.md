@@ -73,12 +73,27 @@ libfileparser-3d
              usd/facets: its Stage, Layers and Variants; gltf/facets: glTF, JSON chunk, Chunks, Extensions used;
              fbx/records: Records, Embedded media; fbx/objects: OBJ's Objects; blend/blocks: SDNA, Blocks, Packed files
   build      ✅ public: new_scene (a scene within the limits), SceneDocument (the document every scene becomes),
-             scene_error, detect_by, decode_textures, find_texture, ImageJob/ImageSource
+             SceneOrigins (scene items by their path in a structure facet), scene_error, detect_by,
+             decode_textures, find_texture, ImageJob/ImageSource
   textures   ✅ texture jobs: find (files hook), decode, reduce, mips; via spawn and notify (later through -images)
-  facets/    ⬜ tree, table and container builders shared by the readers
 ```
 
-`SceneDocument` adds the Dependencies, Materials and Textures facets for every reader, from the `Dependencies` it resolved files through, the scene's materials and the `Textures` that `decode_textures` returned. A format's own facets (USD's Stage, Layers and Variants) are passed to `SceneDocument::facets` and go right after the Scene. `build` holds the shared pieces that keep a reader short (libfileparser.md §6), and is public, so a reader outside the crate uses the same ones (`tests/extend.rs` adds an OFF reader that way and passes conformance). Adding 3MF is a `readers/threemf.rs` that unzips its model XML, fills a scene from `new_scene` and returns a `SceneDocument`; one line in `readers()`; a corpus file listed in `tests/conformance.rs`. Textures, dependencies, limits, the counts every scene shows and the Dependencies, Materials and Textures facets come with it.
+Builders every category shares are in `-core`: `OwnedTree` (with paths, `add_at`), `OwnedTable`, `LineText`, `FileParts` (files inside a file, as views of it: GLB chunks, a USDZ's files, FBX embedded media, `.blend` packed files all use it), and `Document::with_file_facets` (Source and Raw).
+
+`SceneDocument::new(reader, src, format, scene)` makes the document every 3D reader returns: the Scene, the format's own facets (`SceneDocument::facets`, right after it), Dependencies, Materials and Textures, then the file's Source (when it is text, in the language the reader's `detect` names) and Raw, last. It also links Materials, Textures and the Scene, and, given `SceneOrigins` (`SceneDocument::origins`), the format's structure facet and the Scene. `build` is public, so a reader outside the crate uses the same pieces (`tests/extend.rs` adds an OFF reader that way, with a structure facet linked to its scene, and passes conformance).
+
+**Adding a 3D format** (3MF, say):
+
+1. **`readers/threemf.rs`** (or `readers/threemf/` with a `facets.rs`), a type implementing `Reader`:
+   - `detect`: `build::detect_by(&INFO, magic, name)`, plus `.with_language(..)` when the format is written as text.
+   - `open`: parse (directly, or through a format library, §4 table below); fill a scene from `build::new_scene(cx)` (it keeps to the limits); other files only through `Dependencies::resolve` / `resolve_any`, textures through `build::find_texture` and `build::decode_textures`.
+   - Its own structure as a facet: an `OwnedTree` whose nodes have paths (`add_at`) or a `TreeSource` with `find`/`path`; files inside it as `FileParts`.
+   - Each scene item it adds keyed by the path of what describes it (`SceneOrigins::node`, `mesh`, `material`).
+   - Return `SceneDocument::new(self, src, name, scene)` with `.facets(..)`, `.origins(origins, "<facet name>")`, `.textures(..)`, `.dependencies(deps)`, `.warnings(..)`, `.build()`.
+2. **One line** in `readers()` in `lib.rs`.
+3. **A sample:** `corpus/make.py` writes it, `corpus/manifest.toml` lists it, `UPDATE_CORPUS=1` writes its summary, and `tests/conformance.rs` lists it for the reader's id. The suite fails for a reader without samples, and checks the rest: hooks only, limits, cancellation, Raw last and Source for text, trees that answer the same twice and find their own paths, and links that all lead somewhere (libfileparser.md §9).
+
+Nothing else changes: the front door, Viewer's View as, and every app's facet list pick it up. Outside the crate the same reader joins `-3d` by a list of its own (`readers().to_vec()` plus it, to `-core`'s `open`) or the front door by `libfileparser::Library::new().reader(&ThreeMfReader)`; `Library::replace("fbx", ..)` swaps a built-in one. An app adds a facet to an existing format without a reader at all: a `FacetProvider` on its `ParseContext` (`tests/extend.rs` adds a USD one).
 
 Under the readers, format libraries that know nothing of libfileparser and stay usable on their own (libfileparser.md §6). Each keeps its own extension points (glTF extensions, USD schemas, PLY properties, FBX custom properties) and keeps data no extension understands.
 

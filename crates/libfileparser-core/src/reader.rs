@@ -146,8 +146,9 @@ pub fn open_with(readers: &[&dyn Reader], id: &str, src: &FileSource, cx: &Parse
 }
 
 /// Runs `reader.open`, turning a panic into [`ParseError::Corrupt`].
+/// The document gets the context's provided facets ([`Document::with_provided_facets`]).
 pub fn open_guarded(reader: &dyn Reader, src: &FileSource, cx: &ParseContext) -> Result<Document> {
-    guard(reader.info().id, || reader.open(src, cx))
+    guard(reader.info().id, || reader.open(src, cx)).map(|doc| doc.with_provided_facets(cx))
 }
 
 /// Runs `f`, turning a panic in it into [`ParseError::Corrupt`] that names `what`: no

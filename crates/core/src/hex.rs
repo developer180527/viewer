@@ -20,7 +20,7 @@ impl FormatLoader for HexLoader {
         let detected = infer::get(src.header())
             .map(|t| format!("{} ({})", t.mime_type(), t.extension()))
             .unwrap_or_else(|| "unknown".into());
-        Ok(Document::new("Binary data", Content::Hex(src.clone()))
+        Ok(Document::new("Binary data", Content::hex(src.clone()))
             .with_meta("Detected type", detected)
             .with_meta("Entropy (first 64 KiB)", format!("{:.2} bits/byte", entropy(src.bytes()))))
     }

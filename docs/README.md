@@ -13,6 +13,7 @@ How the docs are organised, and what to read first.
 | [design/libfileparser.md](design/libfileparser.md) | The parsing libraries: what every category library must be (complete, a stable flat API, trivially extended, embeddable), the crates, hooks, front door, and how they are tested |
 | [design/libfileparser-3d.md](design/libfileparser-3d.md) | The 3D parsing library, format by format |
 | [design/architecture.md](design/architecture.md) | The two halves, libfileparser (reading) and libviewer (rendering), the products around them, the rules they follow, and the audit of third-party libraries |
+| [design/libviewer.md](design/libviewer.md) | The rendering library: a view for each content model, what the app hosts, and what stays in the app |
 
 Then the design of each part, as needed:
 

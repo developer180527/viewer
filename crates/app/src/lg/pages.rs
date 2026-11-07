@@ -23,7 +23,7 @@ use std::time::{Duration, Instant};
 use libgui::*;
 use viewer_core::{PageImage, PageRect, PageSize, PageSource};
 
-use super::Textures;
+use libviewer::Host;
 
 /// A tile's side in pixels.
 const TILE: u32 = 1024;
@@ -358,7 +358,7 @@ impl PagesView {
     }
 
     /// Uploads finished tiles: a few per frame, or all of them for a screenshot.
-    fn take_tiles(&mut self, tex: &mut dyn Textures, all: bool) -> bool {
+    fn take_tiles(&mut self, tex: &mut dyn Host, all: bool) -> bool {
         let Some(w) = &self.worker else { return false };
         let mut s = w.lock();
         let mut take = 0;
@@ -388,7 +388,7 @@ impl PagesView {
 
     /// Frees tiles until the cache fits its budget, before this frame draws: first
     /// those at scales no longer in use, then those drawn longest ago.
-    fn evict(&mut self, tex: &mut dyn Textures, step: i16) {
+    fn evict(&mut self, tex: &mut dyn Host, step: i16) {
         let mut total: usize = self.tiles.values().map(|t| t.bytes).sum();
         if total <= CACHE_BYTES {
             return;
@@ -436,7 +436,7 @@ struct Placed {
     rect: Rect,
 }
 
-pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mut dyn Textures) {
+pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mut dyn Host) {
     if st.worker.is_none() && st.error.is_none() {
         st.start(src);
     }

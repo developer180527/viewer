@@ -16,6 +16,7 @@ mod content;
 mod dependency;
 mod document;
 mod error;
+mod generic;
 mod hooks;
 mod limits;
 mod link;
@@ -30,6 +31,7 @@ pub use content::{
 pub use dependency::{Dependencies, Dependency, DependencyStatus, DependencyTable, Unreadable};
 pub use document::{Document, FacetInfo, FormatInfo, Role};
 pub use error::{LimitExceeded, ParseError, Result};
+pub use generic::{FacetProvider, FileParts, is_text};
 pub use hooks::{AnyFiles, Cancel, FileResolver, FolderFiles, InlineSpawn, NoFiles, NoNotify, Notify, ParseContext, Spawn};
 pub use limits::{Limit, Limits};
 pub use link::{Links, Place, SceneItem};

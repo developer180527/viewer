@@ -98,3 +98,55 @@ fn folders_and_forced_readers() {
     assert_eq!(names(&doc), ["Text", "Raw"]);
     assert!(libfileparser::reader("usd").is_some() && libfileparser::reader("nope").is_none());
 }
+
+/// A text 3D format of an app's own, `.tri`: "tri" then nine numbers, one triangle.
+struct TriReader;
+
+static TRI: libfileparser::ReaderInfo = libfileparser::ReaderInfo::new("tri", "Triangle", libfileparser::Category::ThreeD).extensions(&["tri"]);
+
+impl libfileparser::Reader for TriReader {
+    fn info(&self) -> &libfileparser::ReaderInfo {
+        &TRI
+    }
+
+    fn detect(&self, header: &[u8], name: &str) -> libfileparser::Detection {
+        libfileparser_3d::build::detect_by(&TRI, header.starts_with(b"tri\n"), name).with_language("tri")
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser::Result<libfileparser::Document> {
+        use scene_data::glam::{Mat4, Vec3};
+        let text = std::str::from_utf8(src.bytes()).map_err(|_| ParseError::NotThisFormat)?;
+        let v: Vec<f32> = text.split_whitespace().skip(1).filter_map(|n| n.parse().ok()).collect();
+        if v.len() != 9 {
+            return Err(ParseError::corrupt("a triangle is nine numbers"));
+        }
+        let (scene, mut b) = libfileparser_3d::build::new_scene(cx);
+        let positions: Vec<Vec3> = v.chunks(3).map(|c| Vec3::new(c[0], c[1], c[2])).collect();
+        let mesh = b.add_mesh(scene_data::MeshData::new(positions)).map_err(|e| libfileparser_3d::build::scene_error(&e))?;
+        b.add_node(scene_data::Node::mesh(mesh, None, Mat4::IDENTITY, None)).map_err(|e| libfileparser_3d::build::scene_error(&e))?;
+        b.finish();
+        libfileparser_3d::build::SceneDocument::new(self, src, "Triangle", scene).build()
+    }
+}
+
+#[test]
+fn an_app_adds_a_format_to_the_front_door_or_replaces_one() {
+    let cx = cx();
+    let src = FileSource::from_bytes("one.tri", b"tri\n0 0 0\n1 0 0\n0 1 0\n".to_vec());
+    // Without it, a .tri is just text.
+    assert_eq!(names(&libfileparser::open(&src, &cx).unwrap()), ["Text", "Raw"]);
+    // With it: a scene, its Source in its own language, its Raw.
+    let lib = libfileparser::Library::new().reader(&TriReader);
+    let doc = lib.open(&src, &cx).unwrap();
+    assert_eq!(doc.format().reader, "tri");
+    assert_eq!(names(&doc), ["Scene", "Source", "Raw"]);
+    let Ok(Content::Text(t)) = doc.facet(1, &cx) else { panic!() };
+    assert_eq!(t.info().language.as_deref(), Some("tri"));
+    // Ahead of plain text, behind the built-ins.
+    let ids: Vec<_> = lib.readers().iter().map(|r| r.info().id).collect();
+    assert!(ids.iter().position(|&i| i == "tri") < ids.iter().position(|&i| i == "text"));
+    // Replacing a built-in by id.
+    let lib = libfileparser::Library::new().replace("stl", &TriReader);
+    assert!(lib.get("stl").is_none() && lib.get("tri").is_some());
+    assert_eq!(lib.readers().len(), libfileparser::readers().len());
+}

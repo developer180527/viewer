@@ -58,7 +58,7 @@ impl Reader for GltfReader {
         let glb = src.header().starts_with(b"glTF");
         let extensions = facets::extensions_table(&loaded.extensions_used, &loaded.extensions_required);
         let from = src.clone();
-        SceneDocument::new("gltf", format, scene)
+        SceneDocument::new(self, src, format, scene)
             .origins(origins, "glTF")
             .warnings(loaded.warnings)
             .textures(textures)
@@ -75,7 +75,7 @@ impl Reader for GltfReader {
                     });
                     doc = doc.with_lazy_facet(FacetInfo::new(Role::Package, "Chunks", Model::Container), move |_| {
                         let json = facets::parse(&from).ok();
-                        Ok(Content::Container(Arc::new(facets::GlbChunks::new(&from, json.as_ref())?)))
+                        Ok(Content::Container(Arc::new(facets::glb_parts(&from, json.as_ref())?)))
                     });
                 }
                 if let Some(table) = extensions {

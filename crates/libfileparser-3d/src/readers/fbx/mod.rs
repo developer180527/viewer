@@ -439,7 +439,7 @@ use libfileparser_core::{Category, Content, Detection, Document, FacetInfo, Mode
 use crate::build::{SceneDocument, detect_by};
 
 /// FBX and OBJ are both read by ufbx; only the format and the wording differ.
-fn open_with_ufbx(reader: &'static str, format: ufbx::FileFormat, name: &str, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
+fn open_with_ufbx(reader: &dyn Reader, format: ufbx::FileFormat, name: &str, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
     cx.cancel.check()?;
     let deps = Dependencies::new();
     let loaded = load(src, format, cx, &deps).map_err(super::parse_error)?;
@@ -452,14 +452,14 @@ fn open_with_ufbx(reader: &'static str, format: ufbx::FileFormat, name: &str, sr
             let Ok(binary) = records::BinaryRecords::new(&from) else { return doc };
             let media = binary.media();
             let doc = doc.with_facet(Role::Structure, "Records", Content::Tree(Arc::new(binary)));
-            if media.is_empty() { doc } else { doc.with_facet(Role::Package, "Embedded media", Content::Container(Arc::new(records::Media::new(&from, media)))) }
+            if media.is_empty() { doc } else { doc.with_facet(Role::Package, "Embedded media", Content::Container(Arc::new(libfileparser_core::FileParts::new(&from, media)))) }
         }
         _ => doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Records", Model::Tree), move |cx| {
             Ok(Content::Tree(Arc::new(records::ascii_records(from.bytes(), cx.limits.items, cx.limits.depth)?)))
         }),
     };
     let structure = if format == ufbx::FileFormat::Obj { "Objects" } else { "Records" };
-    let doc = SceneDocument::new(reader, name, loaded.scene)
+    let doc = SceneDocument::new(reader, src, name, loaded.scene)
         .origins(loaded.origins, structure)
         .warnings(loaded.warnings)
         .textures(loaded.textures)
@@ -479,12 +479,13 @@ impl Reader for FbxReader {
     }
 
     fn detect(&self, header: &[u8], name: &str) -> Detection {
-        detect_by(&FBX, header.starts_with(b"Kaydara FBX Binary"), name)
+        // ASCII FBX is text in its own language (its Source facet); binary isn't text.
+        detect_by(&FBX, header.starts_with(b"Kaydara FBX Binary"), name).with_language("fbx")
     }
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
         let format = if src.header().starts_with(b"Kaydara FBX Binary") { "FBX (binary)" } else { "FBX (ASCII)" };
-        open_with_ufbx("fbx", ufbx::FileFormat::Fbx, format, src, cx)
+        open_with_ufbx(self, ufbx::FileFormat::Fbx, format, src, cx)
     }
 }
 
@@ -504,6 +505,6 @@ impl Reader for ObjReader {
     }
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
-        open_with_ufbx("obj", ufbx::FileFormat::Obj, "Wavefront OBJ", src, cx)
+        open_with_ufbx(self, ufbx::FileFormat::Obj, "Wavefront OBJ", src, cx)
     }
 }

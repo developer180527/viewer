@@ -137,20 +137,21 @@ impl Reader for StlReader {
     fn detect(&self, header: &[u8], name: &str) -> Detection {
         // Binary STL has no magic number; ASCII starts with `solid` (as do some binary
         // headers, so the size check in `load` decides).
-        if STL.matches_extension(name) {
+        let d = if STL.matches_extension(name) {
             Detection::new(Confidence::Extension)
         } else if looks_ascii(header) {
             Detection::new(Confidence::Content)
         } else {
             Detection::NONE
-        }
+        };
+        d.with_language("stl")
     }
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
         cx.cancel.check()?;
         let loaded = load(src.bytes(), cx).map_err(super::parse_error)?;
         let format = if loaded.binary { "STL (binary)" } else { "STL (ASCII)" };
-        let doc = SceneDocument::new("stl", format, loaded.scene).build()?;
+        let doc = SceneDocument::new(self, src, format, loaded.scene).build()?;
         Ok(match loaded.name {
             Some(name) => doc.with_meta("Name", name),
             None => doc,

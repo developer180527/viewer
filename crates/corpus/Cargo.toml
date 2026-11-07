@@ -8,6 +8,7 @@ publish = false
 
 [dependencies]
 viewer-core.workspace = true
+libfileparser-core.workspace = true
 viewer-formats.workspace = true
 scene-data.workspace = true
 anyhow.workspace = true

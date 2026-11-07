@@ -8,12 +8,12 @@
 //! the files the document couldn't read.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::Ordering;
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use image::RgbaImage;
 use toml::{Table, Value};
+use libfileparser_core::Content as Model;
 use viewer_core::{Content, Document, FileSource, PageRect, Unreadable};
 
 /// The longest side of a golden render, in pixels: enough to catch a wrong decode or
@@ -125,16 +125,57 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
     let mut t = Table::new();
     let mut render = None;
     let key = match &mut doc.content {
-        Content::Raster(r) => {
-            t.insert("size".into(), format!("{}x{}", r.width, r.height).into());
-            if golden {
-                r.make_full()?;
-                let rgba = r.rgba().ok_or("no pixels after decoding")?.to_vec();
-                let img = RgbaImage::from_raw(r.width, r.height, rgba).ok_or("pixel count doesn't match the size")?;
-                render = Some(shrink(&img));
+        Content::Model(model) => match model {
+            Model::Raster(r) => {
+                t.insert("size".into(), format!("{}x{}", r.width(), r.height()).into());
+                if golden {
+                    let rgba = r.decode().map_err(|e| e.to_string())?;
+                    let img = RgbaImage::from_raw(r.width(), r.height(), rgba).ok_or("pixel count doesn't match the size")?;
+                    render = Some(shrink(&img));
+                }
+                "raster"
             }
-            "raster"
-        }
+            Model::Text(text) => {
+                t.insert("lines".into(), int(text.info().lines.known() as usize));
+                "text"
+            }
+            Model::Tree(tree) => {
+                let top = tree.children(None, 0..tree.child_count(None).map_err(|e| e.to_string())?.known()).map_err(|e| e.to_string())?;
+                t.insert("nodes".into(), int(tree_nodes(tree.as_ref(), deadline)?));
+                t.insert("top".into(), list(top.iter().map(|n| n.label.clone()), top.len()));
+                "tree"
+            }
+            Model::Table(table) => {
+                let info = table.info();
+                t.insert("rows".into(), int(info.rows.known() as usize));
+                t.insert("columns".into(), int(info.columns.len()));
+                t.insert("headers".into(), list(info.columns.iter().cloned(), info.columns.len()));
+                "table"
+            }
+            Model::Container(c) => {
+                let entries = c.entries(0..c.entry_count().known()).map_err(|e| e.to_string())?;
+                t.insert("entries".into(), int(entries.len()));
+                t.insert("paths".into(), list(entries.iter().map(|e| e.path.clone()), entries.len()));
+                "container"
+            }
+            Model::Hex(src) => {
+                t.insert("bytes".into(), int(src.len() as usize));
+                "hex"
+            }
+            Model::Scene(scene) => {
+                // Textures decode on worker threads after the open returns: wait for them,
+                // so the count is what the user ends up seeing.
+                while scene.textures_pending() > 0 {
+                    if Instant::now() > deadline {
+                        return Err("textures still decoding at the timeout".into());
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                scene_summary(scene.scene(), &mut t);
+                "scene"
+            }
+            _ => "other",
+        },
         Content::Text(text) => {
             t.insert("lines".into(), int(text.line_count()));
             if let Some(s) = &text.syntax {
@@ -145,39 +186,6 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
         Content::Markdown(md) => {
             t.insert("chars".into(), int(md.chars().count()));
             "markdown"
-        }
-        Content::Tree(node) => {
-            t.insert("nodes".into(), int(node.count()));
-            t.insert("top".into(), list(node.children.iter().map(|c| c.key.clone()), node.children.len()));
-            "tree"
-        }
-        Content::Table(table) => {
-            t.insert("rows".into(), int(table.rows.len()));
-            t.insert("columns".into(), int(table.columns));
-            t.insert("headers".into(), list(table.headers.iter().cloned(), table.headers.len()));
-            "table"
-        }
-        Content::Container(c) => {
-            let entries = c.entries();
-            t.insert("entries".into(), int(entries.len()));
-            t.insert("paths".into(), list(entries.iter().map(|e| e.path.clone()), entries.len()));
-            "container"
-        }
-        Content::Hex(src) => {
-            t.insert("bytes".into(), int(src.len() as usize));
-            "hex"
-        }
-        Content::Scene(scene) => {
-            // Textures decode on worker threads after the open returns: wait for them,
-            // so the count is what the user ends up seeing.
-            while scene.textures_pending.load(Ordering::Acquire) > 0 {
-                if Instant::now() > deadline {
-                    return Err("textures still decoding at the timeout".into());
-                }
-                std::thread::sleep(Duration::from_millis(5));
-            }
-            scene_summary(&scene.scene, &mut t);
-            "scene"
         }
         Content::Pages(pages) => {
             t.insert("backend".into(), pages.backend().into());
@@ -197,6 +205,25 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
     };
     summary.insert(key.into(), t.into());
     Ok(render)
+}
+
+/// Every node of a tree, read a level at a time.
+fn tree_nodes(tree: &dyn libfileparser_core::TreeSource, deadline: Instant) -> Result<usize, String> {
+    let mut stack = vec![None];
+    let mut n = 0;
+    while let Some(parent) = stack.pop() {
+        if Instant::now() > deadline {
+            return Err("tree still being read at the timeout".into());
+        }
+        let count = tree.child_count(parent).map_err(|e| e.to_string())?.known();
+        for c in tree.children(parent, 0..count).map_err(|e| e.to_string())? {
+            n += 1;
+            if c.has_children {
+                stack.push(Some(c.id));
+            }
+        }
+    }
+    Ok(n)
 }
 
 fn scene_summary(scene: &scene_data::CpuScene, t: &mut Table) {

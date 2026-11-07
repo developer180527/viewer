@@ -12,7 +12,7 @@
 //!     let mesh = builder.add_mesh(MeshData::new(positions)).map_err(|e| build::scene_error(&e))?;
 //!     builder.add_node(Node::mesh(mesh, None, Mat4::IDENTITY, None)).map_err(|e| build::scene_error(&e))?;
 //!     builder.finish();
-//!     build::SceneDocument::new("off", "OFF model", scene).build()
+//!     build::SceneDocument::new(self, src, "OFF model", scene).build()
 //! }
 //! ```
 
@@ -23,7 +23,7 @@ use std::collections::HashMap;
 
 use libfileparser_core::{
     Category, Confidence, Content, Count, Dependencies, DependencyStatus, Detection, Document, FacetInfo, FormatInfo, Limit, Links, Model,
-    ParseContext, ParseError, Place, ReaderInfo, Result, Role, SceneDoc, SceneItem, TableInfo, TableSource, Unreadable,
+    FileSource, ParseContext, ParseError, Place, Reader, ReaderInfo, Result, Role, SceneDoc, SceneItem, TableInfo, TableSource, Unreadable,
 };
 use scene_data::{AlphaMode, ColorSpace, CpuScene, ParamValue, SceneBuilder, SceneLimits, SceneRead, ShadingSource, Topology};
 
@@ -70,15 +70,19 @@ pub fn detect_by(info: &ReaderInfo, magic: bool, name: &str) -> Detection {
 }
 
 /// The document a loaded scene becomes, the same for every format: its Scene facet,
-/// a Dependencies facet when it read or looked for other files, a Textures facet when
-/// it has textures (or names some it couldn't find), the counts an app shows (meshes,
-/// triangles, lines, points, vertices, materials) and the reader's warnings.
+/// the format's own facets ([`Self::facets`]), a Dependencies facet when it read or
+/// looked for other files, Materials and Textures facets when it has them, then the
+/// file's Source (when it is text, in the language the reader detects) and Raw; the
+/// counts an app shows (meshes, triangles, lines, points, vertices, materials), the
+/// reader's warnings, and the links between them all.
 ///
 /// A scene with nothing to draw is an error, so a file that only looks like a model (a
 /// compiler's `.obj`) falls through to the next reader; when that's because a file it
 /// needs couldn't be read, the error names that file instead.
 pub struct SceneDocument {
     reader: &'static str,
+    src: FileSource,
+    language: Option<&'static str>,
     format: String,
     scene: CpuScene,
     warnings: Vec<String>,
@@ -89,9 +93,21 @@ pub struct SceneDocument {
 }
 
 impl SceneDocument {
-    /// `reader` is the reader's id; `format` names what was read ("glTF binary (GLB)").
-    pub fn new(reader: &'static str, format: impl Into<String>, scene: CpuScene) -> Self {
-        Self { reader, format: format.into(), scene, warnings: Vec::new(), textures: None, deps: Dependencies::new(), facets: None, origins: None }
+    /// `reader` read `src`; `format` names what was read ("glTF binary (GLB)").
+    pub fn new(reader: &dyn Reader, src: &FileSource, format: impl Into<String>, scene: CpuScene) -> Self {
+        let language = reader.detect(src.header(), src.name()).language;
+        Self {
+            reader: reader.info().id,
+            src: src.clone(),
+            language,
+            format: format.into(),
+            scene,
+            warnings: Vec::new(),
+            textures: None,
+            deps: Dependencies::new(),
+            facets: None,
+            origins: None,
+        }
     }
 
     /// Things the reader skipped or guessed; the first 20 are kept.
@@ -126,7 +142,7 @@ impl SceneDocument {
     }
 
     pub fn build(self) -> Result<Document> {
-        let Self { reader, format, scene, warnings, textures, deps, facets, origins } = self;
+        let Self { reader, src, language, format, scene, warnings, textures, deps, facets, origins } = self;
         let read = scene.read();
         let stats = Stats::of(&read);
         if stats.placed == 0 {
@@ -187,7 +203,7 @@ impl SceneDocument {
             };
             doc = doc.with_meta("Textures", note);
         }
-        Ok(doc)
+        Ok(doc.with_file_facets(&src, language))
     }
 }
 

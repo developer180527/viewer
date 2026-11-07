@@ -142,7 +142,7 @@ mod tests {
         let src = FileSource::from_bytes("x.pk", vec![1, 2, 3]);
         let (doc, id, attempts) = reg.open(&src);
         assert_eq!(id, "hex");
-        assert!(matches!(doc.content, Content::Hex(_)));
+        assert!(matches!(doc.content, Content::Model(libfileparser_core::Content::Hex(_))));
         assert_eq!(attempts[0].0, "picky");
     }
 }

@@ -58,6 +58,8 @@ pub struct ParseContext {
     pub cancel: Cancel,
     pub spawn: Arc<dyn Spawn>,
     pub notify: Arc<dyn Notify>,
+    /// Facets the app adds to documents of some formats (`FacetProvider`).
+    pub facet_providers: Vec<Arc<dyn crate::FacetProvider>>,
 }
 
 impl ParseContext {
@@ -72,6 +74,7 @@ impl ParseContext {
             cancel: Cancel::new(),
             spawn: Arc::new(InlineSpawn),
             notify: Arc::new(NoNotify),
+            facet_providers: Vec::new(),
         }
     }
 
@@ -97,6 +100,12 @@ impl ParseContext {
 
     pub fn with_notify(mut self, notify: impl Notify + 'static) -> Self {
         self.notify = Arc::new(notify);
+        self
+    }
+
+    /// Adds facets from `provider` to the documents of the formats it names.
+    pub fn with_facet_provider(mut self, provider: impl crate::FacetProvider + 'static) -> Self {
+        self.facet_providers.push(Arc::new(provider));
         self
     }
 

@@ -3,7 +3,7 @@ format = "JSON Lines"
 model = "Tree"
 
 [tree]
-nodes = 16
+nodes = 15
 top = ["0", "1", "2", "3", "4"]
 
 [metadata]

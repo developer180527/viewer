@@ -33,7 +33,7 @@ fn samples(reader: &str) -> Vec<Sample> {
         "ply" => vec![sample("3d/spiral.ply")],
         "usd" => {
             let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../usd-lite/tests/fixtures/scene.usda");
-            vec![sample("3d/tri.usda").fits_tiny_limits(), Sample::new("scene.usda", std::fs::read(fixture).unwrap())]
+            vec![sample("3d/tri.usda").fits_tiny_limits(), sample("3d/tri.usdz").fits_tiny_limits(), Sample::new("scene.usda", std::fs::read(fixture).unwrap())]
         }
         "blend" => vec![sample("3d/preview.blend").fits_tiny_limits(), sample("3d/packed.blend").fits_tiny_limits()],
         _ => Vec::new(),

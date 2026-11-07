@@ -95,7 +95,8 @@ impl Reader for ImageReader {
         Ok(Document::new(FormatInfo::new("image", format_name(format, src.header()), Category::Images))
             .with_facet(Role::Primary, "Image", Content::Raster(Raster::from_bands(width, height, source)))
             .with_meta("Dimensions", format!("{width} × {height}"))
-            .with_meta("Color", color))
+            .with_meta("Color", color)
+            .with_file_facets(src, None))
     }
 }
 
@@ -142,7 +143,7 @@ impl BandSource for ImageBands {
             decoder.set_transformations(png::Transformations::EXPAND | png::Transformations::ALPHA);
             let reader = decoder.read_info().map_err(corrupt)?;
             if !reader.info().interlaced {
-                return Ok(Box::new(PngBands { reader, width: self.width, height: self.height, y: 0, eight: Vec::new() }));
+                return Ok(Box::new(PngBands { reader, width: self.width, height: self.height, y: 0, eight: Vec::new(), failed: None }));
             }
         }
         let img = self.decode()?;
@@ -187,13 +188,16 @@ impl Iterator for CropBands {
     }
 }
 
-/// A PNG read row by row: never whole.
+/// A PNG read row by row: never whole. A damaged one gives the rows before the damage,
+/// then the error.
 struct PngBands {
     reader: png::Reader<Cursor<Shared>>,
     width: u32,
     height: u32,
     y: u32,
     eight: Vec<u8>,
+    /// Why the rows stopped, to give after the rows decoded before it.
+    failed: Option<ParseError>,
 }
 
 impl PngBands {
@@ -202,8 +206,20 @@ impl PngBands {
         let h = band_rows(self.width, self.height).min(self.height - self.y);
         let row_bytes = self.width as usize * 4;
         let mut band = Vec::with_capacity(h as usize * row_bytes);
+        let mut decoded = 0;
         for _ in 0..h {
-            let row = self.reader.next_row().map_err(corrupt)?.ok_or_else(|| corrupt("the PNG ended early"))?;
+            let row = match self.reader.next_row() {
+                Ok(Some(row)) => row,
+                Ok(None) => {
+                    self.failed = Some(corrupt("the PNG ended early"));
+                    break;
+                }
+                Err(e) => {
+                    self.failed = Some(corrupt(e));
+                    break;
+                }
+            };
+            decoded += 1;
             let data = if depth == png::BitDepth::Sixteen {
                 self.eight.clear();
                 self.eight.extend(row.data().as_chunks::<2>().0.iter().map(|&[hi, lo]| ((u16::from_be_bytes([hi, lo]) as u32 + 128) / 257) as u8));
@@ -219,9 +235,12 @@ impl PngBands {
                 png::ColorType::Indexed => return Err(corrupt("palette PNG not expanded")),
             }
         }
-        band.resize(h as usize * row_bytes, 0);
+        if decoded == 0 {
+            return Err(self.failed.take().unwrap_or_else(|| corrupt("the PNG ended early")));
+        }
+        band.resize(decoded as usize * row_bytes, 0);
         let band = Band { y: self.y, rgba: band };
-        self.y += h;
+        self.y += decoded;
         Ok(band)
     }
 }
@@ -230,6 +249,10 @@ impl Iterator for PngBands {
     type Item = Result<Band>;
 
     fn next(&mut self) -> Option<Result<Band>> {
+        if let Some(e) = self.failed.take() {
+            self.y = self.height;
+            return Some(Err(e));
+        }
         if self.y >= self.height {
             return None;
         }
@@ -275,7 +298,8 @@ impl Reader for SvgReader {
         Ok(Document::new(FormatInfo::new("svg", "SVG image", Category::Images))
             .with_facet(Role::Primary, "Image", Content::Raster(Raster::from_bands(width, height, SvgBands { src: src.clone(), scale, width, height })))
             .with_meta("Intrinsic size", format!("{} × {}", size.width(), size.height()))
-            .with_meta("Rendered at", format!("{width} × {height}")))
+            .with_meta("Rendered at", format!("{width} × {height}"))
+            .with_file_facets(src, Some("xml")))
     }
 }
 
@@ -334,6 +358,7 @@ fn system_fonts() -> Arc<resvg::usvg::fontdb::Database> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use libfileparser_core::Pixels;
 
     fn raster(doc: &Document) -> Raster {
         match doc.facet(0, &ParseContext::new()).unwrap() {
@@ -413,6 +438,12 @@ mod tests {
         png.truncate(png.len() / 2);
         // The header is whole, so it opens; its pixels aren't.
         let doc = ImageReader.open(&FileSource::from_bytes("t.png", png), &ParseContext::new()).unwrap();
-        assert!(raster(&doc).decode().is_err());
+        let r = raster(&doc);
+        assert!(r.decode().is_err());
+        // The rows before the damage still come, then the error.
+        let Pixels::Bands(source) = r.pixels() else { panic!() };
+        let bands: Vec<_> = source.bands().unwrap().collect();
+        assert!(bands.len() >= 2 && bands[0].as_ref().is_ok_and(|b| !b.rgba.is_empty()), "{:?}", bands.iter().map(|b| b.is_ok()).collect::<Vec<_>>());
+        assert!(bands.last().unwrap().is_err());
     }
 }

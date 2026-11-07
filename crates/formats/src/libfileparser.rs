@@ -2,8 +2,8 @@
 //! type: each libfileparser reader appears as a Viewer loader and opens through the
 //! front door (`libfileparser::open_with`), so its document has the generic Source,
 //! Package and Raw facets too. The document is kept with the page, so View as can show
-//! any of its facets ([`show_facet`]) without reading the file again; each facet is
-//! converted to Viewer's content when shown.
+//! any of its facets ([`show_facet`]) without reading the file again; a facet goes to
+//! the page as libfileparser made it, for libviewer's views.
 //!
 //! Viewer's policy, as hooks: other files from the model's folder and below, never
 //! elsewhere (one folder up from a model in `~/Downloads` would be the whole home
@@ -14,9 +14,9 @@ use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
-use anyhow::{Result, anyhow, bail};
-use libfileparser::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Pixels, Reader, Role, Spawn, TreeSource};
-use viewer_core::{BandStream, Document, Facets, FileSource, FormatLoader, Raster, SceneDoc, Unreadables};
+use anyhow::{Result, anyhow};
+use libfileparser::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Reader, Role, Spawn};
+use viewer_core::{Document, Facets, FileSource, FormatLoader, Unreadables};
 
 /// A libfileparser reader as a Viewer loader.
 pub struct ReaderLoader(pub &'static dyn Reader);
@@ -62,148 +62,27 @@ pub fn open_folder(path: &Path) -> Result<Document> {
 }
 
 fn viewer_document(doc: Arc<libfileparser::Document>, index: usize, src: &FileSource, cx: &ParseContext) -> Result<Document> {
-    let content = convert(&doc, index, src, cx)?;
-    let streamed = matches!(&content, viewer_core::Content::Raster(r) if matches!(r.pixels, viewer_core::Pixels::Bands(_)));
+    let content = content(&doc, index, src, cx)?;
     let mut out = Document::new(doc.format().name.clone(), content);
     for (k, v) in doc.metadata() {
         out = out.with_meta(k.clone(), v);
-    }
-    if streamed {
-        out = out.with_meta("Decoded", "in bands, straight to the GPU");
     }
     out.unreadable = Unreadables::from_dependencies(doc.dependencies().clone());
     out.facets = Some(Facets { doc, shown: index });
     Ok(out)
 }
 
-/// Most tree nodes and table rows a facet shows: Viewer's own tree and table are
-/// built up front, where libfileparser's are read a range at a time.
-const MAX_NODES: usize = 50_000;
-const MAX_ROWS: u64 = 100_000;
-/// Most bytes of a text facet that isn't the file itself (a GLB's JSON chunk).
-const MAX_TEXT: usize = 64 << 20;
-
-/// A facet's content as Viewer's.
-fn convert(doc: &libfileparser::Document, index: usize, src: &FileSource, cx: &ParseContext) -> Result<viewer_core::Content> {
+/// A facet's content, for libviewer's views as it is: trees read a level at a time,
+/// tables live, images decoded as they're shown. The one exception is the file's own
+/// text (its Source), which goes through Viewer's text loader to be highlighted.
+fn content(doc: &libfileparser::Document, index: usize, src: &FileSource, cx: &ParseContext) -> Result<viewer_core::Content> {
     let info = doc.facets().nth(index).ok_or_else(|| anyhow!("no facet {index}"))?.clone();
-    Ok(match doc.facet(index, cx).map_err(|e| anyhow!("{}: {e}", info.name))? {
-        Content::Scene(s) => viewer_core::Content::Scene(SceneDoc { scene: s.scene().clone(), textures_pending: s.pending_counter() }),
-        Content::Raster(r) => viewer_core::Content::Raster(raster(&r)?),
-        Content::Hex(src) => viewer_core::Content::Hex(src),
-        Content::Text(t) => {
-            // Viewer's text loader highlights; give it the file itself when the facet is
-            // the file's own text, else the facet's lines named for their language.
-            let text = if info.role == Role::Source {
-                src.clone()
-            } else {
-                let lines = t.lines(0..t.info().lines.known()).map_err(|e| anyhow!("{e}"))?;
-                let mut bytes = Vec::new();
-                for l in lines {
-                    if bytes.len() + l.as_slice().len() > MAX_TEXT {
-                        bail!("{} is too long to show ({MAX_TEXT} bytes at most)", info.name);
-                    }
-                    bytes.extend_from_slice(l.as_slice());
-                    bytes.push(b'\n');
-                }
-                let ext = match t.info().language.as_deref() {
-                    Some("json") => "json",
-                    Some("usd") => "usda",
-                    Some("xml") => "xml",
-                    _ => "txt",
-                };
-                FileSource::from_bytes(format!("{}.{ext}", info.name), bytes)
-            };
-            let loader = crate::registry().get("text").ok_or_else(|| anyhow!("no text loader"))?;
-            loader.open(&text)?.content
-        }
-        Content::Tree(t) => viewer_core::Content::Tree(tree(&*t, &info.name)?),
-        Content::Table(t) => {
-            let table = t.info();
-            let rows = t.rows(0..table.rows.known().min(MAX_ROWS)).map_err(|e| anyhow!("{e}"))?;
-            viewer_core::Content::Table(viewer_core::Table::new(table.columns, rows))
-        }
-        Content::Container(c) => viewer_core::Content::Container(Arc::new(EntriesOf::new(c)?)),
-        _ => bail!("{} is content Viewer can't show yet", info.name),
-    })
-}
-
-/// Above this many pixels (64 MB as RGBA) an image streams: decoded band by band on a
-/// thread and uploaded as the bands arrive, so the whole RGBA image never sits in
-/// memory. Below it, decoded whole here, on the loader thread.
-const STREAM_ABOVE_PIXELS: u64 = 16 << 20;
-
-fn raster(r: &libfileparser::Raster) -> Result<Raster> {
-    let (width, height) = (r.width(), r.height());
-    Ok(match r.pixels() {
-        Pixels::Bands(source) if width as u64 * height as u64 > STREAM_ABOVE_PIXELS => {
-            let source = source.clone();
-            let stream = BandStream::spawn(move |emit| {
-                for band in source.bands().map_err(|e| e.to_string())? {
-                    if !emit(band.map_err(|e| e.to_string())?) {
-                        return Ok(());
-                    }
-                }
-                Ok(())
-            });
-            Raster { width, height, pixels: viewer_core::Pixels::Bands(stream) }
-        }
-        _ => Raster::full(width, height, r.decode().map_err(|e| anyhow!("{e}"))?),
-    })
-}
-
-/// A libfileparser tree as Viewer's, built up front: at most [`MAX_NODES`] nodes, the
-/// rest of a branch summarised.
-fn tree(t: &dyn TreeSource, name: &str) -> Result<viewer_core::TreeNode> {
-    let mut budget = MAX_NODES;
-    fn level(t: &dyn TreeSource, parent: Option<libfileparser::NodeId>, depth: usize, budget: &mut usize) -> Result<Vec<viewer_core::TreeNode>> {
-        let count = t.child_count(parent).map_err(|e| anyhow!("{e}"))?.known();
-        let take = count.min(*budget as u64);
-        let mut out = Vec::new();
-        for n in t.children(parent, 0..take).map_err(|e| anyhow!("{e}"))? {
-            *budget = budget.saturating_sub(1);
-            let children = if n.has_children && depth < 64 && *budget > 0 { level(t, Some(n.id), depth + 1, budget)? } else { Vec::new() };
-            let children = if n.has_children && children.is_empty() {
-                vec![viewer_core::TreeNode { key: "…".into(), value: "not shown".into(), children: Vec::new() }]
-            } else {
-                children
-            };
-            out.push(viewer_core::TreeNode { key: n.label, value: n.value, children });
-        }
-        if take < count {
-            out.push(viewer_core::TreeNode { key: "…".into(), value: format!("{} more not shown", count - take), children: Vec::new() });
-        }
-        Ok(out)
+    let content = doc.facet(index, cx).map_err(|e| anyhow!("{}: {e}", info.name))?;
+    if info.role == Role::Source && matches!(content, Content::Text(_)) {
+        let loader = crate::registry().get("text").ok_or_else(|| anyhow!("no text loader"))?;
+        return Ok(loader.open(src)?.content);
     }
-    let children = level(t, None, 0, &mut budget)?;
-    Ok(viewer_core::TreeNode { key: name.into(), value: String::new(), children })
-}
-
-/// A libfileparser container as Viewer's: its entries listed once.
-struct EntriesOf {
-    inner: Arc<dyn libfileparser::Container>,
-    entries: Vec<viewer_core::Entry>,
-}
-
-impl EntriesOf {
-    fn new(inner: Arc<dyn libfileparser::Container>) -> Result<Self> {
-        let entries = inner
-            .entries(0..inner.entry_count().known())
-            .map_err(|e| anyhow!("{e}"))?
-            .into_iter()
-            .map(|e| viewer_core::Entry { path: e.path, size: e.size, compressed_size: e.packed, is_dir: e.kind == libfileparser::EntryKind::Folder })
-            .collect();
-        Ok(Self { inner, entries })
-    }
-}
-
-impl viewer_core::Container for EntriesOf {
-    fn entries(&self) -> &[viewer_core::Entry] {
-        &self.entries
-    }
-
-    fn open_entry(&self, index: usize) -> Result<FileSource> {
-        self.inner.open(index as u64).map_err(|e| anyhow!("{e}"))
-    }
+    Ok(viewer_core::Content::Model(content))
 }
 
 /// What the app hears when a document gains something (a texture). Set once at

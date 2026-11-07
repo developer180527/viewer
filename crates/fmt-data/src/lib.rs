@@ -1,7 +1,39 @@
 //! Structured data: JSON / JSON Lines / TOML become trees, CSV / TSV become tables.
 
 use anyhow::Context;
-use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Result, Table, TreeNode};
+use std::sync::Arc;
+
+use libfileparser_core::{Content as Model, OwnedTable, OwnedTree};
+use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Result};
+
+/// A node as parsed, before it becomes libfileparser's tree.
+struct TreeNode {
+    key: String,
+    /// Displayed value for leaves, or a summary such as "{3}" / "[10]" for branches.
+    value: String,
+    children: Vec<TreeNode>,
+}
+
+impl TreeNode {
+    fn count(&self) -> usize {
+        1 + self.children.iter().map(TreeNode::count).sum::<usize>()
+    }
+}
+
+/// The root's children at the top, as they're shown.
+fn tree(root: TreeNode) -> Content {
+    fn add(tree: &mut OwnedTree, parent: Option<libfileparser_core::NodeId>, node: TreeNode) {
+        let id = tree.add(parent, node.key, node.value);
+        for child in node.children {
+            add(tree, Some(id), child);
+        }
+    }
+    let mut out = OwnedTree::new();
+    for child in root.children {
+        add(&mut out, None, child);
+    }
+    Content::Model(Model::Tree(Arc::new(out)))
+}
 
 pub static LOADERS: &[&dyn FormatLoader] = &[&JsonLoader, &TomlLoader, &CsvLoader];
 
@@ -46,7 +78,7 @@ impl FormatLoader for JsonLoader {
         let root = json_node("root".into(), &value);
         let nodes = root.count();
         let name = if lines_format { "JSON Lines" } else { "JSON" };
-        Ok(Document::new(name, Content::Tree(root)).with_meta("Nodes", nodes))
+        Ok(Document::new(name, tree(root)).with_meta("Nodes", nodes))
     }
 }
 
@@ -89,7 +121,7 @@ impl FormatLoader for TomlLoader {
         let value: toml::Value = toml::from_str(std::str::from_utf8(src.bytes())?)?;
         let root = toml_node("root".into(), &value);
         let nodes = root.count();
-        Ok(Document::new("TOML", Content::Tree(root)).with_meta("Nodes", nodes))
+        Ok(Document::new("TOML", tree(root)).with_meta("Nodes", nodes))
     }
 }
 
@@ -152,9 +184,13 @@ impl FormatLoader for CsvLoader {
             .records()
             .map(|r| r.map(|rec| rec.iter().map(str::to_owned).collect()))
             .collect::<std::result::Result<Vec<Vec<String>>, _>>()?;
-        let table = Table::new(headers, rows);
-        let (n_rows, n_cols) = (table.rows.len(), table.columns);
-        Ok(Document::new("Delimited table", Content::Table(table))
+        // Rows can be wider than the header (flexible CSV): those cells get a column too.
+        let n_cols = rows.iter().map(Vec::len).chain([headers.len()]).max().unwrap_or(0);
+        let mut headers = headers;
+        headers.resize(n_cols, String::new());
+        let n_rows = rows.len();
+        let table = OwnedTable::new(headers, rows);
+        Ok(Document::new("Delimited table", Content::Model(Model::Table(Arc::new(table))))
             .with_meta("Rows", n_rows)
             .with_meta("Columns", n_cols)
             .with_meta("Delimiter", format!("{:?}", delimiter as char)))
@@ -182,18 +218,19 @@ mod tests {
     #[test]
     fn json_tree_keeps_key_order() {
         let src = FileSource::from_bytes("a.json", br#"{"z":1,"a":[true,null]}"#.to_vec());
-        let Content::Tree(root) = JsonLoader.open(&src).unwrap().content else { panic!() };
-        assert_eq!(root.children[0].key, "z");
-        assert_eq!(root.children[1].value, "[2]");
-        assert_eq!(root.count(), 5);
+        let doc = JsonLoader.open(&src).unwrap();
+        assert_eq!(doc.metadata, [("Nodes".to_string(), "5".to_string())]);
+        let Content::Model(Model::Tree(t)) = doc.content else { panic!() };
+        let top = t.children(None, 0..10).unwrap();
+        assert_eq!((top[0].label.as_str(), top[1].value.as_str()), ("z", "[2]"));
     }
 
     #[test]
     fn csv_sniffs_semicolons() {
         let src = FileSource::from_bytes("a.csv", b"a;b\n1;2\n3;4\n".to_vec());
-        let Content::Table(t) = CsvLoader.open(&src).unwrap().content else { panic!() };
-        assert_eq!(t.headers, ["a", "b"]);
-        assert_eq!(t.rows.len(), 2);
+        let Content::Model(Model::Table(t)) = CsvLoader.open(&src).unwrap().content else { panic!() };
+        assert_eq!(t.info().columns, ["a", "b"]);
+        assert_eq!(t.info().rows.known(), 2);
     }
 
     #[test]
@@ -212,7 +249,8 @@ mod tests {
     #[test]
     fn toml_tree() {
         let src = FileSource::from_bytes("a.toml", b"[pkg]\nname = \"x\"\n".to_vec());
-        let Content::Tree(root) = TomlLoader.open(&src).unwrap().content else { panic!() };
-        assert_eq!(root.children[0].children[0].value, "\"x\"");
+        let Content::Model(Model::Tree(t)) = TomlLoader.open(&src).unwrap().content else { panic!() };
+        let pkg = t.children(None, 0..1).unwrap()[0].id;
+        assert_eq!(t.children(Some(pkg), 0..1).unwrap()[0].value, "\"x\"");
     }
 }
