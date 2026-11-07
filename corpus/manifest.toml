@@ -116,7 +116,13 @@ path = "corpus/files/3d/spiral.ply"
 path = "corpus/files/3d/tri.fbx"
 
 [[file]]
+path = "corpus/files/3d/tri-binary.fbx"
+
+[[file]]
 path = "corpus/files/3d/preview.blend"
+
+[[file]]
+path = "corpus/files/3d/packed.blend"
 
 # ---------------------------------------------------------------- folders
 

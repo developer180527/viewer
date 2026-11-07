@@ -313,3 +313,118 @@ fn gltf_lists_its_extensions() {
     let names: Vec<_> = doc.facets().map(|f| f.name.clone()).collect();
     assert!(names.contains(&"glTF".to_string()) && !names.iter().any(|n| n == "JSON chunk" || n == "Chunks"), "{names:?}");
 }
+
+/// The facets' names in order.
+fn names(doc: &Document) -> Vec<String> {
+    doc.facets().map(|f| f.name.clone()).collect()
+}
+
+/// A container facet's entries, and entry `i` opened.
+fn container(doc: &Document, cx: &ParseContext, name: &str) -> (Vec<(String, u64)>, std::sync::Arc<dyn libfileparser_core::Container>) {
+    let i = doc.facets().position(|f| f.name == name).unwrap_or_else(|| panic!("no {name} facet"));
+    let Ok(Content::Container(c)) = doc.facet(i, cx) else { panic!("{name} isn't a container") };
+    (c.entries(0..100).unwrap().into_iter().map(|e| (e.path, e.size)).collect(), c)
+}
+
+#[test]
+fn fbx_shows_its_records_and_embedded_media() {
+    let (doc, cx) = open_in_corpus("3d/tri-binary.fbx", libfileparser_core::InlineSpawn);
+    assert_eq!(names(&doc), ["Scene", "Records", "Embedded media"]);
+    let records = tree(&doc, &cx, "Records", 3);
+    for line in [
+        "FBXHeaderExtension = ",
+        "  FBXVersion = 7400",
+        "  Geometry = 1000, \"Geometry::Tri\", \"Mesh\"",
+        "    Vertices = f64[9]",
+        "    PolygonVertexIndex = i32[3]",
+        "    Content = raw, 75 bytes",
+        "  C = \"OO\", 1000, 2000",
+    ] {
+        assert!(records.contains(&line.to_string()), "no {line:?} in\n{}", records.join("\n"));
+    }
+    let (entries, media) = container(&doc, &cx, "Embedded media");
+    assert_eq!(entries, [("media/checker.png".to_string(), 75)]);
+    assert!(media.open(0).unwrap().bytes().starts_with(b"\x89PNG"));
+    assert!(media.open(1).is_err());
+
+    // ASCII FBX: the same tree, parsed when it's opened; nothing embedded.
+    let (doc, cx) = open_in_corpus("3d/tri.fbx", libfileparser_core::InlineSpawn);
+    assert_eq!(names(&doc), ["Scene", "Records"]);
+    let records = tree(&doc, &cx, "Records", 3);
+    assert!(records.contains(&"    Vertices = [9]".to_string()) && records.contains(&"  Model = 2000, \"Model::Tri\", \"Mesh\"".to_string()), "{records:?}");
+}
+
+#[test]
+fn obj_lists_its_objects_and_ply_its_header() {
+    let (doc, cx) = open_in_corpus("3d/tri-obj/tri.obj", libfileparser_core::InlineSpawn);
+    assert_eq!(names(&doc), ["Scene", "Objects", "Dependencies", "Materials", "Textures"]);
+    assert_eq!(tree(&doc, &cx, "Objects", 3), ["mtllib = tri.mtl · line 1", "Tri = 1 face · line 2", "  usemtl Paint = 1 face"]);
+
+    let (doc, cx) = open_in_corpus("3d/spiral.ply", libfileparser_core::InlineSpawn);
+    assert_eq!(names(&doc), ["Scene", "Header"]);
+    let header = tree(&doc, &cx, "Header", 2);
+    assert_eq!(header[..3], ["format = ascii 1.0", "vertex = 100 items", "  x = float"]);
+    assert_eq!(header.last().unwrap(), "  blue = uchar");
+}
+
+#[test]
+fn blend_lists_its_blocks_and_packed_files() {
+    let (doc, cx) = open_in_corpus("3d/packed.blend", libfileparser_core::InlineSpawn);
+    assert_eq!(names(&doc), ["Preview", "Blocks", "Packed files"]);
+    let blocks = tree(&doc, &cx, "Blocks", 2);
+    for line in ["Object = 1 datablock", "  Tri = 74 bytes", "Image = 1 datablock", "  checker.png = 1.1 KB", "  DATA · PackedFile = 1 block · 16 bytes", "  DATA · raw data = 1 block · 75 bytes", "  DNA1 = 1 block · 228 bytes"] {
+        assert!(blocks.contains(&line.to_string()), "no {line:?} in\n{}", blocks.join("\n"));
+    }
+    let (entries, packed) = container(&doc, &cx, "Packed files");
+    assert_eq!(entries, [("packed/checker.png".to_string(), 75)]);
+    let png = packed.open(0).unwrap();
+    assert_eq!(png.name(), "checker.png");
+    assert!(png.bytes().starts_with(b"\x89PNG"));
+
+    // Without an SDNA, blocks are listed by code, and nothing is packed.
+    let (doc, cx) = open_in_corpus("3d/preview.blend", libfileparser_core::InlineSpawn);
+    assert_eq!(names(&doc), ["Preview", "Blocks"]);
+    assert_eq!(tree(&doc, &cx, "Blocks", 2), ["Other blocks = 2 blocks", "  REND = 1 block · 72 bytes", "  TEST = 1 block · 72 bytes"]);
+}
+
+#[test]
+fn damaged_structure_never_panics() {
+    // Each new sample cut short and with bytes flipped: opening and walking every facet
+    // fails cleanly or succeeds, never panics.
+    let cx = ParseContext::new();
+    for path in ["3d/tri-binary.fbx", "3d/packed.blend", "3d/tri.fbx", "3d/spiral.ply"] {
+        let good = std::fs::read(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files").join(path)).unwrap();
+        let name = path.rsplit('/').next().unwrap();
+        let mut variants: Vec<Vec<u8>> = (1..good.len()).step_by(7).map(|n| good[..n].to_vec()).collect();
+        for at in (0..good.len()).step_by(5) {
+            let mut bad = good.clone();
+            bad[at] ^= 0xA5;
+            variants.push(bad);
+        }
+        for bytes in variants {
+            let Ok(doc) = libfileparser_3d::open(&FileSource::from_bytes(name, bytes), &cx) else { continue };
+            for i in 0..doc.facets().count() {
+                match doc.facet(i, &cx) {
+                    Ok(Content::Tree(t)) => {
+                        let mut stack = vec![None];
+                        let mut seen = 0;
+                        while let Some(p) = stack.pop() {
+                            for n in t.children(p, 0..1000).unwrap_or_default() {
+                                seen += 1;
+                                if n.has_children && seen < 10_000 {
+                                    stack.push(Some(n.id));
+                                }
+                            }
+                        }
+                    }
+                    Ok(Content::Container(c)) => {
+                        for e in 0..c.entry_count().known() {
+                            let _ = c.open(e);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}

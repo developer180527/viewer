@@ -22,7 +22,7 @@ fn samples(reader: &str) -> Vec<Sample> {
             let missing = sample("3d/missing-texture/cube.gltf").with_neighbour("cube.bin", corpus("3d/missing-texture/cube.bin"));
             vec![gltf, missing, sample("3d/cube.glb")]
         }
-        "fbx" => vec![sample("3d/tri.fbx").fits_tiny_limits()],
+        "fbx" => vec![sample("3d/tri.fbx").fits_tiny_limits(), sample("3d/tri-binary.fbx").fits_tiny_limits()],
         // Not spaced-mtl-missing: when neither the whole name nor any word of it is there,
         // the words are looked for but only the whole name is reported, by design.
         "obj" => vec![
@@ -35,7 +35,7 @@ fn samples(reader: &str) -> Vec<Sample> {
             let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../usd-lite/tests/fixtures/scene.usda");
             vec![sample("3d/tri.usda").fits_tiny_limits(), Sample::new("scene.usda", std::fs::read(fixture).unwrap())]
         }
-        "blend" => vec![sample("3d/preview.blend").fits_tiny_limits()],
+        "blend" => vec![sample("3d/preview.blend").fits_tiny_limits(), sample("3d/packed.blend").fits_tiny_limits()],
         _ => Vec::new(),
     }
 }

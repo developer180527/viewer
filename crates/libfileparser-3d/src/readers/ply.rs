@@ -11,7 +11,9 @@ use anyhow::{Context, anyhow, bail};
 use scene_data::glam::{Mat4, Vec3, Vec4};
 use scene_data::{CpuScene, Indices, Material, MeshData, Node, ParamValue, Topology};
 use anyhow::Result;
-use libfileparser_core::ParseContext;
+use std::sync::Arc;
+
+use libfileparser_core::{Content, OwnedTree, ParseContext, Role};
 
 pub struct Loaded {
     pub scene: CpuScene,
@@ -309,6 +311,35 @@ fn header(bytes: &[u8]) -> Result<(Encoding, Vec<Element>, usize)> {
     Ok((encoding.ok_or_else(|| anyhow!("no format line"))?, elements, body_start))
 }
 
+/// The Header facet: the format, comments and each element with its count and
+/// properties, as the file writes them.
+pub fn header_tree(bytes: &[u8]) -> Option<OwnedTree> {
+    let end = bytes.windows(10).position(|w| w == b"end_header")?;
+    let text = String::from_utf8_lossy(&bytes[..end]);
+    let mut tree = OwnedTree::new();
+    let mut element = None;
+    for line in text.lines().skip(1) {
+        let (key, rest) = line.trim().split_once(char::is_whitespace).unwrap_or((line.trim(), ""));
+        let rest = rest.trim();
+        match key {
+            "format" | "comment" | "obj_info" => {
+                tree.add(None, key, rest);
+            }
+            "element" => {
+                let (name, count) = rest.rsplit_once(char::is_whitespace).unwrap_or((rest, ""));
+                let items = if count == "1" { "1 item".to_string() } else { format!("{count} items") };
+                element = Some(tree.add(None, name, items));
+            }
+            "property" => {
+                let (ty, name) = rest.rsplit_once(char::is_whitespace).unwrap_or(("", rest));
+                tree.add(element, name, ty);
+            }
+            _ => {}
+        }
+    }
+    Some(tree)
+}
+
 fn read_vertices(body: &mut Body<'_>, el: &Element, positions: &mut Vec<Vec3>, normals: &mut Vec<Vec3>, colors: &mut Vec<Vec4>) -> Result<()> {
     let find = |names: &[&str]| el.index(names);
     let pos = [find(&["x"]), find(&["y"]), find(&["z"])];
@@ -428,7 +459,14 @@ impl Reader for PlyReader {
     fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
         cx.cancel.check()?;
         let loaded = load(src.bytes(), cx).map_err(super::parse_error)?;
-        let doc = SceneDocument::new("ply", loaded.format, loaded.scene).warnings(loaded.warnings).build()?;
+        let header = header_tree(src.bytes());
+        let doc = SceneDocument::new("ply", loaded.format, loaded.scene)
+            .warnings(loaded.warnings)
+            .facets(move |doc| match header {
+                Some(tree) => doc.with_facet(Role::Structure, "Header", Content::Tree(Arc::new(tree))),
+                None => doc,
+            })
+            .build()?;
         Ok(if loaded.points { doc.with_meta("Kind", "point cloud") } else { doc })
     }
 }

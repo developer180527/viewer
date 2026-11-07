@@ -16,6 +16,9 @@ use scene_data::{
 
 use crate::textures::{self, ImageJob, ImageSource, Textures};
 
+mod objects;
+mod records;
+
 pub struct Loaded {
     pub scene: CpuScene,
     pub warnings: Vec<String>,
@@ -388,7 +391,9 @@ fn material(m: &ufbx::Material) -> Material {
 
 // ---------------------------------------------------------------- the readers
 
-use libfileparser_core::{Category, Detection, Document, Reader, ReaderInfo};
+use std::sync::Arc;
+
+use libfileparser_core::{Category, Content, Detection, Document, FacetInfo, Model, Reader, ReaderInfo, Role};
 
 use crate::build::{SceneDocument, detect_by};
 
@@ -397,7 +402,22 @@ fn open_with_ufbx(reader: &'static str, format: ufbx::FileFormat, name: &str, sr
     cx.cancel.check()?;
     let deps = Dependencies::new();
     let loaded = load(src, format, cx, &deps).map_err(super::parse_error)?;
-    SceneDocument::new(reader, name, loaded.scene).warnings(loaded.warnings).textures(loaded.textures).dependencies(deps).build()
+    let from = src.clone();
+    let facets = move |doc: Document| match format {
+        ufbx::FileFormat::Obj => doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Objects", Model::Tree), move |cx| {
+            Ok(Content::Tree(Arc::new(objects::objects_tree(from.bytes(), cx.limits.items)?)))
+        }),
+        _ if records::is_binary(from.bytes()) => {
+            let Ok(binary) = records::BinaryRecords::new(&from) else { return doc };
+            let media = binary.media();
+            let doc = doc.with_facet(Role::Structure, "Records", Content::Tree(Arc::new(binary)));
+            if media.is_empty() { doc } else { doc.with_facet(Role::Package, "Embedded media", Content::Container(Arc::new(records::Media::new(&from, media)))) }
+        }
+        _ => doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Records", Model::Tree), move |cx| {
+            Ok(Content::Tree(Arc::new(records::ascii_records(from.bytes(), cx.limits.items, cx.limits.depth)?)))
+        }),
+    };
+    SceneDocument::new(reader, name, loaded.scene).warnings(loaded.warnings).textures(loaded.textures).dependencies(deps).facets(facets).build()
 }
 
 pub struct FbxReader;

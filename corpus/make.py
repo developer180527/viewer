@@ -210,6 +210,73 @@ Connections:  {
     blend = b"BLENDER-v283" + block(b"REND", bytes(72)) + block(b"TEST", struct.pack("<II", 4, 4) + pixels) + block(b"ENDB", b"")
     write("3d/preview.blend", blend)
 
+    # Binary FBX 7.4: the same triangle, and a Video record whose Content is a PNG
+    # stored in the file (Embedded media).
+    def rec(at, name, props, children=None):
+        count = len(props)
+        props = b"".join(props)
+        start = at + 13 + len(name) + len(props)
+        nested = b""
+        if children is not None:
+            for child in children:
+                nested += rec(start + len(nested), *child)
+            nested += bytes(13)
+        end = start + len(nested)
+        return struct.pack("<III", end, count, len(props)) + bytes([len(name)]) + name + props + nested
+    def P(code, fmt, *v):
+        return code + struct.pack("<" + fmt, *v)
+    def S(text):
+        return b"S" + struct.pack("<I", len(text)) + text
+    def R(data):
+        return b"R" + struct.pack("<I", len(data)) + data
+    def arr(code, fmt, values):
+        return code + struct.pack("<III", len(values), 0, len(values) * struct.calcsize(fmt)) + struct.pack("<%d%s" % (len(values), fmt), *values)
+    texture = png(8, 8, checker)
+    top = [
+        (b"FBXHeaderExtension", [], [(b"FBXHeaderVersion", [P(b"I", "i", 1003)]), (b"FBXVersion", [P(b"I", "i", 7400)])]),
+        (b"Objects", [], [
+            (b"Geometry", [P(b"L", "q", 1000), S(b"Tri\x00\x01Geometry"), S(b"Mesh")], [
+                (b"Vertices", [arr(b"d", "d", [0, 0, 0, 1, 0, 0, 0, 1, 0])]),
+                (b"PolygonVertexIndex", [arr(b"i", "i", [0, 1, -3])]),
+            ]),
+            (b"Model", [P(b"L", "q", 2000), S(b"Tri\x00\x01Model"), S(b"Mesh")], [(b"Version", [P(b"I", "i", 232)])]),
+            (b"Video", [P(b"L", "q", 3000), S(b"checker\x00\x01Video"), S(b"Clip")], [
+                (b"Type", [S(b"Clip")]),
+                (b"RelativeFilename", [S(b"textures\\checker.png")]),
+                (b"Content", [R(texture)]),
+            ]),
+        ]),
+        (b"Connections", [], [(b"C", [S(b"OO"), P(b"L", "q", 1000), P(b"L", "q", 2000)]), (b"C", [S(b"OO"), P(b"L", "q", 2000), P(b"L", "q", 0)])]),
+    ]
+    fbx = b"Kaydara FBX Binary  \x00\x1a\x00" + struct.pack("<I", 7400)
+    for r in top:
+        fbx += rec(len(fbx), *r)
+    write("3d/tri-binary.fbx", fbx + bytes(13))
+
+    # .blend with an SDNA (structs Link, ID, Object, Image, PackedFile, laid out as
+    # Blender's are): an Object, an Image and the PNG packed into the file.
+    names = [b"*next", b"*prev", b"name[66]", b"id", b"filepath[1024]", b"*packedfile", b"size", b"seek", b"*data"]
+    types = [(b"char", 1), (b"int", 4), (b"void", 0), (b"Link", 16), (b"ID", 74), (b"Object", 74), (b"Image", 1106), (b"PackedFile", 16)]
+    structs = [(3, [(2, 0), (2, 1)]), (4, [(2, 0), (0, 2)]), (5, [(4, 3)]), (6, [(4, 3), (0, 4), (2, 5)]), (7, [(1, 6), (1, 7), (2, 8)])]
+    def pad(b):
+        return b + bytes(-len(b) % 4)
+    dna = pad(b"SDNANAME" + struct.pack("<I", len(names)) + b"".join(n + b"\0" for n in names))
+    dna = pad(dna + b"TYPE" + struct.pack("<I", len(types)) + b"".join(t + b"\0" for t, _ in types))
+    dna = pad(dna + b"TLEN" + b"".join(struct.pack("<H", n) for _, n in types))
+    dna += b"STRC" + struct.pack("<I", len(structs)) + b"".join(struct.pack("<HH", t, len(f)) + b"".join(struct.pack("<HH", *x) for x in f) for t, f in structs)
+    def block64(code, data, old=0, sdna=0):
+        return code + struct.pack("<IQII", len(data), old, sdna, 1) + data
+    def id_block(code, name, rest=b""):
+        return bytes(8) + (code + name).ljust(66, b"\0") + rest
+    image = id_block(b"IM", b"checker.png", b"//textures/checker.png".ljust(1024, b"\0") + struct.pack("<Q", 0x2000))
+    blend = (b"BLENDER-v405" + block64(b"REND", bytes(72)) + block64(b"TEST", struct.pack("<II", 4, 4) + pixels)
+        + block64(b"OB\0\0", id_block(b"OB", b"Tri"), 0x1000, 2)
+        + block64(b"IM\0\0", image, 0x1800, 3)
+        + block64(b"DATA", struct.pack("<iiQ", len(texture), 0, 0x3000), 0x2000, 4)
+        + block64(b"DATA", texture, 0x3000, 0)
+        + block64(b"DNA1", dna) + block64(b"ENDB", b""))
+    write("3d/packed.blend", blend)
+
 # ---------------------------------------------------------------- PDF
 
 def pdf(pages):

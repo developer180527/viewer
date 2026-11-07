@@ -8,3 +8,4 @@ size = "4x4"
 [metadata]
 "Saved by" = "Blender 2.83"
 Shown = "the preview image saved in the file; its 3D data isn't read yet"
+Warning = "no readable SDNA: blocks are listed by code only"

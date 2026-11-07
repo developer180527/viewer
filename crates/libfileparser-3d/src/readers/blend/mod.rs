@@ -2,9 +2,15 @@
 //! differently in every version, so the 3D data isn't read (yet). What every file
 //! Blender saves with "Save Preview Images" on (the default) does carry is a small
 //! preview picture in a `TEST` block right after the header; that is shown instead.
+//! Its blocks are listed by kind and name, and its packed files opened, through the
+//! file's own SDNA ([`blocks`]).
+
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
-use libfileparser_core::{Limit, Limits, Raster};
+use libfileparser_core::{FacetInfo, Limit, Limits, Model, Raster};
+
+mod blocks;
 
 /// A `.blend` file's preview image, and the Blender version that saved it.
 pub fn preview(bytes: &[u8], limits: &Limits) -> Result<(Raster, String)> {
@@ -115,10 +121,31 @@ impl Reader for BlendReader {
     fn open(&self, src: &FileSource, cx: &ParseContext) -> libfileparser_core::Result<Document> {
         cx.cancel.check()?;
         let (raster, version) = preview(src.bytes(), &cx.limits).map_err(super::parse_error)?;
-        Ok(Document::new(FormatInfo::new("blend", "Blender file", Category::ThreeD))
+        let mut doc = Document::new(FormatInfo::new("blend", "Blender file", Category::ThreeD))
             .with_facet(Role::Primary, "Preview", Content::Raster(raster))
             .with_meta("Saved by", format!("Blender {version}"))
-            .with_meta("Shown", "the preview image saved in the file; its 3D data isn't read yet"))
+            .with_meta("Shown", "the preview image saved in the file; its 3D data isn't read yet");
+        // The preview was found, so the header is good; damaged blocks further on only
+        // cost these facets.
+        let header = Header::parse(src.bytes()).context("not a .blend file").map_err(super::parse_error)?;
+        if let Ok(file) = blocks::BlendFile::read(src.bytes(), &header, cx.limits.items) {
+            let from = src.clone();
+            doc = doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Blocks", Model::Tree), move |cx| {
+                let header = Header::parse(from.bytes()).ok_or_else(|| libfileparser_core::ParseError::corrupt("not a .blend file"))?;
+                let file = blocks::BlendFile::read(from.bytes(), &header, cx.limits.items).map_err(super::parse_error)?;
+                Ok(Content::Tree(Arc::new(file.tree())))
+            });
+            let packed = file.packed();
+            if !packed.is_empty() {
+                doc = doc
+                    .with_facet(Role::Package, "Packed files", Content::Container(Arc::new(blocks::PackedFiles::new(src, packed.clone()))))
+                    .with_meta("Packed files", packed.len());
+            }
+            if file.dna.is_none() {
+                doc = doc.with_meta("Warning", "no readable SDNA: blocks are listed by code only");
+            }
+        }
+        Ok(doc)
     }
 }
 

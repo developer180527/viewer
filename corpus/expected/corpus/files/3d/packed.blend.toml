@@ -1,0 +1,11 @@
+loader = "blend"
+format = "Blender file"
+model = "Raster"
+
+[raster]
+size = "4x4"
+
+[metadata]
+"Saved by" = "Blender 4.5"
+Shown = "the preview image saved in the file; its 3D data isn't read yet"
+"Packed files" = "1"
