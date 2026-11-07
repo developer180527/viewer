@@ -675,7 +675,7 @@ pub(crate) fn tree_document(
         .with_links(TreeLinks {
             tree,
             tree_facet: 0,
-            table_facet: None,
+            table: None,
         })
         .with_file_facets(src, Some(language))
 }
@@ -716,9 +716,9 @@ pub(crate) fn lines_document(tree: DataTree, warnings: Vec<Warning>, src: &FileS
         .with_meta("Nodes", nodes)
         .with_warnings(warnings)
         .with_links(TreeLinks {
+            table: table_facet.map(|f| (f, tree.roots().into())),
             tree,
             tree_facet,
-            table_facet,
         })
         .with_file_facets(src, Some("json"))
 }

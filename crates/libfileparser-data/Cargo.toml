@@ -8,8 +8,9 @@ license.workspace = true
 # A feature per family (docs/design/libfileparser.md §2.1). Structured and delimited
 # formats are always in.
 [features]
-default = ["config"]
+default = ["config", "logs"]
 config = []
+logs = []
 
 [dependencies]
 libfileparser-core.workspace = true

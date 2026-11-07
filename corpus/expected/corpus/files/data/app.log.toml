@@ -1,0 +1,13 @@
+loader = "log"
+format = "Log"
+model = "Table"
+
+[table]
+rows = 4
+columns = 3
+headers = ["Time", "Level", "Message"]
+kinds = ["Date", "Text", "Text"]
+
+[metadata]
+Entries = "4"
+Lines = "7"

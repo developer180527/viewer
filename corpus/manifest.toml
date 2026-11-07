@@ -107,6 +107,30 @@ path = "corpus/files/data/app.properties"
 [[file]]
 path = "corpus/files/data/sample.env"
 
+[[file]]
+path = "corpus/files/data/app.log"
+
+[[file]]
+path = "corpus/files/data/access.log"
+
+[[file]]
+path = "corpus/files/data/system.syslog"
+
+[[file]]
+path = "corpus/files/data/service.log"
+
+[[file]]
+path = "corpus/files/data/access.ltsv"
+
+[[file]]
+path = "corpus/files/data/alerts.cef"
+
+[[file]]
+path = "corpus/files/data/events.gelf"
+
+[[file]]
+path = "corpus/files/data/session.har"
+
 # ---------------------------------------------------------------- 3D
 
 [[file]]

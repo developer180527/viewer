@@ -413,12 +413,13 @@ impl<'a> LineCounter<'a> {
 }
 
 /// Links between a tree facet's nodes and the file's lines, and, when the document
-/// has one, between a table's rows and the tree's top-level nodes (JSON Lines).
+/// has one, between a table's rows and the tree nodes they are (JSON Lines' lines,
+/// HAR's entries).
 pub(crate) struct TreeLinks {
     pub tree: Arc<DataTree>,
     pub tree_facet: usize,
-    /// A table whose row r is the tree's r-th top-level node.
-    pub table_facet: Option<usize>,
+    /// A table facet whose row r is node `rows[r]`.
+    pub table: Option<(usize, Arc<[u32]>)>,
 }
 
 impl Links for TreeLinks {
@@ -428,48 +429,34 @@ impl Links for TreeLinks {
             let l = t.lines(id);
             (l.start < l.end).then_some(Place::Lines(l.start as u64..l.end as u64))
         };
+        let node = |id: u32| Place::Node { facet: self.tree_facet, node: NodeId(id as u64) };
+        // The row of the nearest node above `id` (or `id` itself) that is a row.
         let row_of = |id: u32| {
-            let mut top = id;
-            while t.nodes[top as usize].parent != NONE {
-                top = t.nodes[top as usize].parent;
+            let (facet, rows) = self.table.as_ref()?;
+            let mut at = id;
+            loop {
+                if let Some(row) = rows.iter().position(|&r| r == at) {
+                    return Some(Place::Row { facet: *facet, row: row as u64 });
+                }
+                match t.nodes[at as usize].parent {
+                    NONE => return None,
+                    p => at = p,
+                }
             }
-            let facet = self.table_facet?;
-            t.roots
-                .iter()
-                .position(|&r| r == top)
-                .map(|row| Place::Row {
-                    facet,
-                    row: row as u64,
-                })
         };
         Ok(match *from {
-            Place::Node { facet, node } if facet == self.tree_facet => match u32::try_from(node.0)
-                .ok()
-                .filter(|&i| (i as usize) < t.len())
-            {
+            Place::Node { facet, node: n } if facet == self.tree_facet => match u32::try_from(n.0).ok().filter(|&i| (i as usize) < t.len()) {
                 Some(id) => lines(id).into_iter().chain(row_of(id)).collect(),
                 None => Vec::new(),
             },
-            Place::Row { facet, row } if Some(facet) == self.table_facet => {
-                match t.roots.get(row as usize) {
-                    Some(&id) => lines(id)
-                        .into_iter()
-                        .chain([Place::Node {
-                            facet: self.tree_facet,
-                            node: NodeId(id as u64),
-                        }])
-                        .collect(),
+            Place::Row { facet, row } if self.table.as_ref().is_some_and(|(f, _)| *f == facet) => {
+                match self.table.as_ref().and_then(|(_, rows)| rows.get(row as usize).copied()) {
+                    Some(id) => lines(id).into_iter().chain([node(id)]).collect(),
                     None => Vec::new(),
                 }
             }
             Place::Lines(ref r) => match u32::try_from(r.start).ok().and_then(|l| t.node_at(l)) {
-                Some(id) => [Place::Node {
-                    facet: self.tree_facet,
-                    node: NodeId(id as u64),
-                }]
-                .into_iter()
-                .chain(row_of(id))
-                .collect(),
+                Some(id) => [node(id)].into_iter().chain(row_of(id)).collect(),
                 None => Vec::new(),
             },
             _ => Vec::new(),

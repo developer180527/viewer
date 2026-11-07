@@ -1,0 +1,13 @@
+loader = "log"
+format = "Logfmt log"
+model = "Table"
+
+[table]
+rows = 3
+columns = 7
+headers = ["ts", "level", "msg", "addr", "took_ms", "table", "retry"]
+kinds = ["Date", "Text", "Text", "Text", "Number", "Text", "Text"]
+
+[metadata]
+Entries = "3"
+Lines = "3"

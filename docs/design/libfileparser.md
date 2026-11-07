@@ -86,7 +86,7 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 | `rdf` | `.rdf` `.owl` `.ttl` `.nt` `.nq` `.trig` `.jsonld` `.trix` `.rq` `.sparql` | Table of triples or quads, Tree; queries a Tree |
 | `graphs` | `.graphml` `.gexf` `.gxl` `.dot`, Graph Modelling `.gml` | Tables of nodes and edges, Tree |
 | `geo` | `.geojson` `.topojson` `.kml` `.kmz` `.gpx` `.gml` `.wkt` `.osm` `.nmea` | Tree, Table of features; a map view later, in libviewer |
-| `logs` | `.log` `.syslog` `.gelf` `.cef` `.ltsv` `.har` | Table of entries |
+| `logs` | ✅ `.log` `.syslog` `.gelf` `.cef` `.ltsv` `.har` | Table of entries (2026-11-08; below) |
 | `science` | `.arff` `.dimacs` `.fasta` `.fa` `.fna` `.fastq` `.fq` `.gb` `.gbk` `.gff` `.gff3` `.bed` variant-call `.vcf` `.sam` `.pdb` `.ent` `.cif` | Table of records, Tree |
 | `sql` | `.sql` `.dump` `.cql` | Tree of statements; Tables from `CREATE`/`INSERT` |
 | `records` | vCard `.vcf`, `.ics` `.ical` `.ldif` | Table of entries, Tree |
@@ -100,6 +100,7 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 - **No input overflows the stack:** the parsers keep nesting on their own stacks or in events, and `limits.depth` (512 on desktop) stops them.
 - A `.json` with comments or trailing commas opens as "JSON with comments". `.conf`, `.cfg`, `.dat` and `.prn` are claimed only when their content fits.
 - Until a family's own reader exists, formats written in JSON (`.geojson`, `.har`, `.ipynb`, `.jsonld`, `.avsc`, `.arb`, …) open as JSON trees and formats written in XML (`.xsd`, `.rss`, `.kml`, `.gpx`, `.graphml`, `.xliff`, `.rdf`, …) as XML trees. `-data` also reads `.svg`, `.xhtml` and `.ttml` as XML.
+- **Logs** (2026-11-08, feature `logs`). Reader `log` reads `.log`, `.syslog`, `.ltsv` and `.cef` as a table of entries ("Entries"): syslog (RFC 5424, BSD, and the two mixed), Common and Combined access logs, logfmt, LTSV, CEF (alone or after a syslog header), and the most common shape, a timestamp, maybe a level, and a message. The format is told from the first lines; a `.log` of no known shape isn't claimed and opens as text. Lines that don't start an entry (a stack trace) belong to the entry above, and an entry links to all its lines. Logs are read through core's line index, so one opened with `FileSource::open_live` is read a range at a time: opening indexes where entries start, 4 bytes an entry, and rows are parsed when read. Columns are fixed per format, or for logfmt, LTSV and CEF's extension the keys of the first thousand entries; times are `Date`, and a key whose values are all numbers is a `Number`. Reader `har` reads HTTP Archives as a table of requests (started, method, URL, status, type, size, time) over the JSON tree, each row linked to its entry. GELF (`.gelf`) is JSON Lines.
 - The other families are still to come, each a reader of its own.
 
 `.kmz` is a zip: `-data` reads the KML inside, and the zip is a Package facet from `-archives`.

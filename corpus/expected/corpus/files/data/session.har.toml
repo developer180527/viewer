@@ -1,0 +1,14 @@
+loader = "har"
+format = "HTTP Archive"
+model = "Table"
+
+[table]
+rows = 2
+columns = 7
+headers = ["Started", "Method", "URL", "Status", "Type", "Size", "Time (ms)"]
+kinds = ["Date", "Text", "Text", "Number", "Text", "Number", "Number"]
+
+[metadata]
+Requests = "2"
+Nodes = "32"
+"Recorded by" = "Firefox"

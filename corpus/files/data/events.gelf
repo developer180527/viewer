@@ -1,0 +1,2 @@
+{"version":"1.1","host":"api-1","short_message":"started","timestamp":1731060000.12,"level":6,"_service":"api"}
+{"version":"1.1","host":"api-1","short_message":"disk almost full","timestamp":1731060042.5,"level":4,"_service":"api","_disk":"/var"}

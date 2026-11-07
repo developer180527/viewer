@@ -1,0 +1,13 @@
+loader = "log"
+format = "CEF"
+model = "Table"
+
+[table]
+rows = 2
+columns = 13
+headers = ["Time", "Host", "Vendor", "Product", "Version", "Signature", "Name", "Severity", "src", "dst", "dpt", "msg", "suser"]
+kinds = ["Date", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Number", "Text", "Text"]
+
+[metadata]
+Entries = "2"
+Lines = "2"

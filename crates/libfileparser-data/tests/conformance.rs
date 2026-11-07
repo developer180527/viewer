@@ -56,6 +56,16 @@ fn samples(id: &str) -> Vec<Sample> {
             small("a.csv", b"a;b\n1;2\n"),
             big("big.csv", many("a,b\n", "{i},x", "\n", "\n", 50)),
         ],
+        "log" => vec![
+            small("app.log", b"2024-11-08 10:00:00 INFO started\n2024-11-08 10:00:01 ERROR failed\n  at main.rs:3\n"),
+            small("access.log", b"1.2.3.4 - - [08/Nov/2024:10:00:00 +0000] \"GET / HTTP/1.1\" 200 512\n"),
+            small("app.ltsv", b"time:2024-11-08\tstatus:200\n"),
+            big("big.log", many("", "2024-11-08 10:00:00 INFO line {i}", "\n", "\n", 50)),
+        ],
+        "har" => vec![
+            small("a.har", br#"{"log": {"entries": [{"request": {"method": "GET"}}]}}"#),
+            big("big.har", many(r#"{"log": {"entries": ["#, r#"{"time": {i}}"#, ",", "]}}", 50)),
+        ],
         other => panic!("no samples for {other}"),
     }
 }
@@ -256,4 +266,89 @@ fn trees_give_whole_typed_values() {
     assert_eq!((top[3].kind, t.value(top[3].id).unwrap()), (ValueKind::Text, Some(Cell::Text("1".into()))));
     let err = libfileparser_data::open(&FileSource::from_bytes("b.json", b"{\n  \"a\": ]\n}".to_vec()), &cx).err().unwrap();
     assert_eq!(err.position().and_then(|p| p.line), Some(2));
+}
+
+#[test]
+fn logs_are_tables_of_entries_with_traces_kept_together() {
+    let cx = ParseContext::new();
+    let src = FileSource::from_bytes(
+        "app.log",
+        b"2024-11-08 10:00:00.120 INFO  server started\n2024-11-08 10:00:02.500 ERROR request failed\njava.lang.NullPointerException\n    at App.main(App.java:3)\n2024-11-08 10:00:03.000 WARN  slow\n".to_vec(),
+    );
+    let doc = libfileparser_data::open(&src, &cx).unwrap();
+    assert_eq!((doc.format().reader, doc.format().name.as_str()), ("log", "Log"));
+    let Ok(Content::Table(t)) = doc.facet(0, &cx) else { panic!() };
+    assert_eq!(t.info().names(), ["Time", "Level", "Message"]);
+    assert_eq!(t.info().rows, libfileparser_core::Count::Exact(3));
+    let rows = t.rows(0..3).unwrap();
+    assert_eq!(rows[1][0], Cell::Date("2024-11-08 10:00:02.500".into()));
+    assert_eq!(rows[1][1], Cell::Text("ERROR".into()));
+    assert_eq!(rows[1][2], Cell::Text("request failed\njava.lang.NullPointerException\n    at App.main(App.java:3)".into()));
+    // The entry spans its trace's lines, and a line of the trace leads back to it.
+    assert_eq!(doc.links(&Place::Row { facet: 0, row: 1 }, &cx).unwrap(), [Place::Lines(1..4)]);
+    assert_eq!(doc.links(&Place::Lines(3..4), &cx).unwrap(), [Place::Row { facet: 0, row: 1 }]);
+    // Prose named .log isn't a log: it opens as text elsewhere.
+    assert!(libfileparser_data::detect(b"Dear diary,\ntoday I wrote a log.\n", "notes.log").is_empty());
+}
+
+#[test]
+fn access_logs_logfmt_and_cef_have_their_columns() {
+    let cx = ParseContext::new();
+    let table = |name: &str, text: &str| {
+        let doc = libfileparser_data::open(&FileSource::from_bytes(name, text.as_bytes().to_vec()), &cx).unwrap();
+        let Ok(Content::Table(t)) = doc.facet(0, &cx) else { panic!() };
+        (t.info(), t.rows(0..10).unwrap())
+    };
+    let (info, rows) = table("access.log", "10.0.0.1 - bob [08/Nov/2024:10:00:00 +0000] \"POST /api HTTP/2\" 201 - \"-\" \"curl/8\"\n");
+    assert_eq!(info.names()[..4], ["Client", "User", "Time", "Method"]);
+    assert_eq!(rows[0][6], Cell::Int(201));
+    assert_eq!(rows[0][7], Cell::Null, "a size of `-` is no size");
+    let (info, rows) = table("svc.log", "ts=2024-11-08T10:00:00Z level=info msg=\"hi there\" took=12\nts=2024-11-08T10:00:01Z level=warn msg=x took=7 retry\n");
+    assert_eq!(info.names(), ["ts", "level", "msg", "took", "retry"]);
+    assert_eq!(info.columns[0].kind, ValueKind::Date);
+    assert_eq!(info.columns[3].kind, ValueKind::Number);
+    assert_eq!(rows[1][3], Cell::Int(7));
+    assert_eq!(rows[0][4], Cell::Null);
+    let (info, rows) = table("ids.cef", "CEF:0|Vendor|IDS|1.0|42|Port scan|8|src=10.0.0.1 dpt=22\n");
+    assert_eq!(info.names()[8..], ["src", "dpt"]);
+    assert_eq!(rows[0][6], Cell::Text("Port scan".into()));
+}
+
+#[test]
+fn har_requests_link_to_their_entries() {
+    let cx = ParseContext::new();
+    let har = br#"{"log": {"version": "1.2", "creator": {"name": "Firefox"}, "entries": [
+  {"startedDateTime": "2024-11-08T10:00:00Z", "time": 12.5, "request": {"method": "GET", "url": "https://example.com/"},
+   "response": {"status": 200, "bodySize": 900, "content": {"size": 1024, "mimeType": "text/html"}}},
+  {"startedDateTime": "2024-11-08T10:00:01Z", "time": 3, "request": {"method": "POST", "url": "https://example.com/api"},
+   "response": {"status": 404, "bodySize": 20, "content": {"size": -1, "mimeType": "application/json"}}}
+]}}"#;
+    let doc = libfileparser_data::open(&FileSource::from_bytes("session.har", har.to_vec()), &cx).unwrap();
+    assert_eq!(facets(&doc)[..2], [(Role::Primary, "Requests"), (Role::Structure, "Tree")]);
+    let Ok(Content::Table(t)) = doc.facet(0, &cx) else { panic!() };
+    let rows = t.rows(0..2).unwrap();
+    assert_eq!(rows[0][1..6], [Cell::Text("GET".into()), Cell::Text("https://example.com/".into()), Cell::Int(200), Cell::Text("text/html".into()), Cell::Int(1024)]);
+    assert_eq!(rows[1][5], Cell::Int(20), "no content size: the body size");
+    assert_eq!(rows[0][6], Cell::Number("12.5".into()));
+    let links = doc.links(&Place::Row { facet: 0, row: 1 }, &cx).unwrap();
+    let Some(Place::Node { facet: 1, node }) = links.iter().find(|p| matches!(p, Place::Node { .. })).cloned() else { panic!("{links:?}") };
+    let Ok(Content::Tree(tree)) = doc.facet(1, &cx) else { panic!() };
+    assert_eq!(tree.path(node).unwrap().as_deref(), Some("/log/entries/1"));
+    assert!(links.contains(&Place::Lines(3..5)), "{links:?}");
+}
+
+#[test]
+fn a_live_log_is_read_by_range() {
+    let dir = std::env::temp_dir().join(format!("lfp-data-live-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("server.log");
+    let text: String = (0..50_000).map(|i| format!("2024-11-08T10:00:00Z INFO request {i}\n")).collect();
+    std::fs::write(&path, text).unwrap();
+    let cx = ParseContext::new();
+    let src = FileSource::open_live(&path).unwrap();
+    let doc = libfileparser_data::open(&src, &cx).unwrap();
+    let Ok(Content::Table(t)) = doc.facet(0, &cx) else { panic!() };
+    assert_eq!(t.rows(40_000..40_001).unwrap()[0][2], Cell::Text("request 40000".into()));
+    assert_eq!(t.memory().mapped, 0, "the log isn't held");
+    std::fs::remove_dir_all(&dir).unwrap();
 }

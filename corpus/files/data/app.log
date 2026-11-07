@@ -1,0 +1,7 @@
+2024-11-08 10:00:00.120 INFO  [main] server started on :8080
+2024-11-08 10:00:01.004 DEBUG [pool-1] connection opened
+2024-11-08 10:00:02.500 ERROR [pool-1] request failed
+java.lang.IllegalStateException: closed
+    at com.example.Pool.take(Pool.java:42)
+    at com.example.Server.handle(Server.java:17)
+2024-11-08 10:00:03.000 WARN  [main] slow response: 1.2s

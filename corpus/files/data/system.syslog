@@ -1,0 +1,3 @@
+<34>Nov  8 10:00:00 mail su: 'su root' failed for alice on /dev/pts/8
+<13>Nov  8 10:00:05 web nginx[812]: reload complete
+<165>1 2024-11-08T10:00:07.003Z db postgres 991 CHK [meta seq="1"] checkpoint complete

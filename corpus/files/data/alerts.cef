@@ -1,0 +1,2 @@
+Nov  8 10:00:00 ids CEF:0|Example|IDS|2.1|1001|Port scan detected|7|src=10.0.0.5 dst=10.0.0.1 dpt=22 msg=many ports \= suspicious
+Nov  8 10:00:09 ids CEF:0|Example|IDS|2.1|1002|Login failure|5|src=10.0.0.9 suser=bob

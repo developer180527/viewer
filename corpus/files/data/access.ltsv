@@ -1,0 +1,2 @@
+time:2024-11-08T10:00:00Z	host:10.0.0.1	status:200	size:512
+host:10.0.0.2	time:2024-11-08T10:00:01Z	status:404	size:0

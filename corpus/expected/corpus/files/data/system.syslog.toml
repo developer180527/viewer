@@ -1,0 +1,13 @@
+loader = "log"
+format = "Syslog"
+model = "Table"
+
+[table]
+rows = 3
+columns = 8
+headers = ["Time", "Host", "App", "Process", "Message ID", "Level", "Data", "Message"]
+kinds = ["Date", "Text", "Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Entries = "3"
+Lines = "3"

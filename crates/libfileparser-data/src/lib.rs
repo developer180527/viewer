@@ -5,13 +5,15 @@
 //! | Reader | Formats | Primary facet |
 //! |---|---|---|
 //! | `json` | JSON, and JSON with comments and trailing commas (`.jsonc`, or a `.json` that has them) | Tree |
-//! | `json-lines` | JSON Lines (`.jsonl`, `.ndjson`) | Table of the lines' keys, else Tree; the Tree too |
+//! | `json-lines` | JSON Lines (`.jsonl`, `.ndjson`; GELF, `.gelf`) | Table of the lines' keys, else Tree; the Tree too |
 //! | `json5`, `hjson` | JSON5, Hjson | Tree |
 //! | `yaml` | YAML 1.2, every document | Tree |
 //! | `toml` | TOML 1.1 | Tree |
 //! | `xml` | XML, and the formats written in it that no other reader here owns yet; also SVG and XHTML, which other categories own | Tree |
 //! | `plist` | Property lists, XML and binary | Tree |
 //! | `ini`, `properties`, `env` | INI-like config, Java properties, `.env` (feature `config`) | Tree |
+//! | `log` | Logs (feature `logs`): syslog (RFC 5424 and BSD), Common and Combined access logs, logfmt, LTSV, CEF, and timestamped lines; a stack trace stays with its entry | Table of entries |
+//! | `har` | HTTP Archives (feature `logs`) | Table of requests; the Tree too |
 //! | `delimited` | CSV, TSV and other delimited text, read by row range | Table |
 //!
 //! Numbers are shown as written; aliases (YAML) are shown, never expanded. Every size
@@ -23,6 +25,10 @@
 
 #[cfg(feature = "config")]
 mod config;
+#[cfg(feature = "logs")]
+mod har;
+#[cfg(feature = "logs")]
+mod logs;
 mod json;
 mod plist;
 mod table;
@@ -40,8 +46,12 @@ use json::Dialect;
 
 /// Every format this category reads.
 pub fn readers() -> &'static [&'static dyn Reader] {
+    // Specific readers before generic ones (docs/design/libfileparser.md §2.1): a
+    // HAR is JSON too, and ties go to the reader listed first.
     static READERS: &[&dyn Reader] = &[
         &PLIST,
+        #[cfg(feature = "logs")]
+        &HAR,
         &JSON,
         &JSON_LINES,
         &JSON5,
@@ -55,6 +65,8 @@ pub fn readers() -> &'static [&'static dyn Reader] {
         &PROPERTIES,
         #[cfg(feature = "config")]
         &ENV,
+        #[cfg(feature = "logs")]
+        &LOG,
         &DELIMITED,
     ];
     READERS
@@ -156,7 +168,6 @@ static JSON: Data = Data {
             "jsonc",
             "geojson",
             "topojson",
-            "har",
             "ipynb",
             "webmanifest",
             "jsonld",
@@ -198,7 +209,7 @@ static JSON: Data = Data {
 
 static JSON_LINES: Data = Data {
     info: ReaderInfo::new("json-lines", "JSON Lines", Category::Data)
-        .extensions(&["jsonl", "ndjson"])
+        .extensions(&["jsonl", "ndjson", "gelf"])
         .mime_types(&["application/x-ndjson"]),
     language: "json",
     detect: by_extension,
@@ -421,6 +432,45 @@ static ENV: Data = Data {
             "shell",
         ))
     },
+};
+
+// ---------------------------------------------------------------- logs
+
+/// The format a log's extension suggests.
+#[cfg(feature = "logs")]
+fn log_hint(name: &str) -> Option<logs::Format> {
+    match name.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).as_deref() {
+        Some("ltsv") => Some(logs::Format::Ltsv),
+        Some("cef") => Some(logs::Format::Cef),
+        _ => None,
+    }
+}
+
+#[cfg(feature = "logs")]
+static LOG: Data = Data {
+    info: ReaderInfo::new("log", "Log", Category::Data).extensions(&["log", "syslog", "ltsv", "cef"]),
+    language: "log",
+    // A `.log` of another shape (or of prose) isn't claimed: it opens as text.
+    detect: |info, header, name| {
+        if by_extension(info, header, name) == Confidence::None {
+            return Confidence::None;
+        }
+        let head = String::from_utf8_lossy(header);
+        let mut sample: Vec<&str> = head.lines().collect();
+        if header.len() >= 8192 {
+            sample.pop();
+        }
+        if logs::detect(&sample, log_hint(name)).is_some() { Confidence::Extension } else { Confidence::None }
+    },
+    open: |src, cx| logs::document(src, log_hint(src.name()), cx),
+};
+
+#[cfg(feature = "logs")]
+static HAR: Data = Data {
+    info: ReaderInfo::new("har", "HTTP Archive", Category::Data).extensions(&["har"]),
+    language: "json",
+    detect: by_extension,
+    open: har::document,
 };
 
 // ---------------------------------------------------------------- delimited

@@ -1,0 +1,13 @@
+loader = "log"
+format = "LTSV"
+model = "Table"
+
+[table]
+rows = 2
+columns = 4
+headers = ["time", "host", "status", "size"]
+kinds = ["Date", "Text", "Number", "Number"]
+
+[metadata]
+Entries = "2"
+Lines = "2"

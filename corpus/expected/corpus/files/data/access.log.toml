@@ -1,0 +1,13 @@
+loader = "log"
+format = "Web server access log"
+model = "Table"
+
+[table]
+rows = 3
+columns = 10
+headers = ["Client", "User", "Time", "Method", "Path", "Protocol", "Status", "Size", "Referrer", "User agent"]
+kinds = ["Text", "Text", "Date", "Text", "Text", "Text", "Number", "Number", "Text", "Text"]
+
+[metadata]
+Entries = "3"
+Lines = "3"

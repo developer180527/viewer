@@ -1,0 +1,14 @@
+loader = "json-lines"
+format = "JSON Lines"
+model = "Table"
+
+[table]
+rows = 2
+columns = 7
+headers = ["version", "host", "short_message", "timestamp", "level", "_service", "_disk"]
+kinds = ["Text", "Text", "Text", "Number", "Number", "Text", "Text"]
+
+[metadata]
+Columns = "7"
+Lines = "2"
+Nodes = "15"
