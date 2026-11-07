@@ -288,14 +288,16 @@ Today (one repo, one Cargo workspace):
 ```
 crates/
   core/                 viewer-core: FileSource, Document, Content, PageSource, registry, hex fallback
-  libfileparser-core/  libfileparser-testkit/  libfileparser-3d/      libfileparser (docs/design/libfileparser.md)
-  fmt-image/  fmt-doc/  fmt-data/  fmt-archive/  fmt-pdf/             format loaders, moving to libfileparser
+  libfileparser/  libfileparser-core/  libfileparser-testkit/          libfileparser (docs/design/libfileparser.md)
+  libfileparser-3d/  -images/  -text/  -archives/                       its categories; each crate's api/ holds its API snapshot
+  libviewer/            views for every content model (docs/design/libviewer.md)
+  fmt-doc/  fmt-data/  fmt-pdf/                                         Viewer's loaders still to move to libfileparser
   pdf-mupdf/            MuPDF backend (AGPL)        pdf-pdfkit/   PDFKit backend
   rendererx/  scene-data/  gltf-lite/      the reusable 3D renderer (docs/design/3d-renderer.md)
   usd-lite/             pure-Rust USD reader and composition
   formats/              viewer-formats: the registry of every loader, shared by the app and the corpus
   corpus/               viewer-corpus: the test corpus runner (corpus/README.md)
-  app/                  libgui shell, views, loading, single window
+  app/                  libgui shell, loading, single window; hosts libviewer
 corpus/                 test corpus: manifest, synthetic files, expected summaries and renders
 ios/                    Xcode wrapper, device and simulator scripts
 bench/                  startup and memory benchmarks, sample generator

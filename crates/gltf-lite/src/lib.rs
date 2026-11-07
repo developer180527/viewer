@@ -31,6 +31,7 @@ use scene_data::{
 use accessor::{BufferData, Reader};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("not a valid glTF file: {0}")]
     Format(String),
@@ -50,12 +51,14 @@ pub trait Resolver {
 /// would help: [`NotPermitted`](ResolveErrorKind::NotPermitted) (grant the folder)
 /// from [`NotFound`](ResolveErrorKind::NotFound) (the file wasn't copied along).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct ResolveError {
     pub kind: ResolveErrorKind,
     pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ResolveErrorKind {
     /// It may be there, but reading it isn't allowed (a sandbox, file modes).
     NotPermitted,
@@ -100,6 +103,7 @@ impl Resolver for NoResolver {
 /// `..` and symlinks that lead out of the folder are refused, so a file can't make the
 /// viewer read outside its folder. Only regular files up to `max_bytes` are read (no
 /// FIFOs or devices that would block or never end).
+#[non_exhaustive]
 pub struct DirResolver {
     pub dir: PathBuf,
     pub max_bytes: u64,
@@ -162,6 +166,7 @@ pub fn relative_path(uri: &str) -> Result<String, ResolveError> {
 
 /// An image the scene is waiting for: decode `data` (PNG, JPEG, WebP, KTX2… per
 /// `mime_type`) and set it on `texture`.
+#[non_exhaustive]
 pub struct PendingImage {
     pub texture: TextureId,
     /// For people: the image's name in the file, else its file name, else `image N`.
@@ -173,6 +178,7 @@ pub struct PendingImage {
     pub color_space: ColorSpace,
 }
 
+#[non_exhaustive]
 pub struct Loaded {
     pub images: Vec<PendingImage>,
     /// Things that were skipped or approximated, for the host's info panel.
@@ -268,6 +274,7 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
 /// One chunk of a GLB container: its type as written (`JSON`, `BIN\0`, or another a
 /// later version or extension adds) and where its data is in the file.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct GlbChunk {
     pub kind: [u8; 4],
     pub range: std::ops::Range<usize>,
@@ -319,6 +326,7 @@ fn split_container(file: &Bytes) -> Result<(std::ops::Range<usize>, Option<std::
 
 /// How this crate treats a glTF extension.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum ExtensionSupport {
     /// Read: what it adds is in the scene.
     Read,

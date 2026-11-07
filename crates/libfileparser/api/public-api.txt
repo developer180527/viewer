@@ -1,0 +1,30 @@
+pub mod libfileparser
+pub use libfileparser::<<libfileparser_core::*>>
+#[non_exhaustive] pub struct libfileparser::Attempt
+pub libfileparser::Attempt::error: libfileparser_core::error::ParseError
+pub libfileparser::Attempt::reader: &'static str
+impl core::fmt::Debug for libfileparser::Attempt
+pub fn libfileparser::Attempt::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct libfileparser::Library
+impl libfileparser::Library
+pub fn libfileparser::Library::detect(&self, &[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
+pub fn libfileparser::Library::get(&self, &str) -> core::option::Option<&'static dyn libfileparser_core::reader::Reader>
+pub fn libfileparser::Library::new() -> Self
+pub fn libfileparser::Library::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser::Library::open_reporting(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> (libfileparser_core::error::Result<libfileparser_core::document::Document>, alloc::vec::Vec<libfileparser::Attempt>)
+pub fn libfileparser::Library::open_with(&self, &str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser::Library::reader(self, &'static dyn libfileparser_core::reader::Reader) -> Self
+pub fn libfileparser::Library::readers(&self) -> &[&'static dyn libfileparser_core::reader::Reader]
+pub fn libfileparser::Library::replace(self, &str, &'static dyn libfileparser_core::reader::Reader) -> Self
+impl core::clone::Clone for libfileparser::Library
+pub fn libfileparser::Library::clone(&self) -> libfileparser::Library
+impl core::default::Default for libfileparser::Library
+pub fn libfileparser::Library::default() -> Self
+pub fn libfileparser::detect(&[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
+pub fn libfileparser::open(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser::open_entry(&alloc::sync::Arc<dyn libfileparser_core::content::Container>, u64, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser::open_raw(&libfileparser_core::source::FileSource) -> libfileparser_core::document::Document
+pub fn libfileparser::open_reporting(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> (libfileparser_core::error::Result<libfileparser_core::document::Document>, alloc::vec::Vec<libfileparser::Attempt>)
+pub fn libfileparser::open_with(&str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser::reader(&str) -> core::option::Option<&'static dyn libfileparser_core::reader::Reader>
+pub fn libfileparser::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

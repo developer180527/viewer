@@ -1,0 +1,90 @@
+pub mod libfileparser_3d
+pub mod libfileparser_3d::build
+#[non_exhaustive] pub enum libfileparser_3d::build::ImageSource
+pub libfileparser_3d::build::ImageSource::Bytes(scene_data::stream::Stream<u8>)
+pub libfileparser_3d::build::ImageSource::File(libfileparser_core::source::FileSource)
+pub libfileparser_3d::build::ImageSource::MetalRough
+pub libfileparser_3d::build::ImageSource::MetalRough::metalness: core::option::Option<(alloc::boxed::Box<libfileparser_3d::build::ImageSource>, usize)>
+pub libfileparser_3d::build::ImageSource::MetalRough::roughness: core::option::Option<(alloc::boxed::Box<libfileparser_3d::build::ImageSource>, usize)>
+pub struct libfileparser_3d::build::ImageJob
+impl libfileparser_3d::build::ImageJob
+pub fn libfileparser_3d::build::ImageJob::named(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub fn libfileparser_3d::build::ImageJob::new(scene_data::scene::TextureId, libfileparser_3d::build::ImageSource, scene_data::texture::ColorSpace) -> Self
+pub fn libfileparser_3d::build::ImageJob::origin(self, impl core::convert::Into<alloc::string::String>) -> Self
+pub struct libfileparser_3d::build::SceneDocument
+impl libfileparser_3d::build::SceneDocument
+pub fn libfileparser_3d::build::SceneDocument::build(self) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_3d::build::SceneDocument::dependencies(self, libfileparser_core::dependency::Dependencies) -> Self
+pub fn libfileparser_3d::build::SceneDocument::facets(self, impl core::ops::function::FnOnce(libfileparser_core::document::Document) -> libfileparser_core::document::Document + 'static) -> Self
+pub fn libfileparser_3d::build::SceneDocument::new(&dyn libfileparser_core::reader::Reader, &libfileparser_core::source::FileSource, impl core::convert::Into<alloc::string::String>, scene_data::scene::CpuScene) -> Self
+pub fn libfileparser_3d::build::SceneDocument::origins(self, libfileparser_3d::build::SceneOrigins, &'static str) -> Self
+pub fn libfileparser_3d::build::SceneDocument::textures(self, libfileparser_3d::build::Textures) -> Self
+pub fn libfileparser_3d::build::SceneDocument::warnings(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> Self
+pub struct libfileparser_3d::build::SceneOrigins
+impl libfileparser_3d::build::SceneOrigins
+pub fn libfileparser_3d::build::SceneOrigins::add(&mut self, impl core::convert::Into<alloc::string::String>, libfileparser_core::link::SceneItem)
+pub fn libfileparser_3d::build::SceneOrigins::is_empty(&self) -> bool
+pub fn libfileparser_3d::build::SceneOrigins::items(&self, &str) -> &[libfileparser_core::link::SceneItem]
+pub fn libfileparser_3d::build::SceneOrigins::key(&self, libfileparser_core::link::SceneItem) -> core::option::Option<&str>
+pub fn libfileparser_3d::build::SceneOrigins::material(&mut self, impl core::convert::Into<alloc::string::String>, scene_data::scene::MaterialId)
+pub fn libfileparser_3d::build::SceneOrigins::mesh(&mut self, impl core::convert::Into<alloc::string::String>, scene_data::scene::MeshId)
+pub fn libfileparser_3d::build::SceneOrigins::new() -> Self
+pub fn libfileparser_3d::build::SceneOrigins::node(&mut self, impl core::convert::Into<alloc::string::String>, scene_data::scene::NodeId)
+impl core::clone::Clone for libfileparser_3d::build::SceneOrigins
+pub fn libfileparser_3d::build::SceneOrigins::clone(&self) -> libfileparser_3d::build::SceneOrigins
+impl core::default::Default for libfileparser_3d::build::SceneOrigins
+pub fn libfileparser_3d::build::SceneOrigins::default() -> libfileparser_3d::build::SceneOrigins
+pub struct libfileparser_3d::build::Textures
+impl libfileparser_3d::build::Textures
+pub fn libfileparser_3d::build::Textures::is_empty(&self) -> bool
+pub fn libfileparser_3d::build::Textures::len(&self) -> usize
+pub fn libfileparser_3d::build::Textures::pending(&self) -> usize
+impl core::clone::Clone for libfileparser_3d::build::Textures
+pub fn libfileparser_3d::build::Textures::clone(&self) -> libfileparser_3d::build::Textures
+impl core::default::Default for libfileparser_3d::build::Textures
+pub fn libfileparser_3d::build::Textures::default() -> libfileparser_3d::build::Textures
+pub const libfileparser_3d::build::MAX_TEXTURE_SIDE: u32
+pub fn libfileparser_3d::build::decode_textures(scene_data::scene::TextureSink, alloc::vec::Vec<libfileparser_3d::build::ImageJob>, &libfileparser_core::hooks::ParseContext) -> libfileparser_3d::build::Textures
+pub fn libfileparser_3d::build::detect_by(&libfileparser_core::reader::ReaderInfo, bool, &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::build::find_texture(&libfileparser_core::hooks::ParseContext, &libfileparser_core::dependency::Dependencies, &libfileparser_core::source::FileSource, &str, &str, &[&str]) -> core::option::Option<libfileparser_core::source::FileSource>
+pub fn libfileparser_3d::build::new_scene(&libfileparser_core::hooks::ParseContext) -> (scene_data::scene::CpuScene, scene_data::scene::SceneBuilder)
+pub fn libfileparser_3d::build::scene_error(&scene_data::error::Error) -> libfileparser_core::error::ParseError
+pub struct libfileparser_3d::BlendReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::BlendReader
+pub fn libfileparser_3d::BlendReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::BlendReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::BlendReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::FbxReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::FbxReader
+pub fn libfileparser_3d::FbxReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::FbxReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::FbxReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::GltfReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::GltfReader
+pub fn libfileparser_3d::GltfReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::GltfReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::GltfReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::ObjReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::ObjReader
+pub fn libfileparser_3d::ObjReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::ObjReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::ObjReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::PlyReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::PlyReader
+pub fn libfileparser_3d::PlyReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::PlyReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::PlyReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::StlReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::StlReader
+pub fn libfileparser_3d::StlReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::StlReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::StlReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::UsdReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::UsdReader
+pub fn libfileparser_3d::UsdReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::UsdReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::UsdReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_3d::detect(&[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
+pub fn libfileparser_3d::open(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_3d::open_with(&str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_3d::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

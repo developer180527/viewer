@@ -1,0 +1,112 @@
+pub mod gltf_lite
+#[non_exhaustive] pub enum gltf_lite::Error
+pub gltf_lite::Error::Format(alloc::string::String)
+pub gltf_lite::Error::Scene(scene_data::error::Error)
+pub gltf_lite::Error::Unsupported(alloc::string::String)
+impl core::clone::Clone for gltf_lite::Error
+pub fn gltf_lite::Error::clone(&self) -> gltf_lite::Error
+impl core::cmp::PartialEq for gltf_lite::Error
+pub fn gltf_lite::Error::eq(&self, &gltf_lite::Error) -> bool
+impl core::convert::From<scene_data::error::Error> for gltf_lite::Error
+pub fn gltf_lite::Error::from(scene_data::error::Error) -> Self
+impl core::error::Error for gltf_lite::Error
+pub fn gltf_lite::Error::source(&self) -> core::option::Option<&(dyn core::error::Error + 'static)>
+impl core::fmt::Debug for gltf_lite::Error
+pub fn gltf_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for gltf_lite::Error
+pub fn gltf_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for gltf_lite::Error
+#[non_exhaustive] pub enum gltf_lite::ExtensionSupport
+pub gltf_lite::ExtensionSupport::Ignored
+pub gltf_lite::ExtensionSupport::Read
+pub gltf_lite::ExtensionSupport::Unsupported
+impl core::clone::Clone for gltf_lite::ExtensionSupport
+pub fn gltf_lite::ExtensionSupport::clone(&self) -> gltf_lite::ExtensionSupport
+impl core::cmp::Eq for gltf_lite::ExtensionSupport
+impl core::cmp::PartialEq for gltf_lite::ExtensionSupport
+pub fn gltf_lite::ExtensionSupport::eq(&self, &gltf_lite::ExtensionSupport) -> bool
+impl core::fmt::Debug for gltf_lite::ExtensionSupport
+pub fn gltf_lite::ExtensionSupport::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for gltf_lite::ExtensionSupport
+impl core::marker::StructuralPartialEq for gltf_lite::ExtensionSupport
+#[non_exhaustive] pub enum gltf_lite::ResolveErrorKind
+pub gltf_lite::ResolveErrorKind::NotFound
+pub gltf_lite::ResolveErrorKind::NotPermitted
+pub gltf_lite::ResolveErrorKind::Other
+pub gltf_lite::ResolveErrorKind::Refused
+impl core::clone::Clone for gltf_lite::ResolveErrorKind
+pub fn gltf_lite::ResolveErrorKind::clone(&self) -> gltf_lite::ResolveErrorKind
+impl core::cmp::Eq for gltf_lite::ResolveErrorKind
+impl core::cmp::PartialEq for gltf_lite::ResolveErrorKind
+pub fn gltf_lite::ResolveErrorKind::eq(&self, &gltf_lite::ResolveErrorKind) -> bool
+impl core::fmt::Debug for gltf_lite::ResolveErrorKind
+pub fn gltf_lite::ResolveErrorKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for gltf_lite::ResolveErrorKind
+impl core::marker::StructuralPartialEq for gltf_lite::ResolveErrorKind
+#[non_exhaustive] pub struct gltf_lite::DirResolver
+pub gltf_lite::DirResolver::dir: std::path::PathBuf
+pub gltf_lite::DirResolver::max_bytes: u64
+impl gltf_lite::DirResolver
+pub fn gltf_lite::DirResolver::new(impl core::convert::Into<std::path::PathBuf>) -> Self
+impl gltf_lite::Resolver for gltf_lite::DirResolver
+pub fn gltf_lite::DirResolver::resolve(&self, &str) -> core::result::Result<scene_data::stream::Bytes, gltf_lite::ResolveError>
+#[non_exhaustive] pub struct gltf_lite::GlbChunk
+pub gltf_lite::GlbChunk::kind: [u8; 4]
+pub gltf_lite::GlbChunk::range: core::ops::range::Range<usize>
+impl gltf_lite::GlbChunk
+pub const gltf_lite::GlbChunk::BIN: [u8; 4]
+pub const gltf_lite::GlbChunk::JSON: [u8; 4]
+pub fn gltf_lite::GlbChunk::name(&self) -> alloc::string::String
+impl core::clone::Clone for gltf_lite::GlbChunk
+pub fn gltf_lite::GlbChunk::clone(&self) -> gltf_lite::GlbChunk
+impl core::cmp::Eq for gltf_lite::GlbChunk
+impl core::cmp::PartialEq for gltf_lite::GlbChunk
+pub fn gltf_lite::GlbChunk::eq(&self, &gltf_lite::GlbChunk) -> bool
+impl core::fmt::Debug for gltf_lite::GlbChunk
+pub fn gltf_lite::GlbChunk::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for gltf_lite::GlbChunk
+#[non_exhaustive] pub struct gltf_lite::Loaded
+pub gltf_lite::Loaded::extensions_required: alloc::vec::Vec<alloc::string::String>
+pub gltf_lite::Loaded::extensions_used: alloc::vec::Vec<alloc::string::String>
+pub gltf_lite::Loaded::images: alloc::vec::Vec<gltf_lite::PendingImage>
+pub gltf_lite::Loaded::materials: alloc::vec::Vec<(usize, scene_data::scene::MaterialId)>
+pub gltf_lite::Loaded::meshes: alloc::vec::Vec<(usize, usize, scene_data::scene::MeshId)>
+pub gltf_lite::Loaded::nodes: alloc::vec::Vec<(usize, scene_data::scene::NodeId)>
+pub gltf_lite::Loaded::unreadable: alloc::vec::Vec<(alloc::string::String, gltf_lite::ResolveErrorKind)>
+pub gltf_lite::Loaded::warnings: alloc::vec::Vec<alloc::string::String>
+pub struct gltf_lite::NoResolver
+impl gltf_lite::Resolver for gltf_lite::NoResolver
+pub fn gltf_lite::NoResolver::resolve(&self, &str) -> core::result::Result<scene_data::stream::Bytes, gltf_lite::ResolveError>
+#[non_exhaustive] pub struct gltf_lite::PendingImage
+pub gltf_lite::PendingImage::color_space: scene_data::texture::ColorSpace
+pub gltf_lite::PendingImage::data: scene_data::stream::Stream<u8>
+pub gltf_lite::PendingImage::embedded: bool
+pub gltf_lite::PendingImage::mime_type: core::option::Option<alloc::string::String>
+pub gltf_lite::PendingImage::name: alloc::string::String
+pub gltf_lite::PendingImage::texture: scene_data::scene::TextureId
+#[non_exhaustive] pub struct gltf_lite::ResolveError
+pub gltf_lite::ResolveError::kind: gltf_lite::ResolveErrorKind
+pub gltf_lite::ResolveError::message: alloc::string::String
+impl gltf_lite::ResolveError
+pub fn gltf_lite::ResolveError::new(gltf_lite::ResolveErrorKind, impl core::convert::Into<alloc::string::String>) -> Self
+impl core::clone::Clone for gltf_lite::ResolveError
+pub fn gltf_lite::ResolveError::clone(&self) -> gltf_lite::ResolveError
+impl core::cmp::Eq for gltf_lite::ResolveError
+impl core::cmp::PartialEq for gltf_lite::ResolveError
+pub fn gltf_lite::ResolveError::eq(&self, &gltf_lite::ResolveError) -> bool
+impl core::fmt::Debug for gltf_lite::ResolveError
+pub fn gltf_lite::ResolveError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for gltf_lite::ResolveError
+pub fn gltf_lite::ResolveError::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for gltf_lite::ResolveError
+pub trait gltf_lite::Resolver
+pub fn gltf_lite::Resolver::resolve(&self, &str) -> core::result::Result<scene_data::stream::Bytes, gltf_lite::ResolveError>
+impl gltf_lite::Resolver for gltf_lite::DirResolver
+pub fn gltf_lite::DirResolver::resolve(&self, &str) -> core::result::Result<scene_data::stream::Bytes, gltf_lite::ResolveError>
+impl gltf_lite::Resolver for gltf_lite::NoResolver
+pub fn gltf_lite::NoResolver::resolve(&self, &str) -> core::result::Result<scene_data::stream::Bytes, gltf_lite::ResolveError>
+pub fn gltf_lite::extension_support(&str) -> gltf_lite::ExtensionSupport
+pub fn gltf_lite::glb_chunks(&[u8]) -> core::result::Result<core::option::Option<alloc::vec::Vec<gltf_lite::GlbChunk>>, gltf_lite::Error>
+pub fn gltf_lite::load(scene_data::stream::Bytes, &dyn gltf_lite::Resolver, &mut scene_data::scene::SceneBuilder) -> core::result::Result<gltf_lite::Loaded, gltf_lite::Error>
+pub fn gltf_lite::relative_path(&str) -> core::result::Result<alloc::string::String, gltf_lite::ResolveError>
+pub fn gltf_lite::resolver_for(&std::path::Path) -> gltf_lite::DirResolver

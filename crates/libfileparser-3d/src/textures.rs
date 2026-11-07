@@ -528,13 +528,7 @@ pub fn with_mips(width: u32, height: u32, rgba: Vec<u8>, color_space: ColorSpace
         levels.push(out);
         (w, h) = (nw, nh);
     }
-    TextureData {
-        width,
-        height,
-        format: scene_data::TextureFormat::Rgba8,
-        color_space,
-        levels: levels.into_iter().map(Stream::from).collect(),
-    }
+    TextureData::new(width, height, scene_data::TextureFormat::Rgba8, color_space, levels.into_iter().map(Stream::from).collect())
 }
 
 fn srgb_to_linear(c: f32) -> f32 {

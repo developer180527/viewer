@@ -44,6 +44,7 @@ pub trait Host {
 /// What a 3D view keeps on the GPU between frames. Dropping it frees the uploaded
 /// model and the view's buffers; the registered texture is freed by the page.
 #[derive(Default)]
+#[non_exhaustive]
 pub struct SceneGpu {
     pub gpu: Option<rendererx::GpuScene>,
     pub view: Option<rendererx::View>,
@@ -58,12 +59,30 @@ impl SceneGpu {
 }
 
 #[derive(Default)]
+#[non_exhaustive]
 pub struct Frame3d {
     pub texture: Option<TextureId>,
     /// Still uploading: draw again soon.
     pub busy: bool,
     /// Why nothing can be drawn (no GPU).
     pub error: Option<String>,
+}
+
+impl Frame3d {
+    /// `texture` shows the frame; `busy` when more is still uploading.
+    pub fn shown(texture: Option<TextureId>, busy: bool) -> Self {
+        Self { texture, busy, error: None }
+    }
+
+    /// Nothing can be drawn, and why.
+    pub fn failed(why: impl Into<String>) -> Self {
+        Self { error: Some(why.into()), ..Self::default() }
+    }
+
+    /// Nothing to show yet; draw again soon.
+    pub fn pending() -> Self {
+        Self { busy: true, ..Self::default() }
+    }
 }
 
 /// Uploads what's new (everything at once when `block`), then renders if the frame

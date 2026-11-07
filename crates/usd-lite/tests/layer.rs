@@ -112,7 +112,7 @@ fn every_spec_reads_the_same_from_text_and_binary() {
 
 #[test]
 fn limits_and_wrong_formats_are_errors() {
-    let tiny = Limits { max_elements: 3, ..Default::default() };
+    let tiny = Limits::default().with_max_elements(3);
     assert!(matches!(read_layer(USDA, &tiny), Err(Error::Limit(_))));
     assert!(read_layer(USDC, &tiny).is_err());
     assert!(matches!(read_layer(b"hello", &Limits::default()), Err(Error::Format(_))));
@@ -130,7 +130,7 @@ fn damaged_files_never_panic() {
         seed ^= seed << 17;
         (seed % n.max(1) as u64) as usize
     };
-    let limits = Limits { max_elements: 1 << 16, max_decompressed: 1 << 22 };
+    let limits = Limits::default().with_max_elements(1 << 16).with_max_decompressed(1 << 22);
     for source in [USDC, USDA] {
         for round in 0..3000 {
             let mut bytes = source.to_vec();

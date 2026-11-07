@@ -1,0 +1,71 @@
+pub mod libviewer
+#[non_exhaustive] pub enum libviewer::Action
+pub libviewer::Action::OpenEntry(alloc::sync::Arc<dyn libfileparser_core::content::Container>, u64)
+#[non_exhaustive] pub enum libviewer::View
+pub libviewer::View::None
+pub libviewer::View::Raster(libviewer::RasterView)
+pub libviewer::View::Scene(alloc::boxed::Box<libviewer::SceneView>)
+pub libviewer::View::Table(libviewer::TableView)
+pub libviewer::View::Tree(libviewer::TreeView)
+impl libviewer::View
+pub fn libviewer::View::new(&libfileparser_core::content::Content) -> Self
+pub fn libviewer::View::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
+#[non_exhaustive] pub struct libviewer::Frame3d
+pub libviewer::Frame3d::busy: bool
+pub libviewer::Frame3d::error: core::option::Option<alloc::string::String>
+pub libviewer::Frame3d::texture: core::option::Option<libgui::draw::TextureId>
+impl libviewer::Frame3d
+pub fn libviewer::Frame3d::failed(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn libviewer::Frame3d::pending() -> Self
+pub fn libviewer::Frame3d::shown(core::option::Option<libgui::draw::TextureId>, bool) -> Self
+impl core::default::Default for libviewer::Frame3d
+pub fn libviewer::Frame3d::default() -> libviewer::Frame3d
+pub struct libviewer::RasterView
+impl libviewer::RasterView
+pub fn libviewer::RasterView::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
+impl core::default::Default for libviewer::RasterView
+pub fn libviewer::RasterView::default() -> libviewer::RasterView
+#[non_exhaustive] pub struct libviewer::SceneGpu
+pub libviewer::SceneGpu::gpu: core::option::Option<rendererx::scene::GpuScene>
+pub libviewer::SceneGpu::texture: core::option::Option<(libgui::draw::TextureId, u64)>
+pub libviewer::SceneGpu::view: core::option::Option<rendererx::view::View>
+impl libviewer::SceneGpu
+pub fn libviewer::SceneGpu::texture(&self) -> core::option::Option<libgui::draw::TextureId>
+impl core::default::Default for libviewer::SceneGpu
+pub fn libviewer::SceneGpu::default() -> libviewer::SceneGpu
+pub struct libviewer::SceneView
+impl libviewer::SceneView
+pub fn libviewer::SceneView::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
+impl core::default::Default for libviewer::SceneView
+pub fn libviewer::SceneView::default() -> libviewer::SceneView
+pub struct libviewer::TableView
+impl libviewer::TableView
+pub fn libviewer::TableView::for_container(&dyn libfileparser_core::content::Container) -> Self
+pub fn libviewer::TableView::for_table(&dyn libfileparser_core::content::TableSource) -> Self
+pub struct libviewer::TreeView
+impl core::default::Default for libviewer::TreeView
+pub fn libviewer::TreeView::default() -> Self
+pub trait libviewer::Highlights
+pub fn libviewer::Highlights::spans(&self, usize, bool) -> alloc::vec::Vec<(core::ops::range::Range<usize>, [u8; 3])>
+pub trait libviewer::Host
+pub fn libviewer::Host::free(&mut self, libgui::draw::TextureId)
+pub fn libviewer::Host::max_side(&self) -> u32
+pub fn libviewer::Host::pixels_per_point(&self) -> f32
+pub fn libviewer::Host::render_scene(&mut self, &mut libviewer::SceneGpu, &scene_data::scene::CpuScene, (u32, u32), &rendererx::camera::Camera, [f32; 4]) -> libviewer::Frame3d
+pub fn libviewer::Host::settles(&self) -> bool
+pub fn libviewer::Host::trackpad_pinch(&self) -> f32
+pub fn libviewer::Host::upload(&mut self, u32, u32, &[u8]) -> libgui::draw::TextureId
+pub fn libviewer::Host::uploads_done(&mut self)
+pub fn libviewer::Host::waker(&self) -> libviewer::Waker
+pub fn libviewer::container(&mut libgui::ui::Ui, &alloc::sync::Arc<dyn libfileparser_core::content::Container>, &mut libviewer::TableView) -> core::option::Option<u64>
+pub fn libviewer::draw_scene((&rendererx::Renderer, &wgpu::api::device::Device, &wgpu::api::queue::Queue), &mut libviewer::SceneGpu, &scene_data::scene::CpuScene, (u32, u32), &rendererx::camera::Camera, [f32; 4], bool) -> bool
+pub fn libviewer::hex(&mut libgui::ui::Ui, &[u8])
+pub fn libviewer::human_bytes(u64) -> alloc::string::String
+pub fn libviewer::model_name(&libfileparser_core::content::Content) -> &'static str
+pub fn libviewer::raster(&mut libgui::ui::Ui, &libfileparser_core::content::Raster, &mut libviewer::RasterView, &mut dyn libviewer::Host)
+pub fn libviewer::scene(&mut libgui::ui::Ui, &libfileparser_core::content::SceneDoc, &mut libviewer::SceneView, &mut dyn libviewer::Host)
+pub fn libviewer::show(&mut libgui::ui::Ui, &libfileparser_core::content::Content, &mut libviewer::View, &mut dyn libviewer::Host, core::option::Option<&dyn libviewer::Highlights>, bool) -> core::option::Option<libviewer::Action>
+pub fn libviewer::table(&mut libgui::ui::Ui, &dyn libfileparser_core::content::TableSource, &mut libviewer::TableView)
+pub fn libviewer::text(&mut libgui::ui::Ui, &dyn libfileparser_core::content::TextSource, core::option::Option<&dyn libviewer::Highlights>, bool)
+pub fn libviewer::tree(&mut libgui::ui::Ui, &dyn libfileparser_core::content::TreeSource, &mut libviewer::TreeView)
+pub type libviewer::Waker = alloc::sync::Arc<(dyn core::ops::function::Fn() + core::marker::Send + core::marker::Sync)>

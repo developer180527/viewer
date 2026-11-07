@@ -1000,7 +1000,7 @@ dependencies = [
 
 [[package]]
 name = "gltf-lite"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "base64 0.22.1",
  "bytemuck",
@@ -1330,7 +1330,7 @@ checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
 name = "libfileparser"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libfileparser-3d",
  "libfileparser-archives",
@@ -1344,7 +1344,7 @@ dependencies = [
 
 [[package]]
 name = "libfileparser-3d"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -1362,7 +1362,7 @@ dependencies = [
 
 [[package]]
 name = "libfileparser-archives"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "flate2",
  "libfileparser-core",
@@ -1373,7 +1373,7 @@ dependencies = [
 
 [[package]]
 name = "libfileparser-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "memmap2",
  "scene-data",
@@ -1381,7 +1381,7 @@ dependencies = [
 
 [[package]]
 name = "libfileparser-images"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "image",
  "libfileparser-core",
@@ -1392,7 +1392,7 @@ dependencies = [
 
 [[package]]
 name = "libfileparser-testkit"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libfileparser-core",
  "scene-data",
@@ -1400,7 +1400,7 @@ dependencies = [
 
 [[package]]
 name = "libfileparser-text"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libfileparser-core",
  "libfileparser-testkit",
@@ -1533,7 +1533,7 @@ dependencies = [
 
 [[package]]
 name = "libviewer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "libfileparser-core",
  "libgui",
@@ -2674,7 +2674,7 @@ checksum = "19b30a45b0cd0bcca8037f3d0dc3421eaf95327a17cad11964fb8179b4fc4832"
 
 [[package]]
 name = "rendererx"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytemuck",
  "pollster 1.0.1",
@@ -2816,7 +2816,7 @@ dependencies = [
 
 [[package]]
 name = "scene-data"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "bytemuck",
  "glam",
@@ -3396,7 +3396,7 @@ checksum = "ca718471876992059f251e33aafc334346ada08042b7661dd1fe313a9bced557"
 
 [[package]]
 name = "usd-lite"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "lz4_flex",
  "thiserror 2.0.21",
@@ -3460,7 +3460,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 
 [[package]]
 name = "viewer"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "image",
@@ -3490,7 +3490,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-core"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "infer",
@@ -3500,7 +3500,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-corpus"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "image",
@@ -3513,7 +3513,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-fmt-data"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "csv",
@@ -3525,7 +3525,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-fmt-doc"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "memchr",
@@ -3535,7 +3535,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-fmt-pdf"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "viewer-core",
@@ -3545,7 +3545,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-formats"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "libfileparser",
@@ -3558,7 +3558,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-pdf-mupdf"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "cc",
@@ -3567,7 +3567,7 @@ dependencies = [
 
 [[package]]
 name = "viewer-pdf-pdfkit"
-version = "0.1.0"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "objc2 0.6.5",

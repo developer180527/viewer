@@ -108,11 +108,8 @@ impl Files<'_> {
 
 /// usd-lite's limits within the context's.
 fn limits(cx: &ParseContext) -> Limits {
-    let defaults = Limits::default();
-    Limits {
-        max_elements: defaults.max_elements.min(cx.limits.items as usize),
-        max_decompressed: defaults.max_decompressed.min(cx.limits.allocation as usize),
-    }
+    let d = Limits::default();
+    d.with_max_elements(d.max_elements.min(cx.limits.items as usize)).with_max_decompressed(d.max_decompressed.min(cx.limits.allocation as usize))
 }
 
 /// usd-lite names a limit only in words; its element cap is the document's items limit.
@@ -465,7 +462,8 @@ impl Converter<'_, '_> {
         let v3 = |v: [f64; 3]| Vec3::new(v[0] as f32, v[1] as f32, v[2] as f32);
         let alpha = match &s.opacity {
             Input::Value(o) => *o as f32,
-            Input::Texture(_) => 1.0,
+            // A texture, or an input kind usd-lite adds later: opaque.
+            _ => 1.0,
         };
         match &s.diffuse_color {
             Input::Value(c) => m.params.set("base_color", ParamValue::Vec4(v3(*c).extend(alpha))),
@@ -475,6 +473,7 @@ impl Converter<'_, '_> {
                     m.textures.push((Slot::BASE_COLOR, id));
                 }
             }
+            _ => m.params.set("base_color", ParamValue::Vec4(Vec4::new(1.0, 1.0, 1.0, alpha))),
         }
         match &s.emissive_color {
             Input::Value(c) => m.params.set("emissive", ParamValue::Vec3(v3(*c))),
@@ -484,6 +483,7 @@ impl Converter<'_, '_> {
                     m.textures.push((Slot::EMISSIVE, id));
                 }
             }
+            _ => {}
         }
         // Scalars, or a channel of a texture (packed with the other into one map).
         let mut map_source = |input: &Input<f64>, param: &str| -> Option<(String, usize)> {
@@ -496,6 +496,7 @@ impl Converter<'_, '_> {
                     m.params.set(param.to_string(), ParamValue::Float(1.0));
                     Some((t.file.clone(), channel_index(t.channel)))
                 }
+                _ => None,
             }
         };
         let rough = map_source(&s.roughness, "roughness");

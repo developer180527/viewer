@@ -15,6 +15,7 @@ pub type Matrix = [f64; 16];
 
 pub const IDENTITY: Matrix = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
 
+/// Closed on purpose: USD allows only Y and Z.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UpAxis {
     Y,
@@ -164,6 +165,7 @@ pub fn is_drawn(layer: &Layer, prim: &str) -> bool {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Interpolation {
     /// One value for the whole mesh.
     Constant,
@@ -176,6 +178,7 @@ pub enum Interpolation {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Primvar<T> {
     pub values: Vec<T>,
     /// For indexed primvars: an index into `values` per element.
@@ -202,6 +205,7 @@ impl<T: Copy> Primvar<T> {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Subset {
     pub name: String,
     /// Face indices.
@@ -210,6 +214,7 @@ pub struct Subset {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Mesh {
     pub points: Vec<[f32; 3]>,
     pub face_vertex_counts: Vec<i64>,
@@ -310,6 +315,7 @@ pub fn bound_material(layer: &Layer, prim: &str, inherit: bool) -> Option<String
     }
 }
 
+/// Closed on purpose: the outputs a `UsdUVTexture` has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Channel {
     Rgb,
@@ -322,6 +328,7 @@ pub enum Channel {
 
 /// A `UsdUVTexture` feeding a material input.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct TextureInput {
     /// The asset path as authored (often absolute, from the exporting machine).
     pub file: String,
@@ -333,6 +340,7 @@ pub struct TextureInput {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Input<T> {
     Value(T),
     Texture(TextureInput),
@@ -340,6 +348,7 @@ pub enum Input<T> {
 
 /// A `UsdPreviewSurface`, with the spec's defaults for unauthored inputs.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct PreviewSurface {
     pub diffuse_color: Input<[f64; 3]>,
     pub emissive_color: Input<[f64; 3]>,

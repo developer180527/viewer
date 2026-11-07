@@ -35,18 +35,17 @@ pub fn new_scene(cx: &ParseContext) -> (CpuScene, SceneBuilder) {
     let l = &cx.limits;
     let d = SceneLimits::default();
     let small = |v: u32| v.min(l.items.min(u32::MAX as u64) as u32);
-    CpuScene::with_limits(SceneLimits {
-        max_triangles: d.max_triangles.min(l.items),
-        max_drawn_triangles: d.max_drawn_triangles.min(l.items.saturating_mul(16)),
-        max_vertices: d.max_vertices.min(l.items),
-        max_bytes: d.max_bytes.min(l.memory),
-        max_node_depth: d.max_node_depth.min(l.depth.min(u32::MAX as u64) as u32),
-        max_nodes: small(d.max_nodes),
-        max_meshes: small(d.max_meshes),
-        max_materials: small(d.max_materials),
-        max_textures: small(d.max_textures),
-        ..d
-    })
+    let mut s = SceneLimits::default();
+    s.max_triangles = d.max_triangles.min(l.items);
+    s.max_drawn_triangles = d.max_drawn_triangles.min(l.items.saturating_mul(16));
+    s.max_vertices = d.max_vertices.min(l.items);
+    s.max_bytes = d.max_bytes.min(l.memory);
+    s.max_node_depth = d.max_node_depth.min(l.depth.min(u32::MAX as u64) as u32);
+    s.max_nodes = small(d.max_nodes);
+    s.max_meshes = small(d.max_meshes);
+    s.max_materials = small(d.max_materials);
+    s.max_textures = small(d.max_textures);
+    CpuScene::with_limits(s)
 }
 
 /// A scene builder's error as a [`ParseError`]: a limit is `TooLarge` (the file may
@@ -465,6 +464,7 @@ fn param_text(v: ParamValue) -> String {
         ParamValue::Vec2(x) => list(&x.to_array()),
         ParamValue::Vec3(x) => list(&x.to_array()),
         ParamValue::Vec4(x) => list(&x.to_array()),
+        _ => String::new(),
     }
 }
 

@@ -182,7 +182,7 @@ impl Iterator for CropBands {
         }
         let h = self.rows.min(height - self.y);
         let rgba = self.img.crop_imm(0, self.y, self.img.width(), h).into_rgba8().into_raw();
-        let band = Band { y: self.y, rgba };
+        let band = Band::new(self.y, rgba);
         self.y += h;
         Some(Ok(band))
     }
@@ -239,7 +239,7 @@ impl PngBands {
             return Err(self.failed.take().unwrap_or_else(|| corrupt("the PNG ended early")));
         }
         band.resize(decoded as usize * row_bytes, 0);
-        let band = Band { y: self.y, rgba: band };
+        let band = Band::new(self.y, band);
         self.y += decoded;
         Ok(band)
     }

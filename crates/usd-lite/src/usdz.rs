@@ -7,6 +7,7 @@ use crate::{Error, Layer, Limits, Result};
 
 /// An opened USDZ package: its root layer and the bytes of its other files
 /// (textures, sublayers).
+#[non_exhaustive]
 pub struct Package<'a> {
     bytes: &'a [u8],
     /// (name, byte range in `bytes`) of every stored file.

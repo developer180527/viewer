@@ -34,6 +34,7 @@ impl ShadingId {
 
 /// Where a material's shading model came from, so the host can say so in its UI.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ShadingSource {
     /// The file names it (glTF unlit, VRM MToon, FBX Phong…).
     FromFile,
@@ -44,6 +45,7 @@ pub enum ShadingSource {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub enum ParamValue {
     Float(f32),
     Vec2(Vec2),
@@ -107,6 +109,7 @@ impl Slot {
     }
 }
 
+/// Closed on purpose: glTF's three modes, which every format maps onto and a renderer must draw.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum AlphaMode {
     Opaque,
@@ -116,6 +119,7 @@ pub enum AlphaMode {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub struct Material {
     pub name: String,
     pub shading: ShadingId,

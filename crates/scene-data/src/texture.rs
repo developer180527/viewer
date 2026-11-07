@@ -4,6 +4,7 @@ use crate::{Error, SceneLimits, Stream};
 /// Colour textures are sRGB; data textures (normal, metallic/roughness, occlusion) are
 /// linear. Getting this wrong is the usual cause of washed-out models.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ColorSpace {
     Srgb,
     Linear,
@@ -11,6 +12,9 @@ pub enum ColorSpace {
 
 /// Pixel layout of the texture's levels. Compressed formats stay compressed on the GPU
 /// where the adapter supports them.
+///
+/// Closed on purpose: a renderer must upload every format, so a new one is a breaking
+/// change it has to handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum TextureFormat {
     Rgba8,
@@ -51,6 +55,7 @@ impl TextureFormat {
 /// A decoded texture: level 0 first, then any mips the file carried. The renderer
 /// generates missing mips on the GPU.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct TextureData {
     pub width: u32,
     pub height: u32,
@@ -60,6 +65,11 @@ pub struct TextureData {
 }
 
 impl TextureData {
+    /// A texture of `levels` (the first full size, each next one half), in `format`.
+    pub fn new(width: u32, height: u32, format: TextureFormat, color_space: ColorSpace, levels: Vec<Stream<u8>>) -> Self {
+        Self { width, height, format, color_space, levels }
+    }
+
     pub fn rgba8(width: u32, height: u32, color_space: ColorSpace, pixels: impl Into<Stream<u8>>) -> Self {
         Self { width, height, format: TextureFormat::Rgba8, color_space, levels: vec![pixels.into()] }
     }
@@ -106,6 +116,7 @@ impl TextureData {
 
 /// What the scene remembers about a texture after its data has been uploaded and freed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct TextureInfo {
     pub width: u32,
     pub height: u32,

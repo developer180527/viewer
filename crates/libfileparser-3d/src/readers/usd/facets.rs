@@ -306,6 +306,8 @@ fn summary(v: &Value) -> String {
         Value::Specifier(s) => format!("{s:?}").to_lowercase(),
         Value::Blocked => "None (blocked)".into(),
         Value::Other(name) => format!("({name})"),
+        // A value kind usd-lite learns later.
+        _ => "(value)".into(),
     }
 }
 
@@ -399,7 +401,7 @@ mod tests {
         assert_eq!(summary(&Value::Float(1.0)), "1");
         assert_eq!(summary(&Value::Vec3([0.5, -0.0, 2.25])), "(0.5, 0, 2.25)");
         assert_eq!(summary(&Value::TokenArray(vec!["a".into(), "b".into()])), "[a, b]");
-        let spec = Spec { spec_type: usd_lite::SpecType::Attribute, fields: vec![("typeName".into(), Value::Token("point3f[]".into())), ("default".into(), Value::Vec3Array(Arc::from(vec![[0.0f32; 3]; 8])))] };
+        let spec = Spec::new(usd_lite::SpecType::Attribute, vec![("typeName".into(), Value::Token("point3f[]".into())), ("default".into(), Value::Vec3Array(Arc::from(vec![[0.0f32; 3]; 8])))]);
         assert_eq!(property_summary(&spec), "point3f[8]");
     }
 }

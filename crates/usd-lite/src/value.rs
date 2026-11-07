@@ -5,6 +5,7 @@ use std::sync::Arc;
 /// and shared: cloning one (composition does, per instance) copies a pointer, and two
 /// prims with the same `Arc` hold the same data.
 #[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
 pub enum Value {
     Bool(bool),
     Int(i64),
@@ -50,11 +51,13 @@ pub enum Value {
 /// A reference or payload: a layer (`asset`, empty for one in the same layer stack)
 /// and the prim in it (`None`: the layer's `defaultPrim`).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Reference {
     pub asset: String,
     pub prim: Option<String>,
 }
 
+/// Closed on purpose: USD's three specifiers.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Specifier {
     Def,

@@ -3,6 +3,8 @@ use glam::{Mat4, Vec2, Vec3, Vec4};
 use crate::error::check;
 use crate::{Error, SceneLimits, Stream};
 
+/// Closed on purpose: every reader turns its primitives into these, and a renderer
+/// must draw every one, so a new kind is a breaking change it has to handle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Topology {
     Triangles,
@@ -20,6 +22,7 @@ impl Topology {
     }
 }
 
+/// Closed on purpose: no index width but 16 and 32 bits reaches a GPU.
 #[derive(Debug, Clone)]
 pub enum Indices {
     /// Non-indexed: vertices are taken in order.
@@ -92,6 +95,7 @@ impl Aabb {
 /// One mesh's vertex streams. Missing triangle normals are generated when the mesh is
 /// added to a scene (on the loader's thread); tangents will be generated on upload.
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct MeshData {
     pub positions: Stream<Vec3>,
     pub normals: Option<Stream<Vec3>>,
@@ -194,6 +198,7 @@ impl MeshData {
 
 /// What the scene remembers about a mesh after its data has been uploaded and freed.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct MeshInfo {
     pub vertices: usize,
     pub elements: usize,

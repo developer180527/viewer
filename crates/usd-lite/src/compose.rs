@@ -54,6 +54,7 @@ pub fn anchored(anchor: &str, asset: &str) -> String {
 }
 
 /// A composed stage, flattened.
+#[non_exhaustive]
 pub struct Stage {
     pub layer: Layer,
     /// Arcs that couldn't be followed (missing files, cycles, limits).
@@ -71,6 +72,7 @@ pub struct Stage {
 /// The spec that defines a composed prim: the strongest `def` (else the strongest
 /// opinion) among its sites.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct PrimSource {
     /// Index into [`Stage::layers`].
     pub layer: usize,
@@ -83,6 +85,7 @@ pub struct PrimSource {
 
 /// What kind of arc brings a layer in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum ArcKind {
     Sublayer,
     Reference,
@@ -102,6 +105,7 @@ impl ArcKind {
 /// One arc from a layer to another, as authored: a sublayer, or a reference or payload
 /// with an asset path (internal references aren't arcs to another layer).
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct LayerArc {
     /// The layer that authors it.
     pub from: String,
@@ -122,6 +126,7 @@ pub const MAX_ARC_PRIMS: usize = 100;
 /// A variant set on a composed prim: its variants (across every site that authors the
 /// set) and the one selected, if any.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct VariantSet {
     pub prim: String,
     pub name: String,
@@ -602,6 +607,7 @@ fn anchor_assets(value: &Value, layer_id: &str) -> Value {
 
 /// Reads layers from the filesystem: local paths only (no URLs), USD files only, up
 /// to a size cap.
+#[non_exhaustive]
 pub struct FsResolver {
     pub max_bytes: u64,
 }

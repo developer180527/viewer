@@ -1,6 +1,7 @@
 use crate::Topology;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("{what} exceeds the limit of {limit}")]
     LimitExceeded { what: &'static str, limit: u64 },
@@ -27,6 +28,7 @@ pub enum Error {
 /// Hard caps on what a file can make the app allocate or draw (docs/design/3d-renderer.md §12).
 /// Going over one is an error for that item; what was already accepted stays.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct SceneLimits {
     /// Primitives (triangles, lines or points) stored across all meshes.
     pub max_triangles: u64,

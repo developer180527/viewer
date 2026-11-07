@@ -1,0 +1,524 @@
+pub mod scene_data
+pub use scene_data::glam
+pub enum scene_data::AlphaMode
+pub scene_data::AlphaMode::Blend
+pub scene_data::AlphaMode::Mask(f32)
+pub scene_data::AlphaMode::Opaque
+impl core::clone::Clone for scene_data::AlphaMode
+pub fn scene_data::AlphaMode::clone(&self) -> scene_data::AlphaMode
+impl core::cmp::PartialEq for scene_data::AlphaMode
+pub fn scene_data::AlphaMode::eq(&self, &scene_data::AlphaMode) -> bool
+impl core::fmt::Debug for scene_data::AlphaMode
+pub fn scene_data::AlphaMode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::AlphaMode
+impl core::marker::StructuralPartialEq for scene_data::AlphaMode
+#[non_exhaustive] pub enum scene_data::ColorSpace
+pub scene_data::ColorSpace::Linear
+pub scene_data::ColorSpace::Srgb
+impl core::clone::Clone for scene_data::ColorSpace
+pub fn scene_data::ColorSpace::clone(&self) -> scene_data::ColorSpace
+impl core::cmp::Eq for scene_data::ColorSpace
+impl core::cmp::PartialEq for scene_data::ColorSpace
+pub fn scene_data::ColorSpace::eq(&self, &scene_data::ColorSpace) -> bool
+impl core::fmt::Debug for scene_data::ColorSpace
+pub fn scene_data::ColorSpace::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::ColorSpace
+pub fn scene_data::ColorSpace::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::ColorSpace
+impl core::marker::StructuralPartialEq for scene_data::ColorSpace
+#[non_exhaustive] pub enum scene_data::Error
+pub scene_data::Error::BadMaterial(&'static str)
+pub scene_data::Error::BadNode(&'static str)
+pub scene_data::Error::BadTexture(&'static str)
+pub scene_data::Error::ByteRange
+pub scene_data::Error::ByteRange::elem: usize
+pub scene_data::Error::ByteRange::end: usize
+pub scene_data::Error::ByteRange::len: usize
+pub scene_data::Error::ByteRange::start: usize
+pub scene_data::Error::GeometryFinished
+pub scene_data::Error::IndexOutOfRange
+pub scene_data::Error::IndexOutOfRange::index: u32
+pub scene_data::Error::IndexOutOfRange::vertices: usize
+pub scene_data::Error::LimitExceeded
+pub scene_data::Error::LimitExceeded::limit: u64
+pub scene_data::Error::LimitExceeded::what: &'static str
+pub scene_data::Error::PartialPrimitive
+pub scene_data::Error::PartialPrimitive::count: usize
+pub scene_data::Error::PartialPrimitive::topology: scene_data::Topology
+pub scene_data::Error::StreamLength
+pub scene_data::Error::StreamLength::expected: usize
+pub scene_data::Error::StreamLength::len: usize
+pub scene_data::Error::StreamLength::stream: &'static str
+pub scene_data::Error::UnknownId
+pub scene_data::Error::UnknownId::id: u32
+pub scene_data::Error::UnknownId::kind: &'static str
+impl core::clone::Clone for scene_data::Error
+pub fn scene_data::Error::clone(&self) -> scene_data::Error
+impl core::cmp::PartialEq for scene_data::Error
+pub fn scene_data::Error::eq(&self, &scene_data::Error) -> bool
+impl core::error::Error for scene_data::Error
+impl core::fmt::Debug for scene_data::Error
+pub fn scene_data::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for scene_data::Error
+pub fn scene_data::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for scene_data::Error
+#[non_exhaustive] pub enum scene_data::GeometryState
+pub scene_data::GeometryState::Done
+pub scene_data::GeometryState::Incomplete
+pub scene_data::GeometryState::Loading
+impl core::clone::Clone for scene_data::GeometryState
+pub fn scene_data::GeometryState::clone(&self) -> scene_data::GeometryState
+impl core::cmp::Eq for scene_data::GeometryState
+impl core::cmp::PartialEq for scene_data::GeometryState
+pub fn scene_data::GeometryState::eq(&self, &scene_data::GeometryState) -> bool
+impl core::fmt::Debug for scene_data::GeometryState
+pub fn scene_data::GeometryState::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::GeometryState
+impl core::marker::StructuralPartialEq for scene_data::GeometryState
+pub enum scene_data::Indices
+pub scene_data::Indices::None
+pub scene_data::Indices::U16(scene_data::Stream<u16>)
+pub scene_data::Indices::U32(scene_data::Stream<u32>)
+impl core::clone::Clone for scene_data::Indices
+pub fn scene_data::Indices::clone(&self) -> scene_data::Indices
+impl core::fmt::Debug for scene_data::Indices
+pub fn scene_data::Indices::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum scene_data::ParamValue
+pub scene_data::ParamValue::Float(f32)
+pub scene_data::ParamValue::Int(i32)
+pub scene_data::ParamValue::Vec2(glam::f32::vec2::Vec2)
+pub scene_data::ParamValue::Vec3(glam::f32::vec3::Vec3)
+pub scene_data::ParamValue::Vec4(glam::f32::neon::vec4::Vec4)
+impl core::clone::Clone for scene_data::ParamValue
+pub fn scene_data::ParamValue::clone(&self) -> scene_data::ParamValue
+impl core::cmp::PartialEq for scene_data::ParamValue
+pub fn scene_data::ParamValue::eq(&self, &scene_data::ParamValue) -> bool
+impl core::fmt::Debug for scene_data::ParamValue
+pub fn scene_data::ParamValue::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::ParamValue
+impl core::marker::StructuralPartialEq for scene_data::ParamValue
+#[non_exhaustive] pub enum scene_data::ShadingSource
+pub scene_data::ShadingSource::Default
+pub scene_data::ShadingSource::FromFile
+pub scene_data::ShadingSource::Inferred
+impl core::clone::Clone for scene_data::ShadingSource
+pub fn scene_data::ShadingSource::clone(&self) -> scene_data::ShadingSource
+impl core::cmp::Eq for scene_data::ShadingSource
+impl core::cmp::PartialEq for scene_data::ShadingSource
+pub fn scene_data::ShadingSource::eq(&self, &scene_data::ShadingSource) -> bool
+impl core::fmt::Debug for scene_data::ShadingSource
+pub fn scene_data::ShadingSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::ShadingSource
+pub fn scene_data::ShadingSource::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::ShadingSource
+impl core::marker::StructuralPartialEq for scene_data::ShadingSource
+pub enum scene_data::TextureFormat
+pub scene_data::TextureFormat::Astc4x4
+pub scene_data::TextureFormat::Bc1
+pub scene_data::TextureFormat::Bc3
+pub scene_data::TextureFormat::Bc4
+pub scene_data::TextureFormat::Bc5
+pub scene_data::TextureFormat::Bc7
+pub scene_data::TextureFormat::Etc2Rgba8
+pub scene_data::TextureFormat::Rgba16F
+pub scene_data::TextureFormat::Rgba8
+impl scene_data::TextureFormat
+pub fn scene_data::TextureFormat::block(self) -> (u32, u64)
+pub fn scene_data::TextureFormat::is_compressed(self) -> bool
+pub fn scene_data::TextureFormat::level_bytes(self, u32, u32) -> u64
+impl core::clone::Clone for scene_data::TextureFormat
+pub fn scene_data::TextureFormat::clone(&self) -> scene_data::TextureFormat
+impl core::cmp::Eq for scene_data::TextureFormat
+impl core::cmp::PartialEq for scene_data::TextureFormat
+pub fn scene_data::TextureFormat::eq(&self, &scene_data::TextureFormat) -> bool
+impl core::fmt::Debug for scene_data::TextureFormat
+pub fn scene_data::TextureFormat::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::TextureFormat
+pub fn scene_data::TextureFormat::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::TextureFormat
+impl core::marker::StructuralPartialEq for scene_data::TextureFormat
+pub enum scene_data::Topology
+pub scene_data::Topology::Lines
+pub scene_data::Topology::Points
+pub scene_data::Topology::Triangles
+impl core::clone::Clone for scene_data::Topology
+pub fn scene_data::Topology::clone(&self) -> scene_data::Topology
+impl core::cmp::Eq for scene_data::Topology
+impl core::cmp::PartialEq for scene_data::Topology
+pub fn scene_data::Topology::eq(&self, &scene_data::Topology) -> bool
+impl core::fmt::Debug for scene_data::Topology
+pub fn scene_data::Topology::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::Topology
+pub fn scene_data::Topology::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::Topology
+impl core::marker::StructuralPartialEq for scene_data::Topology
+pub struct scene_data::Aabb
+pub scene_data::Aabb::max: glam::f32::vec3::Vec3
+pub scene_data::Aabb::min: glam::f32::vec3::Vec3
+impl scene_data::Aabb
+pub const scene_data::Aabb::EMPTY: scene_data::Aabb
+pub fn scene_data::Aabb::center(&self) -> glam::f32::vec3::Vec3
+pub fn scene_data::Aabb::from_points(&[glam::f32::vec3::Vec3]) -> Self
+pub fn scene_data::Aabb::is_empty(&self) -> bool
+pub fn scene_data::Aabb::is_valid(&self) -> bool
+pub fn scene_data::Aabb::new(glam::f32::vec3::Vec3, glam::f32::vec3::Vec3) -> Self
+pub fn scene_data::Aabb::size(&self) -> glam::f32::vec3::Vec3
+pub fn scene_data::Aabb::transformed(&self, &glam::f32::neon::mat4::Mat4) -> scene_data::Aabb
+pub fn scene_data::Aabb::union(self, scene_data::Aabb) -> scene_data::Aabb
+impl core::clone::Clone for scene_data::Aabb
+pub fn scene_data::Aabb::clone(&self) -> scene_data::Aabb
+impl core::cmp::PartialEq for scene_data::Aabb
+pub fn scene_data::Aabb::eq(&self, &scene_data::Aabb) -> bool
+impl core::fmt::Debug for scene_data::Aabb
+pub fn scene_data::Aabb::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::Aabb
+impl core::marker::StructuralPartialEq for scene_data::Aabb
+pub struct scene_data::CpuScene(_)
+impl scene_data::CpuScene
+pub fn scene_data::CpuScene::add_reader(&self) -> scene_data::ReaderGuard
+pub fn scene_data::CpuScene::limits(&self) -> &scene_data::SceneLimits
+pub fn scene_data::CpuScene::new() -> (scene_data::CpuScene, scene_data::SceneBuilder)
+pub fn scene_data::CpuScene::read(&self) -> scene_data::SceneRead<'_>
+pub fn scene_data::CpuScene::release_mesh_data(&self, scene_data::MeshId) -> bool
+pub fn scene_data::CpuScene::release_texture_data(&self, scene_data::TextureId) -> bool
+pub fn scene_data::CpuScene::revision(&self) -> u64
+pub fn scene_data::CpuScene::set_keep_cpu_data(&self, bool)
+pub fn scene_data::CpuScene::set_on_change(&self, impl core::ops::function::Fn() + core::marker::Send + core::marker::Sync + 'static)
+pub fn scene_data::CpuScene::with_limits(scene_data::SceneLimits) -> (scene_data::CpuScene, scene_data::SceneBuilder)
+impl core::clone::Clone for scene_data::CpuScene
+pub fn scene_data::CpuScene::clone(&self) -> scene_data::CpuScene
+#[non_exhaustive] pub struct scene_data::Material
+pub scene_data::Material::alpha: scene_data::AlphaMode
+pub scene_data::Material::double_sided: bool
+pub scene_data::Material::name: alloc::string::String
+pub scene_data::Material::params: scene_data::ParamBlock
+pub scene_data::Material::shading: scene_data::ShadingId
+pub scene_data::Material::source: scene_data::ShadingSource
+pub scene_data::Material::textures: alloc::vec::Vec<(scene_data::Slot, scene_data::TextureId)>
+impl scene_data::Material
+pub fn scene_data::Material::clay() -> Self
+pub fn scene_data::Material::new(scene_data::ShadingId, scene_data::ShadingSource) -> Self
+pub fn scene_data::Material::with_param(self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>, scene_data::ParamValue) -> Self
+pub fn scene_data::Material::with_texture(self, scene_data::Slot, scene_data::TextureId) -> Self
+impl core::clone::Clone for scene_data::Material
+pub fn scene_data::Material::clone(&self) -> scene_data::Material
+impl core::cmp::PartialEq for scene_data::Material
+pub fn scene_data::Material::eq(&self, &scene_data::Material) -> bool
+impl core::fmt::Debug for scene_data::Material
+pub fn scene_data::Material::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for scene_data::Material
+#[non_exhaustive] pub struct scene_data::MaterialEntry
+pub scene_data::MaterialEntry::changed: u64
+pub scene_data::MaterialEntry::material: scene_data::Material
+impl core::fmt::Debug for scene_data::MaterialEntry
+pub fn scene_data::MaterialEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct scene_data::MaterialId(pub u32)
+impl scene_data::MaterialId
+pub fn scene_data::MaterialId::index(self) -> usize
+impl core::clone::Clone for scene_data::MaterialId
+pub fn scene_data::MaterialId::clone(&self) -> scene_data::MaterialId
+impl core::cmp::Eq for scene_data::MaterialId
+impl core::cmp::Ord for scene_data::MaterialId
+pub fn scene_data::MaterialId::cmp(&self, &scene_data::MaterialId) -> core::cmp::Ordering
+impl core::cmp::PartialEq for scene_data::MaterialId
+pub fn scene_data::MaterialId::eq(&self, &scene_data::MaterialId) -> bool
+impl core::cmp::PartialOrd for scene_data::MaterialId
+pub fn scene_data::MaterialId::partial_cmp(&self, &scene_data::MaterialId) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for scene_data::MaterialId
+pub fn scene_data::MaterialId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::MaterialId
+pub fn scene_data::MaterialId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::MaterialId
+impl core::marker::StructuralPartialEq for scene_data::MaterialId
+#[non_exhaustive] pub struct scene_data::MeshData
+pub scene_data::MeshData::colors: core::option::Option<scene_data::Stream<glam::f32::neon::vec4::Vec4>>
+pub scene_data::MeshData::indices: scene_data::Indices
+pub scene_data::MeshData::normals: core::option::Option<scene_data::Stream<glam::f32::vec3::Vec3>>
+pub scene_data::MeshData::positions: scene_data::Stream<glam::f32::vec3::Vec3>
+pub scene_data::MeshData::tangents: core::option::Option<scene_data::Stream<glam::f32::neon::vec4::Vec4>>
+pub scene_data::MeshData::topology: scene_data::Topology
+pub scene_data::MeshData::uvs: core::option::Option<scene_data::Stream<glam::f32::vec2::Vec2>>
+impl scene_data::MeshData
+pub fn scene_data::MeshData::byte_len(&self) -> u64
+pub fn scene_data::MeshData::element_count(&self) -> usize
+pub fn scene_data::MeshData::new(impl core::convert::Into<scene_data::Stream<glam::f32::vec3::Vec3>>) -> Self
+pub fn scene_data::MeshData::validate(&self, &scene_data::SceneLimits) -> scene_data::Result<scene_data::MeshInfo>
+pub fn scene_data::MeshData::vertex_count(&self) -> usize
+pub fn scene_data::MeshData::with_indices(self, scene_data::Indices) -> Self
+impl core::clone::Clone for scene_data::MeshData
+pub fn scene_data::MeshData::clone(&self) -> scene_data::MeshData
+impl core::fmt::Debug for scene_data::MeshData
+pub fn scene_data::MeshData::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct scene_data::MeshEntry
+pub scene_data::MeshEntry::changed: u64
+pub scene_data::MeshEntry::data: core::option::Option<scene_data::MeshData>
+pub scene_data::MeshEntry::info: scene_data::MeshInfo
+pub scene_data::MeshEntry::uploaded_by: alloc::vec::Vec<u32>
+impl core::fmt::Debug for scene_data::MeshEntry
+pub fn scene_data::MeshEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct scene_data::MeshId(pub u32)
+impl scene_data::MeshId
+pub fn scene_data::MeshId::index(self) -> usize
+impl core::clone::Clone for scene_data::MeshId
+pub fn scene_data::MeshId::clone(&self) -> scene_data::MeshId
+impl core::cmp::Eq for scene_data::MeshId
+impl core::cmp::Ord for scene_data::MeshId
+pub fn scene_data::MeshId::cmp(&self, &scene_data::MeshId) -> core::cmp::Ordering
+impl core::cmp::PartialEq for scene_data::MeshId
+pub fn scene_data::MeshId::eq(&self, &scene_data::MeshId) -> bool
+impl core::cmp::PartialOrd for scene_data::MeshId
+pub fn scene_data::MeshId::partial_cmp(&self, &scene_data::MeshId) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for scene_data::MeshId
+pub fn scene_data::MeshId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::MeshId
+pub fn scene_data::MeshId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::MeshId
+impl core::marker::StructuralPartialEq for scene_data::MeshId
+#[non_exhaustive] pub struct scene_data::MeshInfo
+pub scene_data::MeshInfo::bounds: scene_data::Aabb
+pub scene_data::MeshInfo::bytes: u64
+pub scene_data::MeshInfo::elements: usize
+pub scene_data::MeshInfo::primitives: u64
+pub scene_data::MeshInfo::topology: scene_data::Topology
+pub scene_data::MeshInfo::vertices: usize
+impl core::clone::Clone for scene_data::MeshInfo
+pub fn scene_data::MeshInfo::clone(&self) -> scene_data::MeshInfo
+impl core::cmp::PartialEq for scene_data::MeshInfo
+pub fn scene_data::MeshInfo::eq(&self, &scene_data::MeshInfo) -> bool
+impl core::fmt::Debug for scene_data::MeshInfo
+pub fn scene_data::MeshInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::MeshInfo
+impl core::marker::StructuralPartialEq for scene_data::MeshInfo
+#[non_exhaustive] pub struct scene_data::Node
+pub scene_data::Node::material: core::option::Option<scene_data::MaterialId>
+pub scene_data::Node::mesh: core::option::Option<scene_data::MeshId>
+pub scene_data::Node::parent: core::option::Option<scene_data::NodeId>
+pub scene_data::Node::transform: glam::f32::neon::mat4::Mat4
+impl scene_data::Node
+pub fn scene_data::Node::group(glam::f32::neon::mat4::Mat4, core::option::Option<scene_data::NodeId>) -> Self
+pub fn scene_data::Node::mesh(scene_data::MeshId, core::option::Option<scene_data::MaterialId>, glam::f32::neon::mat4::Mat4, core::option::Option<scene_data::NodeId>) -> Self
+impl core::clone::Clone for scene_data::Node
+pub fn scene_data::Node::clone(&self) -> scene_data::Node
+impl core::cmp::PartialEq for scene_data::Node
+pub fn scene_data::Node::eq(&self, &scene_data::Node) -> bool
+impl core::fmt::Debug for scene_data::Node
+pub fn scene_data::Node::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::Node
+impl core::marker::StructuralPartialEq for scene_data::Node
+#[non_exhaustive] pub struct scene_data::NodeEntry
+pub scene_data::NodeEntry::changed: u64
+pub scene_data::NodeEntry::depth: u32
+pub scene_data::NodeEntry::node: scene_data::Node
+impl core::fmt::Debug for scene_data::NodeEntry
+pub fn scene_data::NodeEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct scene_data::NodeId(pub u32)
+impl scene_data::NodeId
+pub fn scene_data::NodeId::index(self) -> usize
+impl core::clone::Clone for scene_data::NodeId
+pub fn scene_data::NodeId::clone(&self) -> scene_data::NodeId
+impl core::cmp::Eq for scene_data::NodeId
+impl core::cmp::Ord for scene_data::NodeId
+pub fn scene_data::NodeId::cmp(&self, &scene_data::NodeId) -> core::cmp::Ordering
+impl core::cmp::PartialEq for scene_data::NodeId
+pub fn scene_data::NodeId::eq(&self, &scene_data::NodeId) -> bool
+impl core::cmp::PartialOrd for scene_data::NodeId
+pub fn scene_data::NodeId::partial_cmp(&self, &scene_data::NodeId) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for scene_data::NodeId
+pub fn scene_data::NodeId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::NodeId
+pub fn scene_data::NodeId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::NodeId
+impl core::marker::StructuralPartialEq for scene_data::NodeId
+pub struct scene_data::ParamBlock(_)
+impl scene_data::ParamBlock
+pub fn scene_data::ParamBlock::get(&self, &str) -> core::option::Option<scene_data::ParamValue>
+pub fn scene_data::ParamBlock::iter(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, scene_data::ParamValue)>
+pub fn scene_data::ParamBlock::set(&mut self, impl core::convert::Into<alloc::borrow::Cow<'static, str>>, scene_data::ParamValue)
+impl core::clone::Clone for scene_data::ParamBlock
+pub fn scene_data::ParamBlock::clone(&self) -> scene_data::ParamBlock
+impl core::cmp::PartialEq for scene_data::ParamBlock
+pub fn scene_data::ParamBlock::eq(&self, &scene_data::ParamBlock) -> bool
+impl core::default::Default for scene_data::ParamBlock
+pub fn scene_data::ParamBlock::default() -> scene_data::ParamBlock
+impl core::fmt::Debug for scene_data::ParamBlock
+pub fn scene_data::ParamBlock::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for scene_data::ParamBlock
+pub struct scene_data::ReaderGuard
+impl scene_data::ReaderGuard
+pub fn scene_data::ReaderGuard::release_mesh_data(&self, scene_data::MeshId) -> bool
+pub fn scene_data::ReaderGuard::release_texture_data(&self, scene_data::TextureId) -> bool
+impl core::fmt::Debug for scene_data::ReaderGuard
+pub fn scene_data::ReaderGuard::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::ops::drop::Drop for scene_data::ReaderGuard
+pub fn scene_data::ReaderGuard::drop(&mut self)
+pub struct scene_data::SceneBuilder
+impl scene_data::SceneBuilder
+pub fn scene_data::SceneBuilder::add_material(&mut self, scene_data::Material) -> scene_data::Result<scene_data::MaterialId>
+pub fn scene_data::SceneBuilder::add_mesh(&mut self, scene_data::MeshData) -> scene_data::Result<scene_data::MeshId>
+pub fn scene_data::SceneBuilder::add_node(&mut self, scene_data::Node) -> scene_data::Result<scene_data::NodeId>
+pub fn scene_data::SceneBuilder::finish(&mut self)
+pub fn scene_data::SceneBuilder::reserve_texture(&mut self) -> scene_data::Result<scene_data::TextureId>
+pub fn scene_data::SceneBuilder::scene(&self) -> &scene_data::CpuScene
+pub fn scene_data::SceneBuilder::set_bounds(&mut self, scene_data::Aabb) -> scene_data::Result<()>
+pub fn scene_data::SceneBuilder::set_texture(&self, scene_data::TextureId, scene_data::TextureData) -> scene_data::Result<()>
+pub fn scene_data::SceneBuilder::texture_sink(&self) -> scene_data::TextureSink
+impl core::ops::drop::Drop for scene_data::SceneBuilder
+pub fn scene_data::SceneBuilder::drop(&mut self)
+#[non_exhaustive] pub struct scene_data::SceneLimits
+pub scene_data::SceneLimits::max_bytes: u64
+pub scene_data::SceneLimits::max_drawn_triangles: u64
+pub scene_data::SceneLimits::max_materials: u32
+pub scene_data::SceneLimits::max_meshes: u32
+pub scene_data::SceneLimits::max_node_depth: u32
+pub scene_data::SceneLimits::max_nodes: u32
+pub scene_data::SceneLimits::max_texture_side: u32
+pub scene_data::SceneLimits::max_textures: u32
+pub scene_data::SceneLimits::max_triangles: u64
+pub scene_data::SceneLimits::max_vertices: u64
+impl core::clone::Clone for scene_data::SceneLimits
+pub fn scene_data::SceneLimits::clone(&self) -> scene_data::SceneLimits
+impl core::cmp::Eq for scene_data::SceneLimits
+impl core::cmp::PartialEq for scene_data::SceneLimits
+pub fn scene_data::SceneLimits::eq(&self, &scene_data::SceneLimits) -> bool
+impl core::default::Default for scene_data::SceneLimits
+pub fn scene_data::SceneLimits::default() -> Self
+impl core::fmt::Debug for scene_data::SceneLimits
+pub fn scene_data::SceneLimits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::SceneLimits
+impl core::marker::StructuralPartialEq for scene_data::SceneLimits
+pub struct scene_data::SceneRead<'a>(_)
+impl scene_data::SceneRead<'_>
+pub fn scene_data::SceneRead<'_>::bounds(&self) -> core::option::Option<scene_data::Aabb>
+pub fn scene_data::SceneRead<'_>::bounds_revision(&self) -> u64
+pub fn scene_data::SceneRead<'_>::cpu_bytes(&self) -> u64
+pub fn scene_data::SceneRead<'_>::geometry(&self) -> scene_data::GeometryState
+pub fn scene_data::SceneRead<'_>::material(&self, scene_data::MaterialId) -> core::option::Option<&scene_data::MaterialEntry>
+pub fn scene_data::SceneRead<'_>::materials(&self) -> &[scene_data::MaterialEntry]
+pub fn scene_data::SceneRead<'_>::mesh(&self, scene_data::MeshId) -> core::option::Option<&scene_data::MeshEntry>
+pub fn scene_data::SceneRead<'_>::meshes(&self) -> &[scene_data::MeshEntry]
+pub fn scene_data::SceneRead<'_>::nodes(&self) -> &[scene_data::NodeEntry]
+pub fn scene_data::SceneRead<'_>::revision(&self) -> u64
+pub fn scene_data::SceneRead<'_>::texture(&self, scene_data::TextureId) -> core::option::Option<&scene_data::TextureEntry>
+pub fn scene_data::SceneRead<'_>::textures(&self) -> &[scene_data::TextureEntry]
+pub fn scene_data::SceneRead<'_>::world_transforms(&self) -> alloc::vec::Vec<glam::f32::neon::mat4::Mat4>
+pub struct scene_data::ShadingId(_)
+impl scene_data::ShadingId
+pub const scene_data::ShadingId::BLINN_PHONG: Self
+pub const scene_data::ShadingId::CLAY: Self
+pub const scene_data::ShadingId::LAMBERT: Self
+pub const scene_data::ShadingId::MATCAP: Self
+pub const scene_data::ShadingId::MTOON: Self
+pub const scene_data::ShadingId::PBR: Self
+pub const scene_data::ShadingId::UNLIT: Self
+pub const scene_data::ShadingId::WIREFRAME: Self
+pub fn scene_data::ShadingId::as_str(&self) -> &str
+pub fn scene_data::ShadingId::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::clone::Clone for scene_data::ShadingId
+pub fn scene_data::ShadingId::clone(&self) -> scene_data::ShadingId
+impl core::cmp::Eq for scene_data::ShadingId
+impl core::cmp::PartialEq for scene_data::ShadingId
+pub fn scene_data::ShadingId::eq(&self, &scene_data::ShadingId) -> bool
+impl core::fmt::Debug for scene_data::ShadingId
+pub fn scene_data::ShadingId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::ShadingId
+pub fn scene_data::ShadingId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for scene_data::ShadingId
+pub struct scene_data::Slot(_)
+impl scene_data::Slot
+pub const scene_data::Slot::BASE_COLOR: Self
+pub const scene_data::Slot::EMISSIVE: Self
+pub const scene_data::Slot::METALLIC_ROUGHNESS: Self
+pub const scene_data::Slot::NORMAL: Self
+pub const scene_data::Slot::OCCLUSION: Self
+pub fn scene_data::Slot::as_str(&self) -> &str
+pub fn scene_data::Slot::new(impl core::convert::Into<alloc::borrow::Cow<'static, str>>) -> Self
+impl core::clone::Clone for scene_data::Slot
+pub fn scene_data::Slot::clone(&self) -> scene_data::Slot
+impl core::cmp::Eq for scene_data::Slot
+impl core::cmp::PartialEq for scene_data::Slot
+pub fn scene_data::Slot::eq(&self, &scene_data::Slot) -> bool
+impl core::fmt::Debug for scene_data::Slot
+pub fn scene_data::Slot::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::Slot
+pub fn scene_data::Slot::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::StructuralPartialEq for scene_data::Slot
+pub struct scene_data::Stream<T: bytemuck::pod::Pod>(_)
+impl<T: bytemuck::pod::Pod> scene_data::Stream<T>
+pub fn scene_data::Stream<T>::as_slice(&self) -> &[T]
+pub fn scene_data::Stream<T>::byte_len(&self) -> u64
+pub fn scene_data::Stream<T>::from_bytes(scene_data::Bytes, usize, usize) -> scene_data::Result<Self>
+pub fn scene_data::Stream<T>::is_borrowed(&self) -> bool
+pub fn scene_data::Stream<T>::is_empty(&self) -> bool
+pub fn scene_data::Stream<T>::len(&self) -> usize
+impl<T: bytemuck::pod::Pod> core::clone::Clone for scene_data::Stream<T>
+pub fn scene_data::Stream<T>::clone(&self) -> Self
+impl<T: bytemuck::pod::Pod> core::convert::From<&[T]> for scene_data::Stream<T>
+pub fn scene_data::Stream<T>::from(&[T]) -> Self
+impl<T: bytemuck::pod::Pod> core::convert::From<alloc::vec::Vec<T>> for scene_data::Stream<T>
+pub fn scene_data::Stream<T>::from(alloc::vec::Vec<T>) -> Self
+impl<T: bytemuck::pod::Pod> core::fmt::Debug for scene_data::Stream<T>
+pub fn scene_data::Stream<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct scene_data::TextureData
+pub scene_data::TextureData::color_space: scene_data::ColorSpace
+pub scene_data::TextureData::format: scene_data::TextureFormat
+pub scene_data::TextureData::height: u32
+pub scene_data::TextureData::levels: alloc::vec::Vec<scene_data::Stream<u8>>
+pub scene_data::TextureData::width: u32
+impl scene_data::TextureData
+pub fn scene_data::TextureData::byte_len(&self) -> u64
+pub fn scene_data::TextureData::level_size(&self, u32) -> (u32, u32)
+pub fn scene_data::TextureData::new(u32, u32, scene_data::TextureFormat, scene_data::ColorSpace, alloc::vec::Vec<scene_data::Stream<u8>>) -> Self
+pub fn scene_data::TextureData::rgba8(u32, u32, scene_data::ColorSpace, impl core::convert::Into<scene_data::Stream<u8>>) -> Self
+pub fn scene_data::TextureData::validate(&self, &scene_data::SceneLimits) -> scene_data::Result<scene_data::TextureInfo>
+impl core::clone::Clone for scene_data::TextureData
+pub fn scene_data::TextureData::clone(&self) -> scene_data::TextureData
+impl core::fmt::Debug for scene_data::TextureData
+pub fn scene_data::TextureData::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct scene_data::TextureEntry
+pub scene_data::TextureEntry::changed: u64
+pub scene_data::TextureEntry::data: core::option::Option<scene_data::TextureData>
+pub scene_data::TextureEntry::info: core::option::Option<scene_data::TextureInfo>
+pub scene_data::TextureEntry::uploaded_by: alloc::vec::Vec<u32>
+impl core::fmt::Debug for scene_data::TextureEntry
+pub fn scene_data::TextureEntry::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct scene_data::TextureId(pub u32)
+impl scene_data::TextureId
+pub fn scene_data::TextureId::index(self) -> usize
+impl core::clone::Clone for scene_data::TextureId
+pub fn scene_data::TextureId::clone(&self) -> scene_data::TextureId
+impl core::cmp::Eq for scene_data::TextureId
+impl core::cmp::Ord for scene_data::TextureId
+pub fn scene_data::TextureId::cmp(&self, &scene_data::TextureId) -> core::cmp::Ordering
+impl core::cmp::PartialEq for scene_data::TextureId
+pub fn scene_data::TextureId::eq(&self, &scene_data::TextureId) -> bool
+impl core::cmp::PartialOrd for scene_data::TextureId
+pub fn scene_data::TextureId::partial_cmp(&self, &scene_data::TextureId) -> core::option::Option<core::cmp::Ordering>
+impl core::fmt::Debug for scene_data::TextureId
+pub fn scene_data::TextureId::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for scene_data::TextureId
+pub fn scene_data::TextureId::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for scene_data::TextureId
+impl core::marker::StructuralPartialEq for scene_data::TextureId
+#[non_exhaustive] pub struct scene_data::TextureInfo
+pub scene_data::TextureInfo::bytes: u64
+pub scene_data::TextureInfo::color_space: scene_data::ColorSpace
+pub scene_data::TextureInfo::format: scene_data::TextureFormat
+pub scene_data::TextureInfo::height: u32
+pub scene_data::TextureInfo::levels: u32
+pub scene_data::TextureInfo::width: u32
+impl core::clone::Clone for scene_data::TextureInfo
+pub fn scene_data::TextureInfo::clone(&self) -> scene_data::TextureInfo
+impl core::cmp::Eq for scene_data::TextureInfo
+impl core::cmp::PartialEq for scene_data::TextureInfo
+pub fn scene_data::TextureInfo::eq(&self, &scene_data::TextureInfo) -> bool
+impl core::fmt::Debug for scene_data::TextureInfo
+pub fn scene_data::TextureInfo::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::TextureInfo
+impl core::marker::StructuralPartialEq for scene_data::TextureInfo
+pub struct scene_data::TextureSink(_)
+impl scene_data::TextureSink
+pub fn scene_data::TextureSink::set_texture(&self, scene_data::TextureId, scene_data::TextureData) -> scene_data::Result<()>
+impl core::clone::Clone for scene_data::TextureSink
+pub fn scene_data::TextureSink::clone(&self) -> scene_data::TextureSink
+pub type scene_data::Bytes = alloc::sync::Arc<(dyn core::convert::AsRef<[u8]> + core::marker::Send + core::marker::Sync)>
+pub type scene_data::Result<T> = core::result::Result<T, scene_data::Error>

@@ -1,0 +1,24 @@
+pub mod libfileparser_archives
+pub struct libfileparser_archives::GzipReader
+impl libfileparser_core::reader::Reader for libfileparser_archives::GzipReader
+pub fn libfileparser_archives::GzipReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_archives::GzipReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_archives::GzipReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_archives::TarReader
+impl libfileparser_core::reader::Reader for libfileparser_archives::TarReader
+pub fn libfileparser_archives::TarReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_archives::TarReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_archives::TarReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_archives::ZipReader
+impl libfileparser_core::reader::Reader for libfileparser_archives::ZipReader
+pub fn libfileparser_archives::ZipReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_archives::ZipReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_archives::ZipReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub const libfileparser_archives::MAX_FOLDER_FILES: usize
+pub fn libfileparser_archives::detect(&[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
+pub fn libfileparser_archives::is_zip(&[u8]) -> bool
+pub fn libfileparser_archives::open(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_archives::open_folder(&std::path::Path, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_archives::open_with(&str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_archives::package(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<core::option::Option<libfileparser_core::content::Content>>
+pub fn libfileparser_archives::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

@@ -325,6 +325,7 @@ pub fn extensions_table(used: &[String], required: &[String]) -> Option<OwnedTab
                 (ExtensionSupport::Unsupported, _) => "not supported",
                 (ExtensionSupport::Ignored, true) => "not read: the model may look different",
                 (ExtensionSupport::Ignored, false) => "not read",
+                _ => "unknown",
             };
             vec![name.clone(), if required { "yes" } else { "no" }.into(), support.into()]
         })

@@ -43,12 +43,14 @@ pub use text::{Highlights, hex, text};
 pub use tree::{TreeView, tree};
 
 /// Something a view asks the app to do.
+#[non_exhaustive]
 pub enum Action {
     /// Open entry `index` of a container as a file of its own.
     OpenEntry(Arc<dyn Container>, u64),
 }
 
 /// One content's view state, kept between frames.
+#[non_exhaustive]
 pub enum View {
     None,
     Raster(RasterView),

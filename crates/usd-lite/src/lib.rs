@@ -30,6 +30,7 @@ pub use usdz::Package;
 pub use value::{Reference, Specifier, Value};
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
+#[non_exhaustive]
 pub enum Error {
     #[error("not a valid USD file: {0}")]
     Format(String),
@@ -43,11 +44,26 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// Caps on what a file can make the reader allocate.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Limits {
     /// Elements in any one array or table (points, indices, tokens…).
     pub max_elements: usize,
     /// Bytes any one compressed block may expand to.
     pub max_decompressed: usize,
+}
+
+impl Limits {
+    /// Elements in any one array or table.
+    pub fn with_max_elements(mut self, n: usize) -> Self {
+        self.max_elements = n;
+        self
+    }
+
+    /// Bytes any one compressed block may expand to.
+    pub fn with_max_decompressed(mut self, n: usize) -> Self {
+        self.max_decompressed = n;
+        self
+    }
 }
 
 impl Default for Limits {
@@ -57,6 +73,7 @@ impl Default for Limits {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Format {
     Usda,
     Usdc,

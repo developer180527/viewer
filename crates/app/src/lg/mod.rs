@@ -240,7 +240,7 @@ impl ViewHost for Headless {
         });
         let (device, queue, rx) = match gpu {
             Ok(g) => g,
-            Err(e) => return Frame3d { error: Some(format!("no GPU for 3D: {e}")), ..Default::default() },
+            Err(e) => return Frame3d::failed(format!("no GPU for 3D: {e}")),
         };
         // A screenshot wants the finished model, so upload all of it now.
         draw_scene((rx, device, queue), st, scene, size, camera, background, true);
@@ -254,7 +254,7 @@ impl ViewHost for Headless {
             None => self.soft.register_texture(texture),
         };
         st.texture = Some((id, 0));
-        Frame3d { texture: Some(id), busy: false, error: None }
+        Frame3d::shown(Some(id), false)
     }
 }
 
@@ -429,7 +429,7 @@ impl ViewHost for Gpu<'_> {
                 None => st.texture = Some((self.renderer.register_texture(target), generation)),
             }
         }
-        Frame3d { texture: st.texture(), busy, error: None }
+        Frame3d::shown(st.texture(), busy)
     }
 }
 

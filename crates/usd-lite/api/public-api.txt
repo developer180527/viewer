@@ -1,0 +1,475 @@
+pub mod usd_lite
+pub mod usd_lite::compose
+#[non_exhaustive] pub enum usd_lite::compose::ArcKind
+pub usd_lite::compose::ArcKind::Payload
+pub usd_lite::compose::ArcKind::Reference
+pub usd_lite::compose::ArcKind::Sublayer
+impl usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::label(self) -> &'static str
+impl core::clone::Clone for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::clone(&self) -> usd_lite::compose::ArcKind
+impl core::cmp::Eq for usd_lite::compose::ArcKind
+impl core::cmp::PartialEq for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::eq(&self, &usd_lite::compose::ArcKind) -> bool
+impl core::fmt::Debug for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for usd_lite::compose::ArcKind
+impl core::marker::StructuralPartialEq for usd_lite::compose::ArcKind
+#[non_exhaustive] pub struct usd_lite::compose::FsResolver
+pub usd_lite::compose::FsResolver::max_bytes: u64
+impl core::default::Default for usd_lite::compose::FsResolver
+pub fn usd_lite::compose::FsResolver::default() -> Self
+impl usd_lite::compose::Resolver for usd_lite::compose::FsResolver
+pub fn usd_lite::compose::FsResolver::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+#[non_exhaustive] pub struct usd_lite::compose::LayerArc
+pub usd_lite::compose::LayerArc::asset: alloc::string::String
+pub usd_lite::compose::LayerArc::from: alloc::string::String
+pub usd_lite::compose::LayerArc::kind: usd_lite::compose::ArcKind
+pub usd_lite::compose::LayerArc::layer: core::option::Option<alloc::string::String>
+pub usd_lite::compose::LayerArc::prim_count: usize
+pub usd_lite::compose::LayerArc::prims: alloc::vec::Vec<alloc::string::String>
+impl core::clone::Clone for usd_lite::compose::LayerArc
+pub fn usd_lite::compose::LayerArc::clone(&self) -> usd_lite::compose::LayerArc
+impl core::cmp::Eq for usd_lite::compose::LayerArc
+impl core::cmp::PartialEq for usd_lite::compose::LayerArc
+pub fn usd_lite::compose::LayerArc::eq(&self, &usd_lite::compose::LayerArc) -> bool
+impl core::fmt::Debug for usd_lite::compose::LayerArc
+pub fn usd_lite::compose::LayerArc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::compose::LayerArc
+#[non_exhaustive] pub struct usd_lite::compose::PrimSource
+pub usd_lite::compose::PrimSource::layer: usize
+pub usd_lite::compose::PrimSource::line: core::option::Option<u32>
+pub usd_lite::compose::PrimSource::path: alloc::string::String
+impl core::clone::Clone for usd_lite::compose::PrimSource
+pub fn usd_lite::compose::PrimSource::clone(&self) -> usd_lite::compose::PrimSource
+impl core::cmp::Eq for usd_lite::compose::PrimSource
+impl core::cmp::PartialEq for usd_lite::compose::PrimSource
+pub fn usd_lite::compose::PrimSource::eq(&self, &usd_lite::compose::PrimSource) -> bool
+impl core::fmt::Debug for usd_lite::compose::PrimSource
+pub fn usd_lite::compose::PrimSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::compose::PrimSource
+#[non_exhaustive] pub struct usd_lite::compose::Stage
+pub usd_lite::compose::Stage::arcs: alloc::vec::Vec<usd_lite::compose::LayerArc>
+pub usd_lite::compose::Stage::layer: usd_lite::Layer
+pub usd_lite::compose::Stage::layers: alloc::vec::Vec<alloc::string::String>
+pub usd_lite::compose::Stage::sources: std::collections::hash::map::HashMap<alloc::string::String, usd_lite::compose::PrimSource>
+pub usd_lite::compose::Stage::variant_sets: alloc::vec::Vec<usd_lite::compose::VariantSet>
+pub usd_lite::compose::Stage::warnings: alloc::vec::Vec<alloc::string::String>
+#[non_exhaustive] pub struct usd_lite::compose::VariantSet
+pub usd_lite::compose::VariantSet::name: alloc::string::String
+pub usd_lite::compose::VariantSet::prim: alloc::string::String
+pub usd_lite::compose::VariantSet::selection: core::option::Option<alloc::string::String>
+pub usd_lite::compose::VariantSet::variants: alloc::vec::Vec<alloc::string::String>
+impl core::clone::Clone for usd_lite::compose::VariantSet
+pub fn usd_lite::compose::VariantSet::clone(&self) -> usd_lite::compose::VariantSet
+impl core::cmp::Eq for usd_lite::compose::VariantSet
+impl core::cmp::PartialEq for usd_lite::compose::VariantSet
+pub fn usd_lite::compose::VariantSet::eq(&self, &usd_lite::compose::VariantSet) -> bool
+impl core::fmt::Debug for usd_lite::compose::VariantSet
+pub fn usd_lite::compose::VariantSet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::compose::VariantSet
+pub const usd_lite::compose::MAX_ARC_PRIMS: usize
+pub trait usd_lite::compose::Resolver
+pub fn usd_lite::compose::Resolver::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+impl usd_lite::compose::Resolver for usd_lite::Package<'_>
+pub fn usd_lite::Package<'_>::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+impl usd_lite::compose::Resolver for usd_lite::compose::FsResolver
+pub fn usd_lite::compose::FsResolver::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+pub fn usd_lite::compose::anchored(&str, &str) -> alloc::string::String
+pub fn usd_lite::compose::compose(usd_lite::Layer, &str, &dyn usd_lite::compose::Resolver, &usd_lite::Limits) -> usd_lite::compose::Stage
+pub mod usd_lite::geom
+pub enum usd_lite::geom::Channel
+pub usd_lite::geom::Channel::A
+pub usd_lite::geom::Channel::B
+pub usd_lite::geom::Channel::G
+pub usd_lite::geom::Channel::R
+pub usd_lite::geom::Channel::Rgb
+pub usd_lite::geom::Channel::Rgba
+impl core::clone::Clone for usd_lite::geom::Channel
+pub fn usd_lite::geom::Channel::clone(&self) -> usd_lite::geom::Channel
+impl core::cmp::Eq for usd_lite::geom::Channel
+impl core::cmp::PartialEq for usd_lite::geom::Channel
+pub fn usd_lite::geom::Channel::eq(&self, &usd_lite::geom::Channel) -> bool
+impl core::fmt::Debug for usd_lite::geom::Channel
+pub fn usd_lite::geom::Channel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for usd_lite::geom::Channel
+impl core::marker::StructuralPartialEq for usd_lite::geom::Channel
+#[non_exhaustive] pub enum usd_lite::geom::Input<T>
+pub usd_lite::geom::Input::Texture(usd_lite::geom::TextureInput)
+pub usd_lite::geom::Input::Value(T)
+impl<T: core::clone::Clone> core::clone::Clone for usd_lite::geom::Input<T>
+pub fn usd_lite::geom::Input<T>::clone(&self) -> usd_lite::geom::Input<T>
+impl<T: core::cmp::PartialEq> core::cmp::PartialEq for usd_lite::geom::Input<T>
+pub fn usd_lite::geom::Input<T>::eq(&self, &usd_lite::geom::Input<T>) -> bool
+impl<T: core::cmp::PartialEq> core::marker::StructuralPartialEq for usd_lite::geom::Input<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for usd_lite::geom::Input<T>
+pub fn usd_lite::geom::Input<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub enum usd_lite::geom::Interpolation
+pub usd_lite::geom::Interpolation::Constant
+pub usd_lite::geom::Interpolation::FaceVarying
+pub usd_lite::geom::Interpolation::Uniform
+pub usd_lite::geom::Interpolation::Vertex
+impl core::clone::Clone for usd_lite::geom::Interpolation
+pub fn usd_lite::geom::Interpolation::clone(&self) -> usd_lite::geom::Interpolation
+impl core::cmp::Eq for usd_lite::geom::Interpolation
+impl core::cmp::PartialEq for usd_lite::geom::Interpolation
+pub fn usd_lite::geom::Interpolation::eq(&self, &usd_lite::geom::Interpolation) -> bool
+impl core::fmt::Debug for usd_lite::geom::Interpolation
+pub fn usd_lite::geom::Interpolation::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for usd_lite::geom::Interpolation
+impl core::marker::StructuralPartialEq for usd_lite::geom::Interpolation
+pub enum usd_lite::geom::UpAxis
+pub usd_lite::geom::UpAxis::Y
+pub usd_lite::geom::UpAxis::Z
+impl core::clone::Clone for usd_lite::geom::UpAxis
+pub fn usd_lite::geom::UpAxis::clone(&self) -> usd_lite::geom::UpAxis
+impl core::cmp::Eq for usd_lite::geom::UpAxis
+impl core::cmp::PartialEq for usd_lite::geom::UpAxis
+pub fn usd_lite::geom::UpAxis::eq(&self, &usd_lite::geom::UpAxis) -> bool
+impl core::fmt::Debug for usd_lite::geom::UpAxis
+pub fn usd_lite::geom::UpAxis::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for usd_lite::geom::UpAxis
+impl core::marker::StructuralPartialEq for usd_lite::geom::UpAxis
+#[non_exhaustive] pub struct usd_lite::geom::Mesh
+pub usd_lite::geom::Mesh::display_color: core::option::Option<usd_lite::geom::Primvar<[f32; 3]>>
+pub usd_lite::geom::Mesh::double_sided: bool
+pub usd_lite::geom::Mesh::face_vertex_counts: alloc::vec::Vec<i64>
+pub usd_lite::geom::Mesh::face_vertex_indices: alloc::vec::Vec<i64>
+pub usd_lite::geom::Mesh::left_handed: bool
+pub usd_lite::geom::Mesh::normals: core::option::Option<usd_lite::geom::Primvar<[f32; 3]>>
+pub usd_lite::geom::Mesh::points: alloc::vec::Vec<[f32; 3]>
+pub usd_lite::geom::Mesh::subsets: alloc::vec::Vec<usd_lite::geom::Subset>
+pub usd_lite::geom::Mesh::uvs: core::option::Option<usd_lite::geom::Primvar<[f32; 2]>>
+impl core::clone::Clone for usd_lite::geom::Mesh
+pub fn usd_lite::geom::Mesh::clone(&self) -> usd_lite::geom::Mesh
+impl core::fmt::Debug for usd_lite::geom::Mesh
+pub fn usd_lite::geom::Mesh::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct usd_lite::geom::PreviewSurface
+pub usd_lite::geom::PreviewSurface::diffuse_color: usd_lite::geom::Input<[f64; 3]>
+pub usd_lite::geom::PreviewSurface::emissive_color: usd_lite::geom::Input<[f64; 3]>
+pub usd_lite::geom::PreviewSurface::metallic: usd_lite::geom::Input<f64>
+pub usd_lite::geom::PreviewSurface::normal: core::option::Option<usd_lite::geom::TextureInput>
+pub usd_lite::geom::PreviewSurface::occlusion: core::option::Option<usd_lite::geom::TextureInput>
+pub usd_lite::geom::PreviewSurface::opacity: usd_lite::geom::Input<f64>
+pub usd_lite::geom::PreviewSurface::opacity_threshold: f64
+pub usd_lite::geom::PreviewSurface::roughness: usd_lite::geom::Input<f64>
+pub usd_lite::geom::PreviewSurface::specular_workflow: bool
+impl core::clone::Clone for usd_lite::geom::PreviewSurface
+pub fn usd_lite::geom::PreviewSurface::clone(&self) -> usd_lite::geom::PreviewSurface
+impl core::cmp::PartialEq for usd_lite::geom::PreviewSurface
+pub fn usd_lite::geom::PreviewSurface::eq(&self, &usd_lite::geom::PreviewSurface) -> bool
+impl core::fmt::Debug for usd_lite::geom::PreviewSurface
+pub fn usd_lite::geom::PreviewSurface::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::geom::PreviewSurface
+#[non_exhaustive] pub struct usd_lite::geom::Primvar<T>
+pub usd_lite::geom::Primvar::indices: core::option::Option<alloc::vec::Vec<i32>>
+pub usd_lite::geom::Primvar::interpolation: usd_lite::geom::Interpolation
+pub usd_lite::geom::Primvar::values: alloc::vec::Vec<T>
+impl<T: core::marker::Copy> usd_lite::geom::Primvar<T>
+pub fn usd_lite::geom::Primvar<T>::at(&self, usize, usize, usize) -> core::option::Option<T>
+impl<T: core::clone::Clone> core::clone::Clone for usd_lite::geom::Primvar<T>
+pub fn usd_lite::geom::Primvar<T>::clone(&self) -> usd_lite::geom::Primvar<T>
+impl<T: core::fmt::Debug> core::fmt::Debug for usd_lite::geom::Primvar<T>
+pub fn usd_lite::geom::Primvar<T>::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct usd_lite::geom::Subset
+pub usd_lite::geom::Subset::faces: alloc::vec::Vec<i64>
+pub usd_lite::geom::Subset::material: core::option::Option<alloc::string::String>
+pub usd_lite::geom::Subset::name: alloc::string::String
+impl core::clone::Clone for usd_lite::geom::Subset
+pub fn usd_lite::geom::Subset::clone(&self) -> usd_lite::geom::Subset
+impl core::fmt::Debug for usd_lite::geom::Subset
+pub fn usd_lite::geom::Subset::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct usd_lite::geom::TextureInput
+pub usd_lite::geom::TextureInput::bias: [f64; 4]
+pub usd_lite::geom::TextureInput::channel: usd_lite::geom::Channel
+pub usd_lite::geom::TextureInput::file: alloc::string::String
+pub usd_lite::geom::TextureInput::scale: [f64; 4]
+pub usd_lite::geom::TextureInput::srgb: core::option::Option<bool>
+impl core::clone::Clone for usd_lite::geom::TextureInput
+pub fn usd_lite::geom::TextureInput::clone(&self) -> usd_lite::geom::TextureInput
+impl core::cmp::PartialEq for usd_lite::geom::TextureInput
+pub fn usd_lite::geom::TextureInput::eq(&self, &usd_lite::geom::TextureInput) -> bool
+impl core::fmt::Debug for usd_lite::geom::TextureInput
+pub fn usd_lite::geom::TextureInput::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::geom::TextureInput
+pub const usd_lite::geom::IDENTITY: usd_lite::geom::Matrix
+pub fn usd_lite::geom::bound_material(&usd_lite::Layer, &str, bool) -> core::option::Option<alloc::string::String>
+pub fn usd_lite::geom::inverse(&usd_lite::geom::Matrix) -> usd_lite::geom::Matrix
+pub fn usd_lite::geom::is_drawn(&usd_lite::Layer, &str) -> bool
+pub fn usd_lite::geom::local_transform(&usd_lite::Layer, &str) -> (usd_lite::geom::Matrix, bool)
+pub fn usd_lite::geom::mesh(&usd_lite::Layer, &str) -> core::option::Option<usd_lite::geom::Mesh>
+pub fn usd_lite::geom::meters_per_unit(&usd_lite::Layer) -> f64
+pub fn usd_lite::geom::mul(&usd_lite::geom::Matrix, &usd_lite::geom::Matrix) -> usd_lite::geom::Matrix
+pub fn usd_lite::geom::preview_surface(&usd_lite::Layer, &str) -> core::option::Option<usd_lite::geom::PreviewSurface>
+pub fn usd_lite::geom::up_axis(&usd_lite::Layer) -> usd_lite::geom::UpAxis
+pub type usd_lite::geom::Matrix = [f64; 16]
+#[non_exhaustive] pub enum usd_lite::ArcKind
+pub usd_lite::ArcKind::Payload
+pub usd_lite::ArcKind::Reference
+pub usd_lite::ArcKind::Sublayer
+impl usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::label(self) -> &'static str
+impl core::clone::Clone for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::clone(&self) -> usd_lite::compose::ArcKind
+impl core::cmp::Eq for usd_lite::compose::ArcKind
+impl core::cmp::PartialEq for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::eq(&self, &usd_lite::compose::ArcKind) -> bool
+impl core::fmt::Debug for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for usd_lite::compose::ArcKind
+pub fn usd_lite::compose::ArcKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for usd_lite::compose::ArcKind
+impl core::marker::StructuralPartialEq for usd_lite::compose::ArcKind
+#[non_exhaustive] pub enum usd_lite::Error
+pub usd_lite::Error::Format(alloc::string::String)
+pub usd_lite::Error::Limit(alloc::string::String)
+pub usd_lite::Error::Unsupported(alloc::string::String)
+impl core::clone::Clone for usd_lite::Error
+pub fn usd_lite::Error::clone(&self) -> usd_lite::Error
+impl core::cmp::PartialEq for usd_lite::Error
+pub fn usd_lite::Error::eq(&self, &usd_lite::Error) -> bool
+impl core::error::Error for usd_lite::Error
+impl core::fmt::Debug for usd_lite::Error
+pub fn usd_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for usd_lite::Error
+pub fn usd_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::Error
+#[non_exhaustive] pub enum usd_lite::Format
+pub usd_lite::Format::Usda
+pub usd_lite::Format::Usdc
+pub usd_lite::Format::Usdz
+impl core::clone::Clone for usd_lite::Format
+pub fn usd_lite::Format::clone(&self) -> usd_lite::Format
+impl core::cmp::Eq for usd_lite::Format
+impl core::cmp::PartialEq for usd_lite::Format
+pub fn usd_lite::Format::eq(&self, &usd_lite::Format) -> bool
+impl core::fmt::Debug for usd_lite::Format
+pub fn usd_lite::Format::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for usd_lite::Format
+impl core::marker::StructuralPartialEq for usd_lite::Format
+#[non_exhaustive] pub enum usd_lite::SpecType
+pub usd_lite::SpecType::Attribute
+pub usd_lite::SpecType::Connection
+pub usd_lite::SpecType::Expression
+pub usd_lite::SpecType::Mapper
+pub usd_lite::SpecType::MapperArg
+pub usd_lite::SpecType::Prim
+pub usd_lite::SpecType::PseudoRoot
+pub usd_lite::SpecType::Relationship
+pub usd_lite::SpecType::RelationshipTarget
+pub usd_lite::SpecType::Unknown
+pub usd_lite::SpecType::Variant
+pub usd_lite::SpecType::VariantSet
+impl core::clone::Clone for usd_lite::SpecType
+pub fn usd_lite::SpecType::clone(&self) -> usd_lite::SpecType
+impl core::cmp::Eq for usd_lite::SpecType
+impl core::cmp::PartialEq for usd_lite::SpecType
+pub fn usd_lite::SpecType::eq(&self, &usd_lite::SpecType) -> bool
+impl core::fmt::Debug for usd_lite::SpecType
+pub fn usd_lite::SpecType::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for usd_lite::SpecType
+impl core::marker::StructuralPartialEq for usd_lite::SpecType
+pub enum usd_lite::Specifier
+pub usd_lite::Specifier::Class
+pub usd_lite::Specifier::Def
+pub usd_lite::Specifier::Over
+impl core::clone::Clone for usd_lite::Specifier
+pub fn usd_lite::Specifier::clone(&self) -> usd_lite::Specifier
+impl core::cmp::Eq for usd_lite::Specifier
+impl core::cmp::PartialEq for usd_lite::Specifier
+pub fn usd_lite::Specifier::eq(&self, &usd_lite::Specifier) -> bool
+impl core::fmt::Debug for usd_lite::Specifier
+pub fn usd_lite::Specifier::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for usd_lite::Specifier
+impl core::marker::StructuralPartialEq for usd_lite::Specifier
+#[non_exhaustive] pub enum usd_lite::Value
+pub usd_lite::Value::Asset(alloc::string::String)
+pub usd_lite::Value::AssetArray(alloc::vec::Vec<alloc::string::String>)
+pub usd_lite::Value::Blocked
+pub usd_lite::Value::Bool(bool)
+pub usd_lite::Value::BoolArray(alloc::sync::Arc<[bool]>)
+pub usd_lite::Value::Dictionary(alloc::vec::Vec<(alloc::string::String, usd_lite::Value)>)
+pub usd_lite::Value::DoubleArray(alloc::sync::Arc<[f64]>)
+pub usd_lite::Value::Float(f64)
+pub usd_lite::Value::FloatArray(alloc::sync::Arc<[f32]>)
+pub usd_lite::Value::Int(i64)
+pub usd_lite::Value::Int64Array(alloc::sync::Arc<[i64]>)
+pub usd_lite::Value::IntArray(alloc::sync::Arc<[i32]>)
+pub usd_lite::Value::Matrix4([f64; 16])
+pub usd_lite::Value::Matrix4Array(alloc::sync::Arc<[[f64; 16]]>)
+pub usd_lite::Value::Other(&'static str)
+pub usd_lite::Value::Paths(alloc::vec::Vec<alloc::string::String>)
+pub usd_lite::Value::Quat([f64; 4])
+pub usd_lite::Value::QuatArray(alloc::sync::Arc<[[f32; 4]]>)
+pub usd_lite::Value::References(alloc::vec::Vec<usd_lite::Reference>)
+pub usd_lite::Value::Specifier(usd_lite::Specifier)
+pub usd_lite::Value::String(alloc::string::String)
+pub usd_lite::Value::StringArray(alloc::vec::Vec<alloc::string::String>)
+pub usd_lite::Value::TimeSamples(alloc::vec::Vec<(f64, usd_lite::Value)>)
+pub usd_lite::Value::Token(alloc::string::String)
+pub usd_lite::Value::TokenArray(alloc::vec::Vec<alloc::string::String>)
+pub usd_lite::Value::Vec2([f64; 2])
+pub usd_lite::Value::Vec2Array(alloc::sync::Arc<[[f32; 2]]>)
+pub usd_lite::Value::Vec3([f64; 3])
+pub usd_lite::Value::Vec3Array(alloc::sync::Arc<[[f32; 3]]>)
+pub usd_lite::Value::Vec4([f64; 4])
+pub usd_lite::Value::Vec4Array(alloc::sync::Arc<[[f32; 4]]>)
+impl usd_lite::Value
+pub fn usd_lite::Value::as_bool(&self) -> core::option::Option<bool>
+pub fn usd_lite::Value::as_f64(&self) -> core::option::Option<f64>
+pub fn usd_lite::Value::as_ints(&self) -> core::option::Option<alloc::vec::Vec<i64>>
+pub fn usd_lite::Value::as_matrix4(&self) -> core::option::Option<[f64; 16]>
+pub fn usd_lite::Value::as_paths(&self) -> core::option::Option<&[alloc::string::String]>
+pub fn usd_lite::Value::as_str(&self) -> core::option::Option<&str>
+pub fn usd_lite::Value::as_tokens(&self) -> core::option::Option<&[alloc::string::String]>
+pub fn usd_lite::Value::as_vec2_array(&self) -> core::option::Option<&[[f32; 2]]>
+pub fn usd_lite::Value::as_vec3(&self) -> core::option::Option<[f64; 3]>
+pub fn usd_lite::Value::as_vec3_array(&self) -> core::option::Option<&[[f32; 3]]>
+pub fn usd_lite::Value::as_vec4(&self) -> core::option::Option<[f64; 4]>
+impl core::clone::Clone for usd_lite::Value
+pub fn usd_lite::Value::clone(&self) -> usd_lite::Value
+impl core::cmp::PartialEq for usd_lite::Value
+pub fn usd_lite::Value::eq(&self, &usd_lite::Value) -> bool
+impl core::fmt::Debug for usd_lite::Value
+pub fn usd_lite::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::Value
+#[non_exhaustive] pub struct usd_lite::FsResolver
+pub usd_lite::FsResolver::max_bytes: u64
+impl core::default::Default for usd_lite::compose::FsResolver
+pub fn usd_lite::compose::FsResolver::default() -> Self
+impl usd_lite::compose::Resolver for usd_lite::compose::FsResolver
+pub fn usd_lite::compose::FsResolver::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+#[non_exhaustive] pub struct usd_lite::Layer
+pub usd_lite::Layer::lines: std::collections::hash::map::HashMap<alloc::string::String, u32>
+pub usd_lite::Layer::specs: std::collections::hash::map::HashMap<alloc::string::String, usd_lite::Spec>
+impl usd_lite::Layer
+pub fn usd_lite::Layer::attr(&self, &str, &str) -> core::option::Option<&usd_lite::Value>
+pub fn usd_lite::Layer::attr_meta(&self, &str, &str, &str) -> core::option::Option<&usd_lite::Value>
+pub fn usd_lite::Layer::children(&self, &str) -> alloc::vec::Vec<alloc::string::String>
+pub fn usd_lite::Layer::connections(&self, &str, &str) -> &[alloc::string::String]
+pub fn usd_lite::Layer::field(&self, &str, &str) -> core::option::Option<&usd_lite::Value>
+pub fn usd_lite::Layer::has_property(&self, &str, &str) -> bool
+pub fn usd_lite::Layer::metadata(&self, &str) -> core::option::Option<&usd_lite::Value>
+pub fn usd_lite::Layer::root_prims(&self) -> alloc::vec::Vec<alloc::string::String>
+pub fn usd_lite::Layer::spec(&self, &str) -> core::option::Option<&usd_lite::Spec>
+pub fn usd_lite::Layer::targets(&self, &str, &str) -> &[alloc::string::String]
+pub fn usd_lite::Layer::type_name(&self, &str) -> core::option::Option<&str>
+impl usd_lite::Layer
+pub fn usd_lite::Layer::composition_arcs(&self) -> alloc::vec::Vec<&'static str>
+impl core::clone::Clone for usd_lite::Layer
+pub fn usd_lite::Layer::clone(&self) -> usd_lite::Layer
+impl core::default::Default for usd_lite::Layer
+pub fn usd_lite::Layer::default() -> usd_lite::Layer
+impl core::fmt::Debug for usd_lite::Layer
+pub fn usd_lite::Layer::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct usd_lite::LayerArc
+pub usd_lite::LayerArc::asset: alloc::string::String
+pub usd_lite::LayerArc::from: alloc::string::String
+pub usd_lite::LayerArc::kind: usd_lite::compose::ArcKind
+pub usd_lite::LayerArc::layer: core::option::Option<alloc::string::String>
+pub usd_lite::LayerArc::prim_count: usize
+pub usd_lite::LayerArc::prims: alloc::vec::Vec<alloc::string::String>
+impl core::clone::Clone for usd_lite::compose::LayerArc
+pub fn usd_lite::compose::LayerArc::clone(&self) -> usd_lite::compose::LayerArc
+impl core::cmp::Eq for usd_lite::compose::LayerArc
+impl core::cmp::PartialEq for usd_lite::compose::LayerArc
+pub fn usd_lite::compose::LayerArc::eq(&self, &usd_lite::compose::LayerArc) -> bool
+impl core::fmt::Debug for usd_lite::compose::LayerArc
+pub fn usd_lite::compose::LayerArc::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::compose::LayerArc
+#[non_exhaustive] pub struct usd_lite::Limits
+pub usd_lite::Limits::max_decompressed: usize
+pub usd_lite::Limits::max_elements: usize
+impl usd_lite::Limits
+pub fn usd_lite::Limits::with_max_decompressed(self, usize) -> Self
+pub fn usd_lite::Limits::with_max_elements(self, usize) -> Self
+impl core::clone::Clone for usd_lite::Limits
+pub fn usd_lite::Limits::clone(&self) -> usd_lite::Limits
+impl core::cmp::Eq for usd_lite::Limits
+impl core::cmp::PartialEq for usd_lite::Limits
+pub fn usd_lite::Limits::eq(&self, &usd_lite::Limits) -> bool
+impl core::default::Default for usd_lite::Limits
+pub fn usd_lite::Limits::default() -> Self
+impl core::fmt::Debug for usd_lite::Limits
+pub fn usd_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for usd_lite::Limits
+impl core::marker::StructuralPartialEq for usd_lite::Limits
+#[non_exhaustive] pub struct usd_lite::Package<'a>
+pub usd_lite::Package::layer: usd_lite::Layer
+pub usd_lite::Package::root: alloc::string::String
+impl<'a> usd_lite::Package<'a>
+pub fn usd_lite::Package<'a>::file(&self, &str) -> core::option::Option<&'a [u8]>
+pub fn usd_lite::Package<'a>::file_names(&self) -> impl core::iter::traits::iterator::Iterator<Item = &str>
+pub fn usd_lite::Package<'a>::files(&self) -> impl core::iter::traits::iterator::Iterator<Item = (&str, core::ops::range::Range<usize>)>
+pub fn usd_lite::Package<'a>::open(&'a [u8], &usd_lite::Limits) -> usd_lite::Result<Self>
+impl usd_lite::compose::Resolver for usd_lite::Package<'_>
+pub fn usd_lite::Package<'_>::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+#[non_exhaustive] pub struct usd_lite::PrimSource
+pub usd_lite::PrimSource::layer: usize
+pub usd_lite::PrimSource::line: core::option::Option<u32>
+pub usd_lite::PrimSource::path: alloc::string::String
+impl core::clone::Clone for usd_lite::compose::PrimSource
+pub fn usd_lite::compose::PrimSource::clone(&self) -> usd_lite::compose::PrimSource
+impl core::cmp::Eq for usd_lite::compose::PrimSource
+impl core::cmp::PartialEq for usd_lite::compose::PrimSource
+pub fn usd_lite::compose::PrimSource::eq(&self, &usd_lite::compose::PrimSource) -> bool
+impl core::fmt::Debug for usd_lite::compose::PrimSource
+pub fn usd_lite::compose::PrimSource::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::compose::PrimSource
+#[non_exhaustive] pub struct usd_lite::Reference
+pub usd_lite::Reference::asset: alloc::string::String
+pub usd_lite::Reference::prim: core::option::Option<alloc::string::String>
+impl core::clone::Clone for usd_lite::Reference
+pub fn usd_lite::Reference::clone(&self) -> usd_lite::Reference
+impl core::cmp::Eq for usd_lite::Reference
+impl core::cmp::PartialEq for usd_lite::Reference
+pub fn usd_lite::Reference::eq(&self, &usd_lite::Reference) -> bool
+impl core::fmt::Debug for usd_lite::Reference
+pub fn usd_lite::Reference::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::Reference
+#[non_exhaustive] pub struct usd_lite::Spec
+pub usd_lite::Spec::fields: alloc::vec::Vec<(alloc::string::String, usd_lite::Value)>
+pub usd_lite::Spec::spec_type: usd_lite::SpecType
+impl usd_lite::Spec
+pub fn usd_lite::Spec::field(&self, &str) -> core::option::Option<&usd_lite::Value>
+pub fn usd_lite::Spec::new(usd_lite::SpecType, alloc::vec::Vec<(alloc::string::String, usd_lite::Value)>) -> Self
+impl core::clone::Clone for usd_lite::Spec
+pub fn usd_lite::Spec::clone(&self) -> usd_lite::Spec
+impl core::fmt::Debug for usd_lite::Spec
+pub fn usd_lite::Spec::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct usd_lite::Stage
+pub usd_lite::Stage::arcs: alloc::vec::Vec<usd_lite::compose::LayerArc>
+pub usd_lite::Stage::layer: usd_lite::Layer
+pub usd_lite::Stage::layers: alloc::vec::Vec<alloc::string::String>
+pub usd_lite::Stage::sources: std::collections::hash::map::HashMap<alloc::string::String, usd_lite::compose::PrimSource>
+pub usd_lite::Stage::variant_sets: alloc::vec::Vec<usd_lite::compose::VariantSet>
+pub usd_lite::Stage::warnings: alloc::vec::Vec<alloc::string::String>
+#[non_exhaustive] pub struct usd_lite::VariantSet
+pub usd_lite::VariantSet::name: alloc::string::String
+pub usd_lite::VariantSet::prim: alloc::string::String
+pub usd_lite::VariantSet::selection: core::option::Option<alloc::string::String>
+pub usd_lite::VariantSet::variants: alloc::vec::Vec<alloc::string::String>
+impl core::clone::Clone for usd_lite::compose::VariantSet
+pub fn usd_lite::compose::VariantSet::clone(&self) -> usd_lite::compose::VariantSet
+impl core::cmp::Eq for usd_lite::compose::VariantSet
+impl core::cmp::PartialEq for usd_lite::compose::VariantSet
+pub fn usd_lite::compose::VariantSet::eq(&self, &usd_lite::compose::VariantSet) -> bool
+impl core::fmt::Debug for usd_lite::compose::VariantSet
+pub fn usd_lite::compose::VariantSet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::compose::VariantSet
+pub trait usd_lite::Resolver
+pub fn usd_lite::Resolver::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+impl usd_lite::compose::Resolver for usd_lite::Package<'_>
+pub fn usd_lite::Package<'_>::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+impl usd_lite::compose::Resolver for usd_lite::compose::FsResolver
+pub fn usd_lite::compose::FsResolver::resolve(&self, &str, &str) -> core::option::Option<(alloc::string::String, alloc::vec::Vec<u8>)>
+pub fn usd_lite::anchored(&str, &str) -> alloc::string::String
+pub fn usd_lite::child_path(&str, &str) -> alloc::string::String
+pub fn usd_lite::compose(usd_lite::Layer, &str, &dyn usd_lite::compose::Resolver, &usd_lite::Limits) -> usd_lite::compose::Stage
+pub fn usd_lite::detect(&[u8]) -> core::option::Option<usd_lite::Format>
+pub fn usd_lite::property_path(&str, &str) -> alloc::string::String
+pub fn usd_lite::read_layer(&[u8], &usd_lite::Limits) -> usd_lite::Result<usd_lite::Layer>
+pub fn usd_lite::split_property(&str) -> core::option::Option<(&str, &str)>
+pub type usd_lite::Result<T> = core::result::Result<T, usd_lite::Error>

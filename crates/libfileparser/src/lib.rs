@@ -39,6 +39,7 @@ pub fn detect(header: &[u8], name: &str) -> Vec<(&'static dyn Reader, Detection)
 
 /// A reader that was tried and didn't read the file, and why.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct Attempt {
     pub reader: &'static str,
     pub error: ParseError,

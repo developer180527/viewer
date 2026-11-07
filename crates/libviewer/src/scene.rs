@@ -93,7 +93,7 @@ pub fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, host: &mut dyn Hos
         host.render_scene(&mut st.gpu, doc.scene(), size, &camera, bg)
     } else {
         // The first frame has no rect yet; the next one will.
-        Frame3d { busy: true, ..Default::default() }
+        Frame3d::pending()
     };
     if !frame.busy && pending() == 0 && frame.texture.is_some() && !std::mem::replace(&mut st.settled, true) {
         // All uploaded: let the host free the upload staging.

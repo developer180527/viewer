@@ -1,0 +1,16 @@
+pub mod libfileparser_images
+pub struct libfileparser_images::ImageReader
+impl libfileparser_core::reader::Reader for libfileparser_images::ImageReader
+pub fn libfileparser_images::ImageReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_images::ImageReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_images::ImageReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_images::SvgReader
+impl libfileparser_core::reader::Reader for libfileparser_images::SvgReader
+pub fn libfileparser_images::SvgReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_images::SvgReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_images::SvgReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_images::band_rows(u32, u32) -> u32
+pub fn libfileparser_images::detect(&[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
+pub fn libfileparser_images::open(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_images::open_with(&str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_images::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

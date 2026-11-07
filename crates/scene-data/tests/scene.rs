@@ -57,7 +57,8 @@ fn mesh_validation_rejects_what_the_gpu_would_trust() {
 
 #[test]
 fn limits_are_enforced_and_leave_the_scene_untouched() {
-    let limits = SceneLimits { max_triangles: 2, max_drawn_triangles: 3, max_node_depth: 2, ..Default::default() };
+    let mut limits = SceneLimits::default();
+    (limits.max_triangles, limits.max_drawn_triangles, limits.max_node_depth) = (2, 3, 2);
     let (scene, mut b) = CpuScene::with_limits(limits);
     let quad = b.add_mesh(quad_indexed()).unwrap();
     assert_eq!(b.add_mesh(triangle()), Err(Error::LimitExceeded { what: "triangles", limit: 2 }));
@@ -80,7 +81,8 @@ fn limits_are_enforced_and_leave_the_scene_untouched() {
 
 #[test]
 fn scene_bytes_limit_counts_textures_too() {
-    let limits = SceneLimits { max_bytes: 100, ..Default::default() };
+    let mut limits = SceneLimits::default();
+    limits.max_bytes = 100;
     let (_scene, mut b) = CpuScene::with_limits(limits);
     let t = b.reserve_texture().unwrap();
     let big = TextureData::rgba8(8, 8, ColorSpace::Srgb, vec![0u8; 256]);
@@ -244,13 +246,7 @@ fn texture_levels_and_compressed_sizes_are_checked() {
     assert_eq!(t.validate(&limits), Err(Error::BadTexture("level count")));
 
     // BC1: 4×4 blocks of 8 bytes. Level 0 must be whole blocks; smaller mips round up.
-    let bc1 = |w, h, levels: Vec<usize>| TextureData {
-        width: w,
-        height: h,
-        format: TextureFormat::Bc1,
-        color_space: ColorSpace::Srgb,
-        levels: levels.into_iter().map(|n| vec![0u8; n].into()).collect(),
-    };
+    let bc1 = |w, h, levels: Vec<usize>| TextureData::new(w, h, TextureFormat::Bc1, ColorSpace::Srgb, levels.into_iter().map(|n| vec![0u8; n].into()).collect());
     assert!(bc1(8, 4, vec![16, 8, 8, 8]).validate(&limits).is_ok());
     assert!(matches!(bc1(5, 5, vec![32]).validate(&limits), Err(Error::BadTexture(_))), "wgpu would reject 5×5 BC1");
 
@@ -271,14 +267,12 @@ fn random_input_never_panics_or_exceeds_limits() {
         seed % n.max(1)
     };
     for _ in 0..300 {
-        let limits = SceneLimits {
-            max_triangles: next(200),
-            max_drawn_triangles: next(400),
-            max_vertices: next(300),
-            max_node_depth: next(6) as u32,
-            max_nodes: next(40) as u32,
-            ..Default::default()
-        };
+        let mut limits = SceneLimits::default();
+        limits.max_triangles = next(200);
+        limits.max_drawn_triangles = next(400);
+        limits.max_vertices = next(300);
+        limits.max_node_depth = next(6) as u32;
+        limits.max_nodes = next(40) as u32;
         let (scene, mut b) = CpuScene::with_limits(limits);
         for _ in 0..next(30) {
             let verts = next(40) as usize;

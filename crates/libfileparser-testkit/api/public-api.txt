@@ -1,0 +1,58 @@
+pub mod libfileparser_testkit
+pub struct libfileparser_testkit::CountingNotify(_)
+impl libfileparser_testkit::CountingNotify
+pub fn libfileparser_testkit::CountingNotify::count(&self) -> usize
+impl core::clone::Clone for libfileparser_testkit::CountingNotify
+pub fn libfileparser_testkit::CountingNotify::clone(&self) -> libfileparser_testkit::CountingNotify
+impl core::default::Default for libfileparser_testkit::CountingNotify
+pub fn libfileparser_testkit::CountingNotify::default() -> libfileparser_testkit::CountingNotify
+impl libfileparser_core::hooks::Notify for libfileparser_testkit::CountingNotify
+pub fn libfileparser_testkit::CountingNotify::notify(&self)
+pub struct libfileparser_testkit::DenyFiles
+impl core::clone::Clone for libfileparser_testkit::DenyFiles
+pub fn libfileparser_testkit::DenyFiles::clone(&self) -> libfileparser_testkit::DenyFiles
+impl core::default::Default for libfileparser_testkit::DenyFiles
+pub fn libfileparser_testkit::DenyFiles::default() -> libfileparser_testkit::DenyFiles
+impl core::marker::Copy for libfileparser_testkit::DenyFiles
+impl libfileparser_core::hooks::FileResolver for libfileparser_testkit::DenyFiles
+pub fn libfileparser_testkit::DenyFiles::resolve(&self, &libfileparser_core::source::FileSource, &str) -> core::result::Result<libfileparser_core::source::FileSource, libfileparser_core::dependency::Unreadable>
+pub struct libfileparser_testkit::MemFiles(_)
+impl libfileparser_testkit::MemFiles
+pub fn libfileparser_testkit::MemFiles::new(impl core::iter::traits::collect::IntoIterator<Item = (alloc::string::String, alloc::vec::Vec<u8>)>) -> Self
+impl core::clone::Clone for libfileparser_testkit::MemFiles
+pub fn libfileparser_testkit::MemFiles::clone(&self) -> libfileparser_testkit::MemFiles
+impl core::default::Default for libfileparser_testkit::MemFiles
+pub fn libfileparser_testkit::MemFiles::default() -> libfileparser_testkit::MemFiles
+impl libfileparser_core::hooks::FileResolver for libfileparser_testkit::MemFiles
+pub fn libfileparser_testkit::MemFiles::resolve(&self, &libfileparser_core::source::FileSource, &str) -> core::result::Result<libfileparser_core::source::FileSource, libfileparser_core::dependency::Unreadable>
+pub struct libfileparser_testkit::QueueSpawn(_)
+impl libfileparser_testkit::QueueSpawn
+pub fn libfileparser_testkit::QueueSpawn::queued(&self) -> usize
+pub fn libfileparser_testkit::QueueSpawn::run_all(&self)
+impl core::clone::Clone for libfileparser_testkit::QueueSpawn
+pub fn libfileparser_testkit::QueueSpawn::clone(&self) -> libfileparser_testkit::QueueSpawn
+impl core::default::Default for libfileparser_testkit::QueueSpawn
+pub fn libfileparser_testkit::QueueSpawn::default() -> libfileparser_testkit::QueueSpawn
+impl libfileparser_core::hooks::Spawn for libfileparser_testkit::QueueSpawn
+pub fn libfileparser_testkit::QueueSpawn::spawn(&self, alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>)
+pub struct libfileparser_testkit::RecordingFiles<F>
+impl<F: libfileparser_core::hooks::FileResolver> libfileparser_testkit::RecordingFiles<F>
+pub fn libfileparser_testkit::RecordingFiles<F>::asked(&self) -> alloc::vec::Vec<alloc::string::String>
+pub fn libfileparser_testkit::RecordingFiles<F>::new(F) -> Self
+impl<F: core::clone::Clone> core::clone::Clone for libfileparser_testkit::RecordingFiles<F>
+pub fn libfileparser_testkit::RecordingFiles<F>::clone(&self) -> libfileparser_testkit::RecordingFiles<F>
+impl<F: libfileparser_core::hooks::FileResolver> libfileparser_core::hooks::FileResolver for libfileparser_testkit::RecordingFiles<F>
+pub fn libfileparser_testkit::RecordingFiles<F>::resolve(&self, &libfileparser_core::source::FileSource, &str) -> core::result::Result<libfileparser_core::source::FileSource, libfileparser_core::dependency::Unreadable>
+pub struct libfileparser_testkit::Sample
+impl libfileparser_testkit::Sample
+pub fn libfileparser_testkit::Sample::fits_tiny_limits(self) -> Self
+pub fn libfileparser_testkit::Sample::from_file(impl core::convert::AsRef<std::path::Path>) -> core::io::error::Result<Self>
+pub fn libfileparser_testkit::Sample::new(impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
+pub fn libfileparser_testkit::Sample::with_neighbour(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
+impl core::clone::Clone for libfileparser_testkit::Sample
+pub fn libfileparser_testkit::Sample::clone(&self) -> libfileparser_testkit::Sample
+pub fn libfileparser_testkit::assert_conforms(&dyn libfileparser_core::reader::Reader, &[libfileparser_testkit::Sample])
+pub fn libfileparser_testkit::check(&dyn libfileparser_core::reader::Reader, &[libfileparser_testkit::Sample]) -> alloc::vec::Vec<alloc::string::String>
+pub fn libfileparser_testkit::content_summary(&libfileparser_core::content::Content, &mut alloc::string::String)
+pub fn libfileparser_testkit::summarize(&libfileparser_core::document::Document, &libfileparser_core::hooks::ParseContext) -> alloc::string::String
+pub fn libfileparser_testkit::tiny_limits() -> libfileparser_core::limits::Limits

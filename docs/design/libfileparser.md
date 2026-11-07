@@ -205,6 +205,28 @@ The API in §4 is the boundary. Behind it, a category may change anything: repla
 6. **Traits callers only use are sealed;** traits callers implement (`Reader`, `FacetProvider`, the hooks) are the deliberate extension points (§6), small and with default methods so they can grow.
 7. **Checked in CI:** every library's public API is snapshotted (`cargo public-api`) and `cargo semver-checks` runs on each change, so any change to a boundary is a visible diff in review, and a breaking one needs a version bump.
 
+✅ Applied (2026-11-07) to every libfileparser crate, the format libraries (`usd-lite`, `gltf-lite`), `scene-data` and `libviewer`: public structs with public fields are `#[non_exhaustive]` and have constructors or `with_*` methods where apps build them (`Band::new`, `Frame3d::shown`, `TextureData::new`, `Spec::new`, `usd_lite::Limits::with_max_elements`); a struct an app fills field by field starts from `Default` (`SceneLimits`). Enums are `#[non_exhaustive]` unless their set is closed by a spec or by a renderer that must handle every case, and those say so in their docs: `Topology`, `TextureFormat`, `Indices`, `AlphaMode`, USD's `Specifier`, `UpAxis` and `Channel`. Id newtypes (`NodeId`, `MeshId`…) stay plain: an id doesn't grow. Snapshots are in `api/` beside each crate's `Cargo.toml`, checked in CI with the semver check (§12).
+
+### What is contract
+
+An app may rely on these; changing one is a breaking change, with a version bump:
+
+| Contract | Examples |
+|---|---|
+| Every public item in a crate's API snapshot | `Document::facet`, `TreeSource::find`, `SceneDocument::new` |
+| Roles, content models, scene item kinds | `Role::Structure`, `Model::Tree`, `SceneItem::Node` |
+| Reader ids | `gltf`, `usd`, `fbx`, `obj`, `stl`, `ply`, `blend`, `image`, `svg`, `text`, `zip`, `tar`, `gzip` |
+| Facet names a category's design lists for a format | Scene, Stage, Layers, Variants, glTF, JSON chunk, Chunks, Records, Embedded media, Objects, Header, Blocks, Packed files, Package, Dependencies, Materials, Textures, Extensions used, Source, Raw, Image, Text, Files |
+| Facet order: the primary first; Source then Raw last | |
+| Tree path syntaxes | USD prim and property paths; JSON pointers (glTF); `Objects/<record>/<name>` (FBX); object names and `usemtl <name>` (OBJ); layer identifiers (Layers) |
+| A table's columns: their number, order and meaning | Materials: name, shading, maps, base colour, metallic, roughness, alpha |
+
+Display text, which may change in any release: format names ("glTF binary (GLB)"), metadata keys and values, tree labels and values, column headings, cell text, warnings and error messages. An app that needs one of these to be stable asks for it to become contract: a typed accessor, not a string to parse.
+
+### Versions
+
+Every crate is 0.x until its API settles. A breaking change (as `cargo semver-checks` finds it) bumps the crate's minor version (0.1 → 0.2), and every crate that re-exports it. Before an item is removed it is `#[deprecated]` for one minor release, pointing at its replacement, so an app updating one step at a time compiles at each step.
+
 ## 6. Adding a format, and other extensions
 
 ### A new format: one module, one line, one file
@@ -354,7 +376,7 @@ Tests are written against §4's API, never against internals, so they stay the s
 
 The corpus passes after every step.
 
-1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse` (`FacetProvider` was listed here but only written 2026-11-07, §6); the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ⬜ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI: planned, not running yet.
+1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse` (`FacetProvider` was listed here but only written 2026-11-07, §6); the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ✅ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI (2026-11-07, §5).
 2. 🟡 **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md) (moved and on the hooks 2026-11-06; its other facets to come): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
 3. ✅ **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it (2026-11-07). `-archives` is Viewer's former `fmt-archive`, moved: limits come from the context, tar entries are views of the archive. Viewer keeps the front door's document with the page, so View as lists its facets (Scene, Stage, Layers…, Source, Raw) and switches between them without reading the file again; `--view-as` takes a facet name too. Until 2026-11-07 Viewer converted a facet to its own content to show it; now libviewer's views read the content models directly ([libviewer.md](libviewer.md)).
 4. 🟡 **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1. ✅ `-images` (2026-11-07): Viewer's `fmt-image` moved. Opening reads the header only (size, colour type, the image-pixel limit); pixels are a band source: non-interlaced PNGs row by row, other formats decoded whole in their own layout and converted to RGBA a band at a time, SVG rendered when asked. Viewer decodes images up to 16 megapixels whole on its loader thread and streams bigger ones band by band to the GPU from a thread of its own, as before. Not yet: `-3d` decoding its textures through `-images` (§2's "sideways toward leaves"), §4.1's reduced-size and region decoding.

@@ -4,6 +4,7 @@ use crate::Value;
 
 /// What a spec describes (Sdf's spec types, same numbering as the crate format).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum SpecType {
     Unknown,
     Attribute,
@@ -39,6 +40,7 @@ impl SpecType {
 }
 
 #[derive(Debug, Clone)]
+#[non_exhaustive]
 pub struct Spec {
     pub spec_type: SpecType,
     /// Field name → value, in file order (`typeName`, `default`, `primChildren`,
@@ -47,6 +49,10 @@ pub struct Spec {
 }
 
 impl Spec {
+    pub fn new(spec_type: SpecType, fields: Vec<(String, Value)>) -> Self {
+        Self { spec_type, fields }
+    }
+
     pub fn field(&self, name: &str) -> Option<&Value> {
         self.fields.iter().find(|(n, _)| n == name).map(|(_, v)| v)
     }
@@ -57,6 +63,7 @@ impl Spec {
 /// metadata. Nothing is composed: references, payloads, sublayers and variants are
 /// left as the fields that describe them.
 #[derive(Debug, Clone, Default)]
+#[non_exhaustive]
 pub struct Layer {
     pub specs: HashMap<String, Spec>,
     /// For a text layer, the line (from 1) each prim spec starts on, by path; empty for

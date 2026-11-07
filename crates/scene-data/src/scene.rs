@@ -30,6 +30,7 @@ id!(
 
 /// A placed mesh, or a group (no mesh) that only carries a transform.
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[non_exhaustive]
 pub struct Node {
     pub mesh: Option<MeshId>,
     /// `None` draws with clay.
@@ -51,6 +52,7 @@ impl Node {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum GeometryState {
     Loading,
     /// The loader called [`SceneBuilder::finish`]. Textures may still arrive.
@@ -63,6 +65,7 @@ pub enum GeometryState {
 /// Every entry records the scene revision that last changed it, so a renderer that has
 /// seen revision `r` uploads only entries with `changed > r`.
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct MeshEntry {
     pub info: MeshInfo,
     /// `None` once released after upload (docs/design/3d-renderer.md §11.1).
@@ -74,12 +77,14 @@ pub struct MeshEntry {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct MaterialEntry {
     pub material: Material,
     pub changed: u64,
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct NodeEntry {
     pub node: Node,
     /// 1 for a root.
@@ -88,6 +93,7 @@ pub struct NodeEntry {
 }
 
 #[derive(Debug)]
+#[non_exhaustive]
 pub struct TextureEntry {
     /// `None` while reserved but not yet decoded.
     pub info: Option<TextureInfo>,

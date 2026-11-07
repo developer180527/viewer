@@ -126,9 +126,16 @@ pub enum Pixels {
 
 /// Rows `y..y + rgba.len() / (width * 4)` of an image, as RGBA8.
 #[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub struct Band {
     pub y: u32,
     pub rgba: Vec<u8>,
+}
+
+impl Band {
+    pub fn new(y: u32, rgba: Vec<u8>) -> Self {
+        Self { y, rgba }
+    }
 }
 
 /// An image's bands, top to bottom, each decoded when it's asked for.

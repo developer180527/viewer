@@ -121,8 +121,43 @@ jobs:
       - name: Build
         run: >
           cargo ndk -t arm64-v8a build
-          -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
-          -p libfileparser-core -p libfileparser-3d -p scene-data -p rendererx -p gltf-lite -p usd-lite
+          -p viewer-core -p viewer-fmt-doc -p viewer-fmt-data
+          -p libfileparser -p libfileparser-core -p libfileparser-3d -p libfileparser-images -p libfileparser-text -p libfileparser-archives
+          -p scene-data -p rendererx -p gltf-lite -p usd-lite -p libviewer
+
+  # The libraries' public APIs (docs/design/libfileparser.md §5): each matches its
+  # snapshot in crates/<crate>/api/, and no change breaks semver without a version
+  # bump. A failing snapshot is a diff to review: an intended change is committed with
+  # `scripts/api.sh --update`.
+  api:
+    name: Public API
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The baseline commit for semver checks.
+          fetch-depth: 0
+
+      # cargo-public-api reads rustdoc's JSON, which needs nightly.
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-public-api,cargo-semver-checks
+
+      - name: Snapshots
+        run: scripts/api.sh
+
+      - name: Semver
+        run: |
+          # Against the commit before this push on main, else where the branch left main.
+          if [ "$GITHUB_REF" = refs/heads/main ]; then base=HEAD~1; else base=$(git merge-base HEAD origin/main); fi
+          cargo semver-checks --baseline-rev "$base" \
+            -p libfileparser-core -p libfileparser -p libfileparser-3d -p libfileparser-images -p libfileparser-text \
+            -p libfileparser-archives -p libfileparser-testkit -p usd-lite -p gltf-lite -p scene-data -p libviewer
 
   # The shared crates and the app itself (ios/run-sim.sh runs it on a simulator).
   ios:
@@ -140,5 +175,6 @@ jobs:
       - name: Build
         run: >
           cargo build --target aarch64-apple-ios -p viewer
-          -p viewer-core -p viewer-fmt-image -p viewer-fmt-doc -p viewer-fmt-data -p viewer-fmt-archive
-          -p libfileparser-core -p libfileparser-3d -p scene-data -p rendererx -p gltf-lite -p usd-lite
+          -p viewer-core -p viewer-fmt-doc -p viewer-fmt-data
+          -p libfileparser -p libfileparser-core -p libfileparser-3d -p libfileparser-images -p libfileparser-text -p libfileparser-archives
+          -p scene-data -p rendererx -p gltf-lite -p usd-lite -p libviewer
