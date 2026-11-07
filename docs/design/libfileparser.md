@@ -71,6 +71,7 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 3. **No owner enabled or built yet:** the best other reading opens the file instead. Subtitles open as `-data`'s cue table until `-media` exists; then the media facet goes in front and the cue table stays. Adding an owner later is a minor version (§5).
 4. **Text needs no claim:** `-core` gives every text file Source and Raw (§2, boundary 2), so `-text` owns plain text and code only, never JSON, SQL or logs.
 5. **Content decides; the extension is a hint.** A reader claims a file only when its bytes match (the ambiguous extensions are below). What nothing claims opens as text or Raw, never as a wrong tree.
+   **Specific beats generic** (2026-11-08). Many formats share one extension or one container syntax: XML is SVG, GPX, KML, RSS, plists and XSD; JSON is glTF, GeoJSON and HAR; zip is USDZ, DOCX and ODS. A *generic* reader (XML, JSON, zip) detects at most `Confidence::Extension`, even when the content proves the syntax. A *specific* reader sniffs what makes it itself: the root element (`<svg`, `<gpx`, `<!DOCTYPE plist`), a key (`"asset"` for glTF, `"type": "FeatureCollection"`), or a zip entry name (`mimetype`, `*.usda`), at `Content` or `Magic`, or at `Certain` for a format inside a generic container. So a `.xml` that is really GPX opens as GPX, and with no specific reader as a tree.
 6. **How:** a reader's `extensions` are the formats it owns; `also_reads(extensions, model)` names the ones it only also reads, and the model of the facet it adds (a new field on a `#[non_exhaustive]` type, so not breaking). The Library opens with the owner and adds the others as facet providers. A guess from content is no stronger than an extension (`Confidence::Extension`), so it never outranks a reader that owns the file's extension: a `.gltf` is glTF, though it looks like JSON.
 7. **Parsing lives once.** When two categories read one format, the parser is in one crate (or a `-lite` format library) and the other uses it, keeping §2's boundary 3.
 
@@ -163,10 +164,14 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 | `Tree` (`TreeSource`) | Nodes with an id, a label, a value, a `ValueKind` and whether they have children | `child_count(node)`, then `children(node, a..b)`; `value(node)` for a leaf's whole value as a `Cell`; `find(path)` and `path(node)` where the tree has paths |
 | `Container` | `entry_count()`; entries (path, size, packed size, kind) | `entries(a..b)`; open one entry as a file |
 | `Scene` | `scene-data` data: meshes, materials, textures, nodes; no GPU | Arrives progressively |
-| `Media` (later) | Streams and metadata; decode a frame or samples into the caller's buffer | Time |
+| `Media` (later) | Streams and metadata; decode a frame or samples into the caller's buffer | Time, through a decoder made for each use |
 | `Hex` | The bytes | Offset ranges |
 
 Built so far: `Raster`, `Text`, `Tree`, `Table`, `Container`, `Scene` and `Hex`, what `-3d` needs; `Pages`, `Flow`, `Markdown` and `Media` arrive with their categories.
+
+**Media, when it comes, is a factory, not a decoder.** `Content` is cheap to clone and shared between views, but a decoder has state: a position, buffered frames, a codec context. So `Media` holds what describes the streams (counts, durations, sizes) and makes a new decoder each time one is asked for (`media.decoder(stream)`), as `BandSource::bands()` starts again on each call. Two views of one video then each play from where they are, and a thumbnailer seeking to the middle disturbs nobody.
+
+**A facet is made once** (2026-11-08). `Document::facet` holds a per-facet lock while making it, so a second thread asking at the same time waits for that result instead of making it again: indexing a 2 GB log happens once. A maker that fails is tried again on the next ask. A maker must not ask for its own facet.
 
 **Typed values** (2026-11-08). A table cell is a `Cell`: `Null`, `Bool`, `Int`, `Float`, `Number` (kept as written when converting would change it: `1.50`, `007`, a 30-digit integer), `Text`, `Bytes`, `Date`, or `Error` (a value that couldn't be read). Null is not empty text. A column says its `ValueKind` (`Number`, `Text`…, `Mixed`, or `Unknown`), so a view aligns numbers and can sort. A tree node says its kind too (`Map`, `List`, `Group`, `Text`, `Number`, `Null`…), so `"1"` and `1` look different. `TreeNode::value` is plain text without quotes, possibly shortened past `TreeNode::PREVIEW_CHARS` to keep listing children cheap; `TreeSource::value` gives a leaf whole. Shortening for display, and quoting text, are the view's.
 
@@ -379,7 +384,9 @@ Every category library, alone or through the front door, can live inside another
 | **No file system access of its own** | Everything beyond the given bytes through `FileResolver`, so in-memory files, sandboxes and virtual file systems work |
 | **Bounded** | `Limits` on every claimed size; `memory()` on every document; caches sized by the caller |
 | **Few dependencies, all optional where heavy** | Per-format features; `minimal` builds are pure Rust |
-| **Every platform** | Desktop, iOS, Android; `-core`, the pure-Rust categories and `-thumb` also WASM |
+| **Every platform** | Desktop, iOS, Android; `-core`, the pure-Rust categories and `-thumb` also WASM. ✅ Checked 2026-11-08: `-core` (without `mmap` and `scene`), `-data`, `-text`, `-archives`, `-images` and the front door without `3d` build for `wasm32-unknown-unknown`. `-3d` doesn't: ufbx is C |
+| **Lean** | `-core`'s features `mmap` (large files mapped) and `scene` (the 3D content model, `scene-data`) are off unless a crate asks: `-3d` and libviewer ask for `scene`, the front door's default asks for `mmap`. A data-only embed has neither |
+| **Files that change** | `FileSource::open` reads a file under 16 MiB into memory and maps a larger one. A mapped file truncated by another process faults the process (SIGBUS), which nothing can catch, so a file that may change, a log being written or rotated, is opened with `FileSource::open_live`: read by position (`read_at`, `range`), never mapped, and reading short if it shrinks. Line indexes (`LineText`) and the hex view read such a file a range at a time, never whole; a reader that asks for `bytes()` gets a copy, made once. SQLite, Parquet and HDF5 (`-datasets`) will read the same way |
 | **Not only Rust** | `libfileparser-c` exposes the core shape (§4) and the category additions to C, C++, Swift and Kotlin |
 | **No panics across the boundary** | A panic in format code fails only what it was doing: opening (`Corrupt`), making a facet (that facet alone), a background job (that job; its bookkeeping still runs) |
 

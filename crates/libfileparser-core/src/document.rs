@@ -1,6 +1,6 @@
 //! Documents and their facets (docs/design/document-model.md).
 
-use std::sync::OnceLock;
+use std::sync::{Mutex, OnceLock};
 
 use crate::{Category, Content, Dependencies, MemoryUse, Model, ParseContext, Result};
 
@@ -98,6 +98,9 @@ struct Facet {
     info: FacetInfo,
     made: OnceLock<Content>,
     make: Option<Maker>,
+    /// Held while the facet is being made, so a second thread asking waits for that
+    /// result instead of making it again (indexing a 2 GB log twice).
+    making: Mutex<()>,
 }
 
 /// What one reading of a file produced: its format, its facets (the first is the
@@ -121,14 +124,14 @@ impl Document {
         let info = FacetInfo::new(role, name, content.model());
         let made = OnceLock::new();
         let _ = made.set(content);
-        self.facets.push(Facet { info, made, make: None });
+        self.facets.push(Facet { info, made, make: None, making: Mutex::new(()) });
         self
     }
 
     /// Adds a facet made the first time it is asked for. `make` is called again if it
     /// failed, so a facet that fails doesn't stay broken (or take the document with it).
     pub fn with_lazy_facet(mut self, info: FacetInfo, make: impl Fn(&ParseContext) -> Result<Content> + Send + Sync + 'static) -> Self {
-        self.facets.push(Facet { info, made: OnceLock::new(), make: Some(Maker::Fn(Box::new(make))) });
+        self.facets.push(Facet { info, made: OnceLock::new(), make: Some(Maker::Fn(Box::new(make))), making: Mutex::new(()) });
         self
     }
 
@@ -149,7 +152,7 @@ impl Document {
                 if self.facets.iter().any(|f| f.info == info) {
                     continue;
                 }
-                self.facets.insert(at, Facet { info, made: OnceLock::new(), make: Some(Maker::Provider(provider.clone())) });
+                self.facets.insert(at, Facet { info, made: OnceLock::new(), make: Some(Maker::Provider(provider.clone())), making: Mutex::new(()) });
                 at += 1;
             }
         }
@@ -233,13 +236,20 @@ impl Document {
         self.facets.iter().map(|f| &f.info)
     }
 
-    /// The content of facet `index`, made now if it hasn't been.
+    /// The content of facet `index`, made now if it hasn't been. A facet is made once:
+    /// another thread asking while it is being made waits for it. If making it failed,
+    /// the next ask tries again. A facet's maker must not ask for its own facet.
     pub fn facet(&self, index: usize, cx: &ParseContext) -> Result<Content> {
         let facet = self.facets.get(index).ok_or_else(|| crate::ParseError::invalid(format!("no facet {index}")))?;
         if let Some(content) = facet.made.get() {
             return Ok(content.clone());
         }
         let make = facet.make.as_ref().expect("a facet without content has a maker");
+        // A panic in the maker is caught below, so the lock is never poisoned by one.
+        let _making = facet.making.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(content) = facet.made.get() {
+            return Ok(content.clone());
+        }
         cx.cancel.check()?;
         // A panic while making a facet fails that facet alone (docs/design/document-model.md §8).
         let content = crate::reader::guard(&facet.info.name, || match make {

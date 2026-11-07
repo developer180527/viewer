@@ -22,6 +22,14 @@ impl Bytes {
         Self { data, range: range.start.min(end)..end }
     }
 
+    /// `range` of these bytes, sharing them; clamped.
+    pub fn slice(&self, range: Range<usize>) -> Self {
+        let len = self.range.len();
+        let end = range.end.min(len);
+        let start = range.start.min(end);
+        Self { data: self.data.clone(), range: self.range.start + start..self.range.start + end }
+    }
+
     pub fn as_slice(&self) -> &[u8] {
         &(*self.data).as_ref()[self.range.clone()]
     }

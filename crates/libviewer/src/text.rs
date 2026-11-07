@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use libfileparser_core::TextSource;
+use libfileparser_core::{FileSource, TextSource};
 use libgui::*;
 
 /// Longer lines are cut for display (minified files would otherwise stall layout).
@@ -70,13 +70,32 @@ pub fn text(ui: &mut Ui, source: &dyn TextSource, highlights: Option<&dyn Highli
 }
 
 /// Bytes, 16 per row: offset, hex, and the printable ones as text.
+/// Bytes in memory, sixteen to a row.
+#[deprecated(since = "0.3.1", note = "use `hex_file`, which reads a file a row at a time")]
 pub fn hex(ui: &mut Ui, bytes: &[u8]) {
+    hex_rows(ui, bytes.len() as u64, |offset, buf| {
+        let start = (offset as usize).min(bytes.len());
+        let n = buf.len().min(bytes.len() - start);
+        buf[..n].copy_from_slice(&bytes[start..start + n]);
+        n
+    });
+}
+
+/// A file's bytes, sixteen to a row, each row read as it is drawn: a file opened to
+/// be read by position (a live log) is never read whole.
+pub fn hex_file(ui: &mut Ui, src: &FileSource) {
+    hex_rows(ui, src.len(), |offset, buf| src.read_at(offset, buf));
+}
+
+fn hex_rows(ui: &mut Ui, len: u64, read: impl Fn(u64, &mut [u8]) -> usize) {
     const PER_ROW: usize = 16;
-    let rows = bytes.len().div_ceil(PER_ROW);
+    let rows = (len as usize).div_ceil(PER_ROW);
     let opts = ListOptions { padding: Insets::xy(8.0, 4.0), ..ListOptions::new(LINE_HEIGHT) };
     let faint = ui.theme.palette.text_muted;
     ui.virtual_list_with("hex", rows, opts, |ui, i| {
-        let chunk = &bytes[i * PER_ROW..((i + 1) * PER_ROW).min(bytes.len())];
+        let mut buf = [0u8; PER_ROW];
+        let n = read((i * PER_ROW) as u64, &mut buf);
+        let chunk = &buf[..n];
         let mut line = String::with_capacity(80);
         for k in 0..PER_ROW {
             match chunk.get(k) {

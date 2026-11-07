@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-libfileparser-core.workspace = true
+libfileparser-core = { workspace = true, features = ["scene"] }
 # RendererX draws scenes; its orbit controls drive the 3D view's camera.
 rendererx = { workspace = true, features = ["controls"] }
 wgpu = { version = "30" }

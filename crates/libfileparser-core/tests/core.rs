@@ -202,3 +202,46 @@ fn panics_in_format_code_stay_inside() {
     cx.spawn_job(|| panic!("a job that fails outright"));
     assert_eq!(done.load(Ordering::SeqCst), 1);
 }
+
+#[test]
+fn a_facet_asked_for_by_two_threads_at_once_is_made_once() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let made = Arc::new(AtomicUsize::new(0));
+    let counter = made.clone();
+    let doc = Arc::new(Document::new(FormatInfo::new("t", "Test", Category::Data)).with_lazy_facet(
+        FacetInfo::new(Role::Primary, "Slow", Model::Table),
+        move |_| {
+            counter.fetch_add(1, Ordering::SeqCst);
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            Ok(Content::Table(Arc::new(OwnedTable::new(vec!["a".into()], Vec::new()))))
+        },
+    ));
+    let threads: Vec<_> = (0..4)
+        .map(|_| {
+            let doc = doc.clone();
+            std::thread::spawn(move || doc.facet(0, &ParseContext::new()).is_ok())
+        })
+        .collect();
+    assert!(threads.into_iter().all(|t| t.join().unwrap()));
+    assert_eq!(made.load(Ordering::SeqCst), 1);
+}
+
+#[test]
+fn a_live_file_is_indexed_and_read_by_line_without_being_held_whole() {
+    let dir = std::env::temp_dir().join(format!("lfp-lines-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("big.log");
+    // Lines across the 1 MiB chunks the index reads.
+    let text: String = (0..200_000).map(|i| format!("line {i}\r\n")).collect();
+    std::fs::write(&path, &text).unwrap();
+    let live = FileSource::open_live(&path).unwrap();
+    let t = LineText::within(live.clone(), Some("log"), &Limits::desktop()).unwrap();
+    assert_eq!(t.info().lines, Count::Exact(200_000));
+    let lines = t.lines(123_456..123_458).unwrap();
+    assert_eq!((&*lines[0], &*lines[1]), (&b"line 123456"[..], &b"line 123457"[..]));
+    assert_eq!(t.memory().mapped, 0, "nothing of the file is held");
+    // The same file in memory gives the same lines.
+    let copied = LineText::new(FileSource::from_bytes("big.log", text.into_bytes()), None);
+    assert_eq!(copied.lines(199_999..200_000).unwrap()[0].as_slice(), b"line 199999");
+    std::fs::remove_dir_all(&dir).unwrap();
+}

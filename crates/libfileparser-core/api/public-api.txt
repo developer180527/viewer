@@ -352,6 +352,7 @@ impl core::marker::StructuralPartialEq for libfileparser_core::Band
 pub struct libfileparser_core::Bytes
 impl libfileparser_core::Bytes
 pub fn libfileparser_core::Bytes::as_slice(&self) -> &[u8]
+pub fn libfileparser_core::Bytes::slice(&self, core::ops::range::Range<usize>) -> Self
 pub fn libfileparser_core::Bytes::slice_of(alloc::sync::Arc<(dyn core::convert::AsRef<[u8]> + core::marker::Send + core::marker::Sync)>, core::ops::range::Range<usize>) -> Self
 impl core::clone::Clone for libfileparser_core::Bytes
 pub fn libfileparser_core::Bytes::clone(&self) -> libfileparser_core::Bytes
@@ -532,12 +533,16 @@ pub fn libfileparser_core::FileSource::from_bytes(impl core::convert::Into<alloc
 pub fn libfileparser_core::FileSource::header(&self) -> &[u8]
 pub fn libfileparser_core::FileSource::is_empty(&self) -> bool
 pub fn libfileparser_core::FileSource::is_folder(&self) -> bool
+pub fn libfileparser_core::FileSource::is_positional(&self) -> bool
 pub fn libfileparser_core::FileSource::len(&self) -> u64
 pub fn libfileparser_core::FileSource::name(&self) -> &str
 pub fn libfileparser_core::FileSource::open(impl core::convert::AsRef<std::path::Path>) -> core::io::error::Result<Self>
+pub fn libfileparser_core::FileSource::open_live(impl core::convert::AsRef<std::path::Path>) -> core::io::error::Result<Self>
 pub fn libfileparser_core::FileSource::part(&self, impl core::convert::Into<alloc::string::String>, core::ops::range::Range<usize>) -> Self
 pub fn libfileparser_core::FileSource::path(&self) -> core::option::Option<&std::path::Path>
 pub fn libfileparser_core::FileSource::path_buf(&self) -> core::option::Option<std::path::PathBuf>
+pub fn libfileparser_core::FileSource::range(&self, u64, usize) -> libfileparser_core::Bytes
+pub fn libfileparser_core::FileSource::read_at(&self, u64, &mut [u8]) -> usize
 pub fn libfileparser_core::FileSource::shared_bytes(&self) -> alloc::sync::Arc<(dyn core::convert::AsRef<[u8]> + core::marker::Send + core::marker::Sync)>
 impl core::clone::Clone for libfileparser_core::FileSource
 pub fn libfileparser_core::FileSource::clone(&self) -> libfileparser_core::FileSource
@@ -627,7 +632,6 @@ impl core::marker::StructuralPartialEq for libfileparser_core::Limits
 pub struct libfileparser_core::LineText
 impl libfileparser_core::LineText
 pub fn libfileparser_core::LineText::new(libfileparser_core::FileSource, core::option::Option<&str>) -> Self
-impl libfileparser_core::LineText
 pub fn libfileparser_core::LineText::within(libfileparser_core::FileSource, core::option::Option<&str>, &libfileparser_core::Limits) -> libfileparser_core::Result<Self>
 impl libfileparser_core::TextSource for libfileparser_core::LineText
 pub fn libfileparser_core::LineText::info(&self) -> libfileparser_core::TextInfo
@@ -861,6 +865,7 @@ pub fn libfileparser_core::Warning::eq(&self, &libfileparser_core::Warning) -> b
 impl core::fmt::Debug for libfileparser_core::Warning
 pub fn libfileparser_core::Warning::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for libfileparser_core::Warning
+pub const libfileparser_core::COPY_BELOW: u64
 pub trait libfileparser_core::BandSource: core::marker::Send + core::marker::Sync
 pub fn libfileparser_core::BandSource::bands(&self) -> libfileparser_core::Result<libfileparser_core::Bands>
 pub fn libfileparser_core::BandSource::memory(&self) -> libfileparser_core::MemoryUse

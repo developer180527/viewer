@@ -26,7 +26,7 @@ mod value;
 
 pub use bytes::Bytes;
 pub use content::{
-    Band, BandSource, Bands, Container, Content, Count, Entry, EntryKind, LineText, MemoryUse, Model, NodeId, OwnedTable, OwnedTree, Pixels, Raster, SceneDoc, TableInfo,
+    Band, BandSource, Bands, Container, Content, Count, Entry, EntryKind, LineText, MemoryUse, Model, NodeId, OwnedTable, OwnedTree, Pixels, Raster, TableInfo,
     TableSource, TextInfo, TextSource, TreeNode, TreeSource,
 };
 pub use dependency::{Dependencies, Dependency, DependencyStatus, DependencyTable, Unreadable};
@@ -37,5 +37,7 @@ pub use hooks::{AnyFiles, Cancel, FileResolver, FolderFiles, InlineSpawn, NoFile
 pub use limits::{Limit, Limits};
 pub use link::{Links, Place, SceneItem};
 pub use reader::{Category, Confidence, Detection, Reader, ReaderInfo, detect, open, open_guarded, open_with};
-pub use source::FileSource;
+pub use source::{COPY_BELOW, FileSource};
+#[cfg(feature = "scene")]
+pub use content::SceneDoc;
 pub use value::{Cell, Column, ValueKind};

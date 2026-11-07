@@ -6,7 +6,9 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["images", "3d", "data", "text", "archives"]
+default = ["mmap", "images", "3d", "data", "text", "archives"]
+# Large files mapped rather than read by position (off for WASM).
+mmap = ["libfileparser-core/mmap"]
 images = ["dep:libfileparser-images"]
 3d = ["dep:libfileparser-3d"]
 data = ["dep:libfileparser-data"]

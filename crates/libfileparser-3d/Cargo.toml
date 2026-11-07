@@ -8,7 +8,7 @@ license.workspace = true
 # Readers build CPU scenes only (scene-data): no GPU, so they can move to a parser
 # worker later (PLAN.md §12.4). Files, threads and progress go through libfileparser-core's hooks.
 [dependencies]
-libfileparser-core.workspace = true
+libfileparser-core = { workspace = true, features = ["scene"] }
 anyhow.workspace = true
 scene-data.workspace = true
 gltf-lite.workspace = true

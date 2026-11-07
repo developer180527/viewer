@@ -5,7 +5,15 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# Both on by default. Without `mmap` large files are read by position (WASM has no
+# mapping); without `scene` there is no 3D content model, for apps that read no 3D.
+[features]
+default = ["mmap", "scene"]
+mmap = ["dep:memmap2"]
+scene = ["dep:scene-data"]
+
 [dependencies]
-memmap2.workspace = true
+memchr.workspace = true
+memmap2 = { workspace = true, optional = true }
 # The scene content model: plain data (glam, bytemuck), no GPU.
-scene-data.workspace = true
+scene-data = { workspace = true, optional = true }

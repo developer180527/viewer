@@ -3,14 +3,15 @@ resolver = "3"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.3.1"
 edition = "2024"
 license = "MIT OR Apache-2.0"
 rust-version = "1.90"
 
 [workspace.dependencies]
 viewer-core = { path = "crates/core" }
-libfileparser-core = { path = "crates/libfileparser-core" }
+# Each crate names the features it needs (mmap, scene): a data-only or WASM build gets neither.
+libfileparser-core = { path = "crates/libfileparser-core", default-features = false }
 libfileparser-testkit = { path = "crates/libfileparser-testkit" }
 viewer-fmt-doc = { path = "crates/fmt-doc" }
 libfileparser-3d = { path = "crates/libfileparser-3d" }

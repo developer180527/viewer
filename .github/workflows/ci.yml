@@ -129,6 +129,21 @@ jobs:
   # snapshot in crates/<crate>/api/, and no change breaks semver without a version
   # bump. A failing snapshot is a diff to review: an intended change is committed with
   # `scripts/api.sh --update`.
+  # libfileparser without mmap or the 3D model builds for the web (docs/design/libfileparser.md §7).
+  wasm:
+    name: Build (WASM)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+      - name: Check
+        run: >
+          cargo check --target wasm32-unknown-unknown
+          -p libfileparser --no-default-features --features data,text,archives,images
+
   api:
     name: Public API
     runs-on: ubuntu-24.04

@@ -8,7 +8,7 @@
 use std::ops::Range;
 use std::sync::Arc;
 
-use crate::{Container, Content, Count, Entry, FacetInfo, FileSource, Limit, LineText, MemoryUse, Model, ParseError, Result, Role};
+use crate::{Container, Content, Count, Entry, FacetInfo, FileSource, LineText, MemoryUse, Model, ParseError, Result, Role};
 
 /// Whether bytes (a file's first few KB) are text: no NUL, and UTF-8 apart from a
 /// character cut off at the end.
@@ -19,18 +19,6 @@ pub fn is_text(header: &[u8]) -> bool {
     match std::str::from_utf8(header) {
         Ok(_) => true,
         Err(e) => e.error_len().is_none() && header.len() - e.valid_up_to() < 4,
-    }
-}
-
-impl LineText {
-    /// As [`LineText::new`], once its line index (one offset per line, counted first)
-    /// is known to fit `limits`.
-    pub fn within(source: FileSource, language: Option<&str>, limits: &crate::Limits) -> Result<Self> {
-        let lines = source.bytes().iter().filter(|&&b| b == b'\n').count() as u64 + 1;
-        let bytes = lines.saturating_mul(size_of::<usize>() as u64);
-        limits.check(Limit::Allocation, bytes)?;
-        limits.check(Limit::Memory, bytes)?;
-        Ok(Self::new(source, language))
     }
 }
 

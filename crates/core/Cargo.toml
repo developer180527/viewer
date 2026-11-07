@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-libfileparser-core.workspace = true
+libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
 anyhow.workspace = true
 memmap2.workspace = true
 infer.workspace = true

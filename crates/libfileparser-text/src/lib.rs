@@ -181,7 +181,8 @@ impl Reader for TextReader {
             Some("text") | None => "Plain text".to_string(),
             Some(l) => format!("Text ({l})"),
         };
-        let utf8 = std::str::from_utf8(src.bytes()).is_ok();
+        // A file read by position is never read whole for this: its start says.
+        let utf8 = if src.is_positional() { is_text(src.header()) } else { std::str::from_utf8(src.bytes()).is_ok() };
         Ok(Document::new(FormatInfo::new("text", format, Category::Text))
             .with_facet(Role::Primary, "Text", Content::Text(Arc::new(text)))
             .with_meta("Lines", lines)

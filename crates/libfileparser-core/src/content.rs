@@ -7,8 +7,10 @@
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
+#[cfg(feature = "scene")]
 use std::sync::atomic::{AtomicUsize, Ordering};
 
+#[cfg(feature = "scene")]
 use scene_data::CpuScene;
 
 use crate::{Bytes, Cell, Column, FileSource, ParseError, Result, ValueKind};
@@ -22,6 +24,8 @@ pub enum Content {
     Tree(Arc<dyn TreeSource>),
     Table(Arc<dyn TableSource>),
     Container(Arc<dyn Container>),
+    /// A 3D scene (feature `scene`).
+    #[cfg(feature = "scene")]
     Scene(SceneDoc),
     /// The bytes of a file, shown raw.
     Hex(FileSource),
@@ -48,6 +52,7 @@ impl Content {
             Content::Tree(_) => Model::Tree,
             Content::Table(_) => Model::Table,
             Content::Container(_) => Model::Container,
+            #[cfg(feature = "scene")]
             Content::Scene(_) => Model::Scene,
             Content::Hex(_) => Model::Hex,
         }
@@ -64,6 +69,7 @@ impl Content {
             Content::Tree(t) => t.memory(),
             Content::Table(t) => t.memory(),
             Content::Container(c) => c.memory(),
+            #[cfg(feature = "scene")]
             Content::Scene(s) => MemoryUse::heap(s.scene.read().cpu_bytes()),
             Content::Hex(src) => MemoryUse::mapped(src.len()),
         }
@@ -300,14 +306,60 @@ pub struct LineText {
 
 impl LineText {
     pub fn new(source: FileSource, language: Option<&str>) -> Self {
-        let bytes = source.bytes();
-        let mut starts = vec![0];
-        starts.extend(bytes.iter().enumerate().filter(|&(_, &b)| b == b'\n').map(|(i, _)| i + 1).filter(|&s| s < bytes.len()));
-        if bytes.is_empty() {
-            starts.clear();
-        }
+        let starts = line_starts(&source, None).unwrap_or_default();
         Self { source, starts, language: language.map(str::to_owned) }
     }
+
+    /// As [`LineText::new`], its line index (one offset per line) checked against
+    /// `limits` as it grows.
+    pub fn within(source: FileSource, language: Option<&str>, limits: &crate::Limits) -> Result<Self> {
+        let starts = line_starts(&source, Some(limits))?;
+        Ok(Self { source, starts, language: language.map(str::to_owned) })
+    }
+}
+
+/// Where each line of `source` starts. A file read by position is read a chunk at a
+/// time, never held whole.
+fn line_starts(source: &FileSource, limits: Option<&crate::Limits>) -> Result<Vec<usize>> {
+    const CHUNK: usize = 1 << 20;
+    let len = source.len() as usize;
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    let mut starts = vec![0];
+    let check = |starts: &Vec<usize>| -> Result<()> {
+        if let Some(limits) = limits {
+            let bytes = (starts.len() * size_of::<usize>()) as u64;
+            limits.check(crate::Limit::Allocation, bytes)?;
+            limits.check(crate::Limit::Memory, bytes)?;
+        }
+        Ok(())
+    };
+    let scan = |chunk: &[u8], at: usize, starts: &mut Vec<usize>| -> Result<()> {
+        for i in memchr::memchr_iter(b'\n', chunk) {
+            if at + i + 1 < len {
+                starts.push(at + i + 1);
+            }
+        }
+        check(starts)
+    };
+    if source.is_positional() {
+        let mut buf = vec![0; CHUNK];
+        let mut at = 0;
+        while at < len {
+            let n = source.read_at(at as u64, &mut buf);
+            if n == 0 {
+                break;
+            }
+            scan(&buf[..n], at, &mut starts)?;
+            at += n;
+        }
+    } else {
+        for (i, chunk) in source.bytes().chunks(CHUNK).enumerate() {
+            scan(chunk, i * CHUNK, &mut starts)?;
+        }
+    }
+    Ok(starts)
 }
 
 impl TextSource for LineText {
@@ -316,22 +368,21 @@ impl TextSource for LineText {
     }
 
     fn lines(&self, range: Range<u64>) -> Result<Vec<Bytes>> {
-        let bytes = self.source.bytes();
-        let shared = self.source.shared_bytes();
+        let len = self.source.len() as usize;
         Ok(clamp(range, self.starts.len() as u64)
             .map(|i| {
                 let start = self.starts[i];
-                let mut end = self.starts.get(i + 1).copied().unwrap_or(bytes.len());
-                while end > start && matches!(bytes[end - 1], b'\n' | b'\r') {
-                    end -= 1;
-                }
-                Bytes::slice_of(shared.clone(), start..end)
+                let end = self.starts.get(i + 1).copied().unwrap_or(len);
+                let line = self.source.range(start as u64, end - start);
+                let trimmed = line.iter().rposition(|&b| !matches!(b, b'\n' | b'\r')).map_or(0, |p| p + 1);
+                line.slice(0..trimmed)
             })
             .collect())
     }
 
     fn memory(&self) -> MemoryUse {
-        MemoryUse::heap((self.starts.len() * size_of::<usize>()) as u64) + MemoryUse::mapped(self.source.len())
+        let held = if self.source.is_positional() { MemoryUse::default() } else { MemoryUse::mapped(self.source.len()) };
+        MemoryUse::heap((self.starts.len() * size_of::<usize>()) as u64) + held
     }
 }
 
@@ -613,6 +664,7 @@ pub trait Container: Send + Sync {
 
 // ---------------------------------------------------------------- scene
 
+#[cfg(feature = "scene")]
 /// A 3D scene: `scene-data` data (meshes, materials, textures, nodes), built
 /// without a GPU. Textures may still be arriving from background work.
 #[derive(Clone)]
@@ -621,6 +673,7 @@ pub struct SceneDoc {
     pending: Arc<AtomicUsize>,
 }
 
+#[cfg(feature = "scene")]
 impl SceneDoc {
     /// `pending` counts textures still being decoded; it reaches zero when all have
     /// arrived (or failed).

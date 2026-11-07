@@ -4,7 +4,7 @@
 //! | Content | View |
 //! |---|---|
 //! | `Text` | [`text`]: numbered lines, read as they scroll into view, coloured by an app's [`Highlights`] |
-//! | `Hex` | [`hex`]: offset, bytes, printable text |
+//! | `Hex` | [`hex_file`]: offset, bytes, printable text |
 //! | `Tree` | [`tree`]: a node's children read when it is first expanded |
 //! | `Table` | [`table`]: the visible rows, read every frame (a live table shows what it holds now) |
 //! | `Container` | [`container`]: entries, the clicked one to open as a file |
@@ -39,7 +39,9 @@ pub use host::{Frame3d, Host, SceneGpu, Waker, draw_scene};
 pub use raster::{RasterView, raster};
 pub use scene::{SceneView, scene};
 pub use table::{TableView, container, human_bytes, table};
-pub use text::{Highlights, hex, text};
+#[allow(deprecated)]
+pub use text::hex;
+pub use text::{Highlights, hex_file, text};
 pub use tree::{TreeView, tree};
 
 /// Something a view asks the app to do.
@@ -86,7 +88,7 @@ impl View {
 pub fn show(ui: &mut Ui, content: &Content, view: &mut View, host: &mut dyn Host, highlights: Option<&dyn Highlights>, dark: bool) -> Option<Action> {
     match (content, view) {
         (Content::Text(t), _) => text(ui, t.as_ref(), highlights, dark),
-        (Content::Hex(src), _) => hex(ui, src.bytes()),
+        (Content::Hex(src), _) => hex_file(ui, src),
         (Content::Tree(t), View::Tree(v)) => tree(ui, t.as_ref(), v),
         (Content::Table(t), View::Table(v)) => table(ui, t.as_ref(), v),
         (Content::Container(c), View::Table(v)) => return container(ui, c, v).map(|i| Action::OpenEntry(c.clone(), i)),

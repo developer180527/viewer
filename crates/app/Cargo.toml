@@ -10,7 +10,7 @@ name = "viewer"
 path = "src/main.rs"
 
 [dependencies]
-libfileparser-core.workspace = true
+libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
 libviewer.workspace = true
 viewer-core.workspace = true
 viewer-fmt-doc.workspace = true

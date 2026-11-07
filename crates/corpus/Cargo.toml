@@ -8,7 +8,7 @@ publish = false
 
 [dependencies]
 viewer-core.workspace = true
-libfileparser-core.workspace = true
+libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
 viewer-formats.workspace = true
 scene-data.workspace = true
 anyhow.workspace = true

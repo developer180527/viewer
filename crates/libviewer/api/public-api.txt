@@ -60,6 +60,7 @@ pub fn libviewer::Host::waker(&self) -> libviewer::Waker
 pub fn libviewer::container(&mut libgui::ui::Ui, &alloc::sync::Arc<dyn libfileparser_core::content::Container>, &mut libviewer::TableView) -> core::option::Option<u64>
 pub fn libviewer::draw_scene((&rendererx::Renderer, &wgpu::api::device::Device, &wgpu::api::queue::Queue), &mut libviewer::SceneGpu, &scene_data::scene::CpuScene, (u32, u32), &rendererx::camera::Camera, [f32; 4], bool) -> bool
 pub fn libviewer::hex(&mut libgui::ui::Ui, &[u8])
+pub fn libviewer::hex_file(&mut libgui::ui::Ui, &libfileparser_core::source::FileSource)
 pub fn libviewer::human_bytes(u64) -> alloc::string::String
 pub fn libviewer::model_name(&libfileparser_core::content::Content) -> &'static str
 pub fn libviewer::raster(&mut libgui::ui::Ui, &libfileparser_core::content::Raster, &mut libviewer::RasterView, &mut dyn libviewer::Host)
