@@ -120,7 +120,7 @@ fn dependencies_say_what_each_file_is_for_and_where_it_was_found() {
     let (doc, cx) = open_in_corpus("3d/cube-gltf/cube.gltf", libfileparser_core::InlineSpawn);
     let facets: Vec<_> = doc.facets().map(|f| (f.role, f.name.as_str())).collect();
     use libfileparser_core::Role::*;
-    assert_eq!(facets, [(Primary, "Scene"), (Dependencies, "Dependencies"), (Inspector, "Textures")]);
+    assert_eq!(facets, [(Primary, "Scene"), (Dependencies, "Dependencies"), (Inspector, "Materials"), (Inspector, "Textures")]);
     assert_eq!(
         table(&doc, &cx, "Dependencies").unwrap(),
         [row(&["cube.bin", "buffer", "", "read"]), row(&["checker.png", "texture", "textures/checker.png", "read"])]
@@ -135,6 +135,108 @@ fn dependencies_say_what_each_file_is_for_and_where_it_was_found() {
     // A file that names no other file has no Dependencies facet.
     let (doc, cx) = open_in_corpus("3d/cube.stl", libfileparser_core::InlineSpawn);
     assert!(table(&doc, &cx, "Dependencies").is_none() && table(&doc, &cx, "Textures").is_none());
+}
+
+#[test]
+fn materials_list_shading_maps_and_factors() {
+    let (doc, cx) = open_in_corpus("3d/cube-gltf/cube.gltf", libfileparser_core::InlineSpawn);
+    assert_eq!(table(&doc, &cx, "Materials").unwrap(), [row(&["Checker", "pbr", "base_color: checker.png", "1, 1, 1, 1", "0", "1", "opaque"])]);
+    let (doc, cx) = open_in_corpus("3d/tri-obj/tri.obj", libfileparser_core::InlineSpawn);
+    assert_eq!(table(&doc, &cx, "Materials").unwrap(), [row(&["Paint", "blinn_phong", "", "0.8, 0.2, 0.2, 1", "", "", "opaque"])]);
+    // An STL has no materials of its own, only the clay every such file is drawn with.
+    let (doc, cx) = open_in_corpus("3d/cube.stl", libfileparser_core::InlineSpawn);
+    assert!(table(&doc, &cx, "Materials").is_none());
+}
+
+/// A tree's nodes to `depth` levels, as `label = value` lines indented by level.
+fn tree(doc: &Document, cx: &ParseContext, name: &str, depth: usize) -> Vec<String> {
+    fn walk(t: &dyn libfileparser_core::TreeSource, parent: Option<libfileparser_core::NodeId>, level: usize, depth: usize, out: &mut Vec<String>) {
+        for n in t.children(parent, 0..1000).unwrap() {
+            out.push(format!("{}{} = {}", "  ".repeat(level), n.label, n.value));
+            if n.has_children && level + 1 < depth {
+                walk(t, Some(n.id), level + 1, depth, out);
+            }
+        }
+    }
+    let i = doc.facets().position(|f| f.name == name).unwrap_or_else(|| panic!("no {name} facet"));
+    let Ok(Content::Tree(t)) = doc.facet(i, cx) else { panic!("{name} isn't a tree") };
+    let mut out = Vec::new();
+    walk(&*t, None, 0, depth, &mut out);
+    out
+}
+
+#[test]
+fn usd_shows_its_stage_layers_and_variants() {
+    // usd-lite's composition fixture: a sublayer, references, a payload, variants.
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../usd-lite/tests/fixtures/compose").canonicalize().unwrap();
+    let cx = ParseContext::new().with_files(libfileparser_core::FolderFiles::within(&dir)).with_spawn(libfileparser_core::InlineSpawn);
+    let doc = UsdReader.open(&FileSource::open(dir.join("root.usda")).unwrap(), &cx).unwrap();
+    use libfileparser_core::Role::*;
+    let facets: Vec<_> = doc.facets().map(|f| (f.role, f.name.as_str())).collect();
+    assert_eq!(
+        facets,
+        [
+            (Primary, "Scene"),
+            (Structure, "Stage"),
+            (Structure, "Layers"),
+            (Inspector, "Variants"),
+            (Dependencies, "Dependencies"),
+            (Inspector, "Materials"),
+            (Inspector, "Textures")
+        ]
+    );
+
+    // The composed stage: what the references brought in is there, under the prim that
+    // references it, with its connections mapped into the stage's namespace.
+    let stage = tree(&doc, &cx, "Stage", 4);
+    for line in [
+        "Stage metadata = 3 fields",
+        "  upAxis = Y",
+        "World = Xform",
+        "  Car = Xform",
+        "    xformOp:translate = double3 (1, 0, 0)",
+        "    Tire = Mesh",
+        "      points = point3f[3]",
+        "      material:binding = rel → /World/Car/Looks/Rubber",
+        "_class_Red = class",
+    ] {
+        assert!(stage.contains(&line.to_string()), "no {line:?} in\n{}", stage.join("\n"));
+    }
+
+    assert_eq!(
+        tree(&doc, &cx, "Layers", 3),
+        [
+            "root.usda = root layer",
+            "  sub.usda = sublayer · read",
+            "  parts/wheel.usda = reference · read · into /World/Car",
+            "  ./parts/wheel.usda = reference · read · into /World/Car2",
+            "  parts/box.usda = payload · read · into /World/Pay",
+        ]
+    );
+
+    let variants = tree(&doc, &cx, "Variants", 3);
+    assert_eq!(variants[..4], ["/World/Car = ", "  size = small", "    big = ", "    small = selected"]);
+    assert!(variants.contains(&"  shape = tri".to_string()) && variants.contains(&"    tri = selected".to_string()), "{variants:?}");
+
+    // A file without arcs or variants has only its Stage.
+    let (doc, _) = open_in_corpus("3d/tri.usda", libfileparser_core::InlineSpawn);
+    let names: Vec<_> = doc.facets().map(|f| f.name.clone()).collect();
+    assert!(names.contains(&"Stage".to_string()) && !names.iter().any(|n| n == "Layers" || n == "Variants"), "{names:?}");
+}
+
+#[test]
+fn a_missing_layer_shows_in_layers() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../usd-lite/tests/fixtures/compose").canonicalize().unwrap();
+    // Only the root may be read: the files hook is a folder that has nothing else.
+    let empty = std::env::temp_dir().join(format!("usd-missing-layer-{}", std::process::id()));
+    std::fs::create_dir_all(&empty).unwrap();
+    std::fs::copy(dir.join("root.usda"), empty.join("root.usda")).unwrap();
+    let cx = ParseContext::new().with_files(libfileparser_core::FolderFiles::within(&empty));
+    let doc = UsdReader.open(&FileSource::open(empty.join("root.usda")).unwrap(), &cx).unwrap();
+    let layers = tree(&doc, &cx, "Layers", 2);
+    std::fs::remove_dir_all(&empty).ok();
+    assert_eq!(layers[1], "  sub.usda = sublayer · missing");
+    assert_eq!(layers[4], "  parts/box.usda = payload · missing · into /World/Pay");
 }
 
 #[test]

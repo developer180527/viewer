@@ -6,7 +6,7 @@
 //! - [`geom`] reads what viewers need from a layer: prim hierarchy and transforms,
 //!   meshes with primvars and material subsets, and `UsdPreviewSurface` materials
 //!   with their texture inputs.
-//! - [`compose`] follows sublayers, references, payloads, inherits, variants and
+//! - [`compose()`] follows sublayers, references, payloads, inherits, variants and
 //!   specializes into one flattened [`Layer`], matching `usdcat --flatten` on what it
 //!   covers. A single [`read_layer`] is uncomposed; [`Layer::composition_arcs`] says
 //!   whether it uses any arcs.
@@ -23,7 +23,7 @@ mod text;
 mod usdz;
 mod value;
 
-pub use compose::{FsResolver, Resolver, Stage, anchored, compose};
+pub use compose::{ArcKind, FsResolver, LayerArc, Resolver, Stage, VariantSet, anchored, compose};
 pub use layer::{Layer, Spec, SpecType, child_path, property_path, split_property};
 #[cfg(feature = "usdz")]
 pub use usdz::Package;

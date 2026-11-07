@@ -128,3 +128,27 @@ fn damaged_root_layers_compose_without_panicking() {
     }
     assert!(composed > 20, "some damaged files still parse and compose: {composed}");
 }
+
+#[test]
+fn stage_records_its_arcs_and_variant_sets() {
+    use usd_lite::ArcKind;
+    let stage = composed();
+    let name = |id: &str| id.rsplit('/').next().unwrap().to_string();
+    type Row<'a> = (String, ArcKind, &'a str, Option<String>, &'a [String]);
+    let arcs: Vec<Row> =
+        stage.arcs.iter().map(|a| (name(&a.from), a.kind, a.asset.as_str(), a.layer.as_deref().map(name), a.prims.as_slice())).collect();
+    let prims = |p: &[&str]| p.iter().map(|s| s.to_string()).collect::<Vec<_>>();
+    assert_eq!(arcs.len(), 4, "{arcs:?}");
+    assert_eq!(arcs[0], ("root.usda".into(), ArcKind::Sublayer, "sub.usda", Some("sub.usda".into()), &[][..]));
+    assert_eq!(arcs[1], ("root.usda".into(), ArcKind::Reference, "parts/wheel.usda", Some("wheel.usda".into()), &prims(&["/World/Car"])[..]));
+    // Spelled differently, so its own arc, though it is the same layer.
+    assert_eq!(arcs[2], ("root.usda".into(), ArcKind::Reference, "./parts/wheel.usda", Some("wheel.usda".into()), &prims(&["/World/Car2"])[..]));
+    assert_eq!(arcs[3], ("root.usda".into(), ArcKind::Payload, "parts/box.usda", Some("box.usda".into()), &prims(&["/World/Pay"])[..]));
+
+    let sets: Vec<_> = stage.variant_sets.iter().map(|s| (s.prim.as_str(), s.name.as_str(), s.variants.clone(), s.selection.as_deref())).collect();
+    assert!(sets.contains(&("/World/Switch", "shape", vec!["quad".into(), "tri".into()], Some("tri"))), "{sets:?}");
+    // From the referenced wheel: its own selection, unless the referencing prim's wins.
+    let selection = |prim: &str| stage.variant_sets.iter().find(|s| s.prim == prim && s.name == "size").and_then(|s| s.selection.clone());
+    assert_eq!(selection("/World/Car").as_deref(), Some("small"));
+    assert_eq!(selection("/World/Car2").as_deref(), Some("big"));
+}

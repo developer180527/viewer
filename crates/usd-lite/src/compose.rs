@@ -60,6 +60,58 @@ pub struct Stage {
     pub warnings: Vec<String>,
     /// Identifiers of every layer used, root first.
     pub layers: Vec<String>,
+    /// Every arc to another layer, in the order composition met them.
+    pub arcs: Vec<LayerArc>,
+    /// Every variant set on a composed prim, in the order composition met them.
+    pub variant_sets: Vec<VariantSet>,
+}
+
+/// What kind of arc brings a layer in.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum ArcKind {
+    Sublayer,
+    Reference,
+    Payload,
+}
+
+impl ArcKind {
+    pub fn label(self) -> &'static str {
+        match self {
+            ArcKind::Sublayer => "sublayer",
+            ArcKind::Reference => "reference",
+            ArcKind::Payload => "payload",
+        }
+    }
+}
+
+/// One arc from a layer to another, as authored: a sublayer, or a reference or payload
+/// with an asset path (internal references aren't arcs to another layer).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LayerArc {
+    /// The layer that authors it.
+    pub from: String,
+    pub kind: ArcKind,
+    /// The asset path as authored.
+    pub asset: String,
+    /// The layer it was read as; `None` when it couldn't be (the warnings say why).
+    pub layer: Option<String>,
+    /// For references and payloads, the composed prims it brings the layer into (the
+    /// first [`MAX_ARC_PRIMS`]); `prim_count` counts them all.
+    pub prims: Vec<String>,
+    pub prim_count: usize,
+}
+
+/// How many prims a [`LayerArc`] lists.
+pub const MAX_ARC_PRIMS: usize = 100;
+
+/// A variant set on a composed prim: its variants (across every site that authors the
+/// set) and the one selected, if any.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VariantSet {
+    pub prim: String,
+    pub name: String,
+    pub variants: Vec<String>,
+    pub selection: Option<String>,
 }
 
 /// Composes `root` (identified by `root_id`, used to anchor relative paths).
@@ -75,11 +127,15 @@ pub fn compose(root: Layer, root_id: &str, resolver: &dyn Resolver, limits: &Lim
         warned: HashSet::new(),
         out: Layer::default(),
         prims: 0,
+        arcs: Vec::new(),
+        arc_index: HashMap::new(),
+        variant_sets: Vec::new(),
+        set_index: HashMap::new(),
     };
     c.by_id.insert(root_id.to_string(), 0);
     let stack = c.stack(0);
     c.compose_root(stack);
-    Stage { layer: c.out, warnings: c.warnings, layers: c.layers.iter().map(|(id, _)| id.clone()).collect() }
+    Stage { layer: c.out, warnings: c.warnings, layers: c.layers.iter().map(|(id, _)| id.clone()).collect(), arcs: c.arcs, variant_sets: c.variant_sets }
 }
 
 #[derive(Clone)]
@@ -112,6 +168,12 @@ struct Composer<'r> {
     warned: HashSet<String>,
     out: Layer,
     prims: usize,
+    arcs: Vec<LayerArc>,
+    /// (from layer, kind, asset) → index in `arcs`.
+    arc_index: HashMap<(usize, ArcKind, String), usize>,
+    variant_sets: Vec<VariantSet>,
+    /// (prim, set) → index in `variant_sets`.
+    set_index: HashMap<(String, String), usize>,
 }
 
 impl Composer<'_> {
@@ -155,6 +217,64 @@ impl Composer<'_> {
         }
     }
 
+    /// Loads `asset` from `anchor` and records the arc; `prim` is the composed prim a
+    /// reference or payload brings it into.
+    fn load_arc(&mut self, asset: &str, anchor: usize, kind: ArcKind, prim: Option<&str>) -> Option<usize> {
+        let loaded = self.load(asset, anchor);
+        let key = (anchor, kind, asset.to_string());
+        let i = match self.arc_index.get(&key) {
+            Some(&i) => i,
+            None => {
+                let i = self.arcs.len();
+                let layer = loaded.map(|l| self.layers[l].0.clone());
+                self.arcs.push(LayerArc { from: self.layers[anchor].0.clone(), kind, asset: asset.to_string(), layer, prims: Vec::new(), prim_count: 0 });
+                self.arc_index.insert(key, i);
+                i
+            }
+        };
+        if let Some(prim) = prim {
+            let arc = &mut self.arcs[i];
+            if !arc.prims.iter().any(|p| p == prim) {
+                arc.prim_count += 1;
+                if arc.prims.len() < MAX_ARC_PRIMS {
+                    arc.prims.push(prim.to_string());
+                }
+            }
+        }
+        loaded
+    }
+
+    /// Records the variant set `set` on the composed prim `prim`, with the variants the
+    /// site at `path` in `stack` authors for it.
+    fn record_variant_set(&mut self, prim: &str, set: &str, stack: usize, path: &str, selection: Option<&String>) {
+        let mut variants: Vec<String> = Vec::new();
+        for (_, spec) in self.specs(stack, &format!("{path}{{{set}=}}")) {
+            for v in spec.field("variantChildren").and_then(Value::as_tokens).unwrap_or_default() {
+                if !variants.contains(v) {
+                    variants.push(v.clone());
+                }
+            }
+        }
+        let key = (prim.to_string(), set.to_string());
+        match self.set_index.get(&key) {
+            Some(&i) => {
+                let entry = &mut self.variant_sets[i];
+                for v in variants {
+                    if !entry.variants.contains(&v) {
+                        entry.variants.push(v);
+                    }
+                }
+                if entry.selection.is_none() {
+                    entry.selection = selection.cloned();
+                }
+            }
+            None => {
+                self.set_index.insert(key, self.variant_sets.len());
+                self.variant_sets.push(VariantSet { prim: prim.to_string(), name: set.to_string(), variants, selection: selection.cloned() });
+            }
+        }
+    }
+
     /// The layer stack rooted at `layer`: it and its sublayers, strongest first.
     fn stack(&mut self, layer: usize) -> usize {
         if let Some(&s) = self.stack_of.get(&layer) {
@@ -179,7 +299,7 @@ impl Composer<'_> {
             _ => Vec::new(),
         };
         for sub in subs {
-            if let Some(i) = self.load(&sub, layer) {
+            if let Some(i) = self.load_arc(&sub, layer, ArcKind::Sublayer, None) {
                 self.collect_sublayers(i, order, visiting, depth + 1);
             }
         }
@@ -277,15 +397,17 @@ impl Composer<'_> {
         }
         set_names.dedup();
         for set in set_names {
+            self.record_variant_set(dst, &set, site.stack, &site.path, selections.get(&set));
             let Some(sel) = selections.get(&set).cloned() else { continue };
             let s = Site { path: format!("{}{{{set}={sel}}}", site.path), ..site.clone() };
             self.expand(s, dst, out, seen, selections, specializes, depth + 1);
         }
-        for (layer, r) in refs.into_iter().chain(payloads) {
+        let refs = refs.into_iter().map(|r| (ArcKind::Reference, r)).chain(payloads.into_iter().map(|r| (ArcKind::Payload, r)));
+        for (kind, (layer, r)) in refs {
             let stack = if r.asset.is_empty() {
                 site.stack
             } else {
-                match self.load(&r.asset, layer) {
+                match self.load_arc(&r.asset, layer, kind, Some(dst)) {
                     Some(l) => self.stack(l),
                     None => continue,
                 }

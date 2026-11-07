@@ -23,7 +23,7 @@ use libfileparser_core::{
     Category, Confidence, Content, Count, Dependencies, DependencyStatus, Detection, Document, FacetInfo, FormatInfo, Limit, Model, ParseContext,
     ParseError, ReaderInfo, Result, Role, SceneDoc, TableInfo, TableSource, Unreadable,
 };
-use scene_data::{ColorSpace, CpuScene, SceneBuilder, SceneLimits, SceneRead, Topology};
+use scene_data::{AlphaMode, ColorSpace, CpuScene, ParamValue, SceneBuilder, SceneLimits, SceneRead, ShadingSource, Topology};
 
 pub use crate::textures::{ImageJob, ImageSource, MAX_SIDE as MAX_TEXTURE_SIDE, Textures, find as find_texture, spawn as decode_textures};
 
@@ -82,12 +82,13 @@ pub struct SceneDocument {
     warnings: Vec<String>,
     textures: Option<Textures>,
     deps: Dependencies,
+    facets: Option<Box<dyn FnOnce(Document) -> Document>>,
 }
 
 impl SceneDocument {
     /// `reader` is the reader's id; `format` names what was read ("glTF binary (GLB)").
     pub fn new(reader: &'static str, format: impl Into<String>, scene: CpuScene) -> Self {
-        Self { reader, format: format.into(), scene, warnings: Vec::new(), textures: None, deps: Dependencies::new() }
+        Self { reader, format: format.into(), scene, warnings: Vec::new(), textures: None, deps: Dependencies::new(), facets: None }
     }
 
     /// Things the reader skipped or guessed; the first 20 are kept.
@@ -108,8 +109,14 @@ impl SceneDocument {
         self
     }
 
+    /// The format's own facets (its structure, say), added right after the Scene.
+    pub fn facets(mut self, add: impl FnOnce(Document) -> Document + 'static) -> Self {
+        self.facets = Some(Box::new(add));
+        self
+    }
+
     pub fn build(self) -> Result<Document> {
-        let Self { reader, format, scene, warnings, textures, deps } = self;
+        let Self { reader, format, scene, warnings, textures, deps, facets } = self;
         let read = scene.read();
         let stats = Stats::of(&read);
         if stats.placed == 0 {
@@ -127,8 +134,16 @@ impl SceneDocument {
         let mut doc = Document::new(FormatInfo::new(reader, format, Category::ThreeD))
             .with_facet(Role::Primary, "Scene", Content::Scene(SceneDoc::new(scene.clone(), textures.counter())))
             .with_dependencies(deps.clone());
+        if let Some(add) = facets {
+            doc = add(doc);
+        }
         if !deps.is_empty() {
             doc = doc.with_dependencies_facet();
+        }
+        let materials = MaterialTable { scene: scene.clone(), textures: textures.clone() };
+        if materials.scene.read().materials().iter().any(|m| m.material.source != ShadingSource::Default) {
+            let table = Arc::new(materials);
+            doc = doc.with_lazy_facet(FacetInfo::new(Role::Inspector, "Materials", Model::Table), move |_| Ok(Content::Table(table.clone())));
         }
         let table = TextureTable { scene, textures, deps };
         if !table.all().is_empty() {
@@ -187,6 +202,81 @@ impl Stats {
     }
 }
 
+/// The Materials facet: one row per material the file has, with its shading model,
+/// its maps (by texture name, as the Textures facet lists them) and its main factors.
+struct MaterialTable {
+    scene: CpuScene,
+    textures: Textures,
+}
+
+impl MaterialTable {
+    const COLUMNS: [&str; 7] = ["Material", "Shading", "Maps", "Base colour", "Metallic", "Roughness", "Alpha"];
+
+    fn all(&self) -> Vec<Vec<String>> {
+        let names: std::collections::HashMap<_, _> = self.textures.rows().into_iter().map(|(id, name, ..)| (id, name)).collect();
+        let read = self.scene.read();
+        read.materials()
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.material.source != ShadingSource::Default)
+            .map(|(i, m)| {
+                let m = &m.material;
+                let name = if m.name.is_empty() { format!("material {i}") } else { m.name.clone() };
+                let shading = match m.source {
+                    ShadingSource::Inferred => format!("{} (inferred)", m.shading.as_str()),
+                    _ => m.shading.as_str().to_string(),
+                };
+                let maps: Vec<String> = m
+                    .textures
+                    .iter()
+                    .map(|(slot, id)| format!("{}: {}", slot.as_str(), names.get(id).cloned().unwrap_or_else(|| format!("texture {}", id.index()))))
+                    .collect();
+                let param = |name: &str| m.params.get(name).map(param_text).unwrap_or_default();
+                let alpha = match m.alpha {
+                    AlphaMode::Opaque => "opaque".to_string(),
+                    AlphaMode::Mask(cutoff) => format!("mask at {}", number(cutoff)),
+                    AlphaMode::Blend => "blend".to_string(),
+                };
+                let alpha = if m.double_sided { format!("{alpha}, double-sided") } else { alpha };
+                vec![name, shading, maps.join(", "), param("base_color"), param("metallic"), param("roughness"), alpha]
+            })
+            .collect()
+    }
+}
+
+impl TableSource for MaterialTable {
+    fn info(&self) -> TableInfo {
+        TableInfo::new(Self::COLUMNS.map(String::from).to_vec(), Count::Exact(self.all().len() as u64))
+    }
+
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
+        Ok(slice(self.all(), range))
+    }
+}
+
+fn number(v: f32) -> String {
+    let s = format!("{v:.3}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" { "0".into() } else { s.into() }
+}
+
+fn param_text(v: ParamValue) -> String {
+    let list = |xs: &[f32]| xs.iter().map(|&x| number(x)).collect::<Vec<_>>().join(", ");
+    match v {
+        ParamValue::Float(x) => number(x),
+        ParamValue::Int(i) => i.to_string(),
+        ParamValue::Vec2(x) => list(&x.to_array()),
+        ParamValue::Vec3(x) => list(&x.to_array()),
+        ParamValue::Vec4(x) => list(&x.to_array()),
+    }
+}
+
+fn slice(all: Vec<Vec<String>>, range: Range<u64>) -> Vec<Vec<String>> {
+    let end = (range.end.min(all.len() as u64)) as usize;
+    let start = (range.start as usize).min(end);
+    all[start..end].to_vec()
+}
+
 /// The Textures facet: one row per texture the scene uses, as it is now (decoding,
 /// decoded at its size, failed), then each texture file it names but couldn't read.
 struct TextureTable {
@@ -225,9 +315,6 @@ impl TableSource for TextureTable {
     }
 
     fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
-        let all = self.all();
-        let end = (range.end.min(all.len() as u64)) as usize;
-        let start = (range.start as usize).min(end);
-        Ok(all[start..end].to_vec())
+        Ok(slice(self.all(), range))
     }
 }

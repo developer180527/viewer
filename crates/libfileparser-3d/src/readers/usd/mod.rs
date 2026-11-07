@@ -21,6 +21,8 @@ use usd_lite::{Format, Layer, Limits, Value};
 
 use crate::textures::{self, ImageJob, ImageSource, Textures};
 
+mod facets;
+
 /// A texture channel as a map source: (asset, channel index).
 type ChannelSource = (String, usize);
 
@@ -31,6 +33,10 @@ pub struct Loaded {
     pub format: &'static str,
     /// Layers composed in besides the root.
     pub layers: usize,
+    /// The root layer's identifier, and the arcs and variant sets composition met.
+    pub root: String,
+    pub arcs: Vec<usd_lite::LayerArc>,
+    pub variant_sets: Vec<usd_lite::VariantSet>,
 }
 
 /// Where texture files come from: inside the package, or next to the layers.
@@ -96,23 +102,47 @@ impl Files<'_> {
     }
 }
 
-/// Reads `src`; layers and textures only through `cx.files`, each recorded in `deps`.
-pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<Loaded> {
+/// usd-lite's limits within the context's.
+fn limits(cx: &ParseContext) -> Limits {
     let defaults = Limits::default();
-    let limits = Limits {
+    Limits {
         max_elements: defaults.max_elements.min(cx.limits.items as usize),
         max_decompressed: defaults.max_decompressed.min(cx.limits.allocation as usize),
-    };
-    // usd-lite names a limit only in words; its element cap is the document's items limit.
-    let limited = |e: usd_lite::Error| -> anyhow::Error {
-        match e {
-            usd_lite::Error::Limit(_) => {
-                let max = limits.max_elements as u64;
-                libfileparser_core::ParseError::too_large(libfileparser_core::Limit::Items, max.saturating_add(1), max).into()
-            }
-            other => other.into(),
+    }
+}
+
+/// usd-lite names a limit only in words; its element cap is the document's items limit.
+fn limited(limits: Limits) -> impl Fn(usd_lite::Error) -> anyhow::Error {
+    move |e| match e {
+        usd_lite::Error::Limit(_) => {
+            let max = limits.max_elements as u64;
+            libfileparser_core::ParseError::too_large(libfileparser_core::Limit::Items, max.saturating_add(1), max).into()
         }
-    };
+        other => other.into(),
+    }
+}
+
+/// The composed stage alone, for the Stage facet: composed again when it is asked for,
+/// rather than kept beside the scene for a facet that may never be opened.
+pub fn compose_stage(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<usd_lite::Stage> {
+    let limits = limits(cx);
+    let bytes = src.bytes();
+    Ok(match usd_lite::detect(bytes).ok_or_else(|| anyhow!("not a USD file"))? {
+        Format::Usdz => {
+            let package = usd_lite::Package::open(bytes, &limits).map_err(limited(limits))?;
+            usd_lite::compose(package.layer.clone(), &package.root.clone(), &package, &limits)
+        }
+        _ => {
+            let layer = usd_lite::read_layer(bytes, &limits).map_err(limited(limits))?;
+            usd_lite::compose(layer, src.name(), &HookResolver { from: src, cx, deps }, &limits)
+        }
+    })
+}
+
+/// Reads `src`; layers and textures only through `cx.files`, each recorded in `deps`.
+pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<Loaded> {
+    let limits = limits(cx);
+    let limited = limited(limits);
     let bytes = src.bytes();
     let format = usd_lite::detect(bytes).ok_or_else(|| anyhow!("not a USD file"))?;
     let (stage, files, label) = match format {
@@ -136,9 +166,10 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
             (stage, Files::Dir { from: src.clone(), cx: cx.clone(), deps: deps.clone(), layer_dirs }, label)
         }
     };
-    let layer = stage.layer;
-    let mut warnings = stage.warnings;
-    let extra_layers = stage.layers.len() - 1;
+    let usd_lite::Stage { layer, warnings, layers, arcs, variant_sets } = stage;
+    let mut warnings = warnings;
+    let extra_layers = layers.len() - 1;
+    let root = layers.into_iter().next().unwrap_or_default();
     let (scene, mut builder) = crate::build::new_scene(cx);
     let mut c = Converter {
         layer: &layer,
@@ -161,7 +192,7 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
     let jobs = std::mem::take(&mut c.jobs);
     builder.finish();
     let textures = textures::spawn(builder.texture_sink(), jobs, cx);
-    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers })
+    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers, root, arcs, variant_sets })
 }
 
 struct Converter<'a, 'f> {
@@ -535,7 +566,9 @@ fn channel_index(c: Channel) -> usize {
 
 // ---------------------------------------------------------------- the reader
 
-use libfileparser_core::{Category, Confidence, Detection, Document, Reader, ReaderInfo};
+use std::sync::Arc;
+
+use libfileparser_core::{Category, Confidence, Content, Detection, Document, FacetInfo, Model, Reader, ReaderInfo, Role};
 
 use crate::build::{SceneDocument, detect_by};
 
@@ -565,10 +598,28 @@ impl Reader for UsdReader {
         cx.cancel.check()?;
         let deps = Dependencies::new();
         let loaded = load(src, cx, &deps).map_err(super::parse_error)?;
+        let Loaded { root, arcs, variant_sets, .. } = &loaded;
+        let layers = (!arcs.is_empty()).then(|| facets::layers_tree(root, arcs, Some(&deps)));
+        let variants = (!variant_sets.is_empty()).then(|| facets::variants_tree(variant_sets));
+        let (from, stage_deps) = (src.clone(), deps.clone());
         let doc = SceneDocument::new("usd", loaded.format, loaded.scene)
             .warnings(loaded.warnings)
             .textures(loaded.textures)
             .dependencies(deps)
+            .facets(move |doc| {
+                let stage = FacetInfo::new(Role::Structure, "Stage", Model::Tree);
+                let mut doc = doc.with_lazy_facet(stage, move |cx| {
+                    let stage = compose_stage(&from, cx, &stage_deps).map_err(super::parse_error)?;
+                    Ok(Content::Tree(Arc::new(facets::StageTree::new(stage.layer))))
+                });
+                if let Some(layers) = layers {
+                    doc = doc.with_facet(Role::Structure, "Layers", Content::Tree(Arc::new(layers)));
+                }
+                if let Some(variants) = variants {
+                    doc = doc.with_facet(Role::Inspector, "Variants", Content::Tree(Arc::new(variants)));
+                }
+                doc
+            })
             .build()?;
         Ok(if loaded.layers > 0 { doc.with_meta("Layers composed", loaded.layers + 1) } else { doc })
     }
