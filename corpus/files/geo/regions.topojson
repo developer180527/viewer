@@ -1,0 +1,4 @@
+{"type": "Topology", "bbox": [0, 0, 10, 10], "arcs": [[[0, 0], [10, 0], [0, 10]], [[10, 10], [-10, 0]]],
+ "objects": {"regions": {"type": "GeometryCollection", "geometries": [
+   {"type": "Polygon", "id": "north", "arcs": [[0, 1]], "properties": {"name": "North"}},
+   {"type": "Polygon", "id": "south", "arcs": [[-1]], "properties": {"name": "South"}}]}}}

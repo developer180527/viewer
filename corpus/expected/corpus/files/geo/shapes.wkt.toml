@@ -1,0 +1,13 @@
+loader = "wkt"
+format = "WKT"
+model = "Table"
+
+[table]
+rows = 3
+columns = 2
+headers = ["Geometry", "Points"]
+kinds = ["Text", "Number"]
+
+[metadata]
+Features = "3"
+Bounds = "10, 10 to 45, 45"

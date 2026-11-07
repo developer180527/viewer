@@ -100,5 +100,5 @@ pub(crate) fn document(src: &FileSource, cx: &ParseContext) -> Result<Document> 
     if let Some(creator) = creator {
         doc = doc.with_meta("Recorded by", creator);
     }
-    Ok(doc.with_links(TreeLinks { tree, tree_facet: 1, table: Some((0, entries)) }).with_file_facets(src, Some("json")))
+    Ok(doc.with_links(TreeLinks { lines: true, tree, tree_facet: 1, table: Some((0, entries)) }).with_file_facets(src, Some("json")))
 }

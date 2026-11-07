@@ -1,0 +1,14 @@
+loader = "kml"
+format = "KML"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["Name", "Geometry", "Points", "Folder", "Description", "staff"]
+kinds = ["Text", "Text", "Number", "Text", "Text", "Text"]
+
+[metadata]
+Features = "2"
+Nodes = "19"
+Bounds = "-122.087, 37.42 to -122.0822, 37.423"

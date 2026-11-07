@@ -1,0 +1,13 @@
+loader = "nmea"
+format = "NMEA 0183"
+model = "Table"
+
+[table]
+rows = 3
+columns = 11
+headers = ["Sentence", "Time", "Date", "Latitude", "Longitude", "Altitude (m)", "Speed (knots)", "Course", "Satellites", "Fix", "Checksum"]
+kinds = ["Text", "Date", "Date", "Number", "Number", "Number", "Number", "Number", "Number", "Text", "Text"]
+
+[metadata]
+Sentences = "3"
+Bounds = "-123.185333, 48.1173 to 11.516667, 49.274167"

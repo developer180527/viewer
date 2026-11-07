@@ -1,0 +1,15 @@
+loader = "gpx"
+format = "GPX"
+model = "Table"
+
+[table]
+rows = 2
+columns = 8
+headers = ["Type", "Name", "Points", "Start", "End", "Distance (km)", "Elevation (m)", "Description"]
+kinds = ["Text", "Text", "Number", "Date", "Date", "Number", "Number", "Text"]
+
+[metadata]
+Features = "2"
+Nodes = "27"
+Bounds = "8.5417, 47.3769 to 8.5465, 47.3812"
+"Recorded by" = "Example Watch"

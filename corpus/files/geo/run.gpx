@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Example Watch" xmlns="http://www.topografix.com/GPX/1/1">
+  <wpt lat="47.3769" lon="8.5417"><ele>408</ele><name>Start</name></wpt>
+  <trk>
+    <name>Morning run</name>
+    <trkseg>
+      <trkpt lat="47.3769" lon="8.5417"><ele>408</ele><time>2024-11-08T07:00:00Z</time></trkpt>
+      <trkpt lat="47.3790" lon="8.5440"><ele>410</ele><time>2024-11-08T07:01:30Z</time></trkpt>
+      <trkpt lat="47.3812" lon="8.5465"><ele>415</ele><time>2024-11-08T07:03:00Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

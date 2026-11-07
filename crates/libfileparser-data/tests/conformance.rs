@@ -21,6 +21,24 @@ fn many(open: &str, item: &str, sep: &str, close: &str, n: usize) -> Vec<u8> {
     format!("{open}{}{close}", items.join(sep)).into_bytes()
 }
 
+const GEOJSON: &[u8] = br#"{"type": "FeatureCollection", "features": [
+  {"type": "Feature", "id": "a", "geometry": {"type": "Point", "coordinates": [13.4, 52.5]}, "properties": {"name": "Berlin", "pop": 3645000}},
+  {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[2.35, 48.85], [-0.12, 51.5]]}, "properties": {"name": "Paris to London"}}
+]}"#;
+
+const NMEA: &[u8] = b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\n$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A\n";
+
+/// A KMZ: the KML zipped as `doc.kml`.
+fn kmz(kml: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut buf = std::io::Cursor::new(Vec::new());
+    let mut w = zip::ZipWriter::new(&mut buf);
+    w.start_file("doc.kml", zip::write::SimpleFileOptions::default()).unwrap();
+    w.write_all(kml).unwrap();
+    w.finish().unwrap();
+    buf.into_inner()
+}
+
 fn samples(id: &str) -> Vec<Sample> {
     let small = |name: &str, bytes: &[u8]| Sample::new(name, bytes.to_vec()).fits_tiny_limits();
     let big = |name: &str, bytes: Vec<u8>| Sample::new(name, bytes);
@@ -66,6 +84,26 @@ fn samples(id: &str) -> Vec<Sample> {
             small("a.har", br#"{"log": {"entries": [{"request": {"method": "GET"}}]}}"#),
             big("big.har", many(r#"{"log": {"entries": ["#, r#"{"time": {i}}"#, ",", "]}}", 50)),
         ],
+        "geojson" => vec![
+            small("a.geojson", GEOJSON),
+            big("big.geojson", many(r#"{"type": "FeatureCollection", "features": ["#, r#"{"type": "Feature", "geometry": {"type": "Point", "coordinates": [{i}, 1]}, "properties": {}}"#, ",", "]}", 30)),
+        ],
+        "topojson" => vec![small("a.topojson", br#"{"type": "Topology", "objects": {"o": {"type": "Point", "coordinates": [1, 2]}}, "arcs": []}"#)
+            , big("big.topojson", many(r#"{"type": "Topology", "arcs": [], "objects": {"o": {"type": "GeometryCollection", "geometries": ["#, r#"{"type": "Point", "coordinates": [{i}, 2]}"#, ",", "]}}}", 30))],
+        "kml" => vec![small("a.kml", br#"<kml><Placemark><name>A</name><Point><coordinates>1,2</coordinates></Point></Placemark></kml>"#),
+            big("big.kml", many("<kml><Document>", "<Placemark><name>{i}</name></Placemark>", "", "</Document></kml>", 30))],
+        "kmz" => vec![
+            Sample::new("a.kmz", kmz(br#"<kml><Placemark><name>A</name><Point><coordinates>1,2</coordinates></Point></Placemark></kml>"#)).fits_tiny_limits(),
+            Sample::new("big.kmz", kmz(&many("<kml><Document>", "<Placemark><name>{i}</name></Placemark>", "", "</Document></kml>", 30))),
+        ],
+        "gpx" => vec![small("a.gpx", br#"<gpx><wpt lat="1" lon="2"><name>W</name></wpt></gpx>"#),
+            big("big.gpx", many("<gpx><trk><trkseg>", r#"<trkpt lat="{i}" lon="1"/>"#, "", "</trkseg></trk></gpx>", 30))],
+        "gml" => vec![small("a.gml", br#"<f xmlns:gml="http://www.opengis.net/gml"><gml:featureMember><r><gml:Point><gml:pos>1 2</gml:pos></gml:Point></r></gml:featureMember></f>"#),
+            big("big.gml", many(r#"<f xmlns:gml="http://www.opengis.net/gml">"#, "<gml:featureMember><r>{i}</r></gml:featureMember>", "", "</f>", 30))],
+        "osm" => vec![small("a.osm", br#"<osm><node id="1" lat="1" lon="2"/></osm>"#),
+            big("big.osm", many("<osm>", r#"<node id="{i}" lat="1" lon="2"/>"#, "", "</osm>", 30))],
+        "wkt" => vec![small("a.wkt", b"POINT (1 2)\nLINESTRING (1 2, 3 4)\n"), big("big.wkt", many("", "POINT ({i} 1)", "\n", "\n", 30))],
+        "nmea" => vec![small("a.nmea", NMEA), big("big.nmea", many("", "$GPGLL,4916.45,N,12311.12,W,2254{i}.00,A,A", "\n", "\n", 30))],
         other => panic!("no samples for {other}"),
     }
 }
@@ -351,4 +389,105 @@ fn a_live_log_is_read_by_range() {
     assert_eq!(t.rows(40_000..40_001).unwrap()[0][2], Cell::Text("request 40000".into()));
     assert_eq!(t.memory().mapped, 0, "the log isn't held");
     std::fs::remove_dir_all(&dir).unwrap();
+}
+
+fn table(doc: &libfileparser_core::Document, cx: &ParseContext) -> (libfileparser_core::TableInfo, Vec<Vec<Cell>>) {
+    let Ok(Content::Table(t)) = doc.facet(0, cx) else { panic!() };
+    (t.info(), t.rows(0..100).unwrap())
+}
+
+fn meta<'a>(doc: &'a libfileparser_core::Document, key: &str) -> Option<&'a str> {
+    doc.metadata().iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+}
+
+#[test]
+fn geojson_features_with_their_properties_and_bounds() {
+    let cx = ParseContext::new();
+    let doc = libfileparser_data::open(&FileSource::from_bytes("cities.json", GEOJSON.to_vec()), &cx).unwrap();
+    assert_eq!(doc.format().reader, "geojson", "GeoJSON in a .json is GeoJSON");
+    assert_eq!(facets(&doc)[..2], [(Role::Primary, "Features"), (Role::Structure, "Tree")]);
+    let (info, rows) = table(&doc, &cx);
+    assert_eq!(info.names(), ["ID", "Geometry", "Points", "name", "pop"]);
+    assert_eq!(info.columns[4].kind, ValueKind::Number);
+    assert_eq!(rows[0], [Cell::Text("a".into()), Cell::Text("Point".into()), Cell::Int(1), Cell::Text("Berlin".into()), Cell::Int(3645000)]);
+    assert_eq!(rows[1][2], Cell::Int(2));
+    assert_eq!(rows[1][4], Cell::Null);
+    assert_eq!(meta(&doc, "Bounds"), Some("-0.12, 48.85 to 13.4, 52.5"));
+    let links = doc.links(&Place::Row { facet: 0, row: 1 }, &cx).unwrap();
+    assert!(links.contains(&Place::Lines(2..3)), "{links:?}");
+    // A bare geometry is one feature.
+    let one = libfileparser_data::open(&FileSource::from_bytes("p.geojson", br#"{"type": "Point", "coordinates": [1, 2]}"#.to_vec()), &cx).unwrap();
+    assert_eq!(table(&one, &cx).1, [vec![Cell::Text("Point".into()), Cell::Int(1)]]);
+}
+
+#[test]
+fn kml_kmz_and_gpx() {
+    let cx = ParseContext::new();
+    let kml = br#"<?xml version="1.0"?>
+<kml xmlns="http://www.opengis.net/kml/2.2"><Document><name>Trip</name><Folder><name>Stops</name>
+  <Placemark><name>Home</name><Point><coordinates>-122.08,37.42,0</coordinates></Point>
+    <ExtendedData><Data name="rating"><value>5</value></Data></ExtendedData></Placemark>
+  <Placemark><name>Road</name><LineString><coordinates>-122.08,37.42 -122.09,37.43 -122.10,37.44</coordinates></LineString></Placemark>
+</Folder></Document></kml>"#;
+    let doc = libfileparser_data::open(&FileSource::from_bytes("trip.kml", kml.to_vec()), &cx).unwrap();
+    let (info, rows) = table(&doc, &cx);
+    assert_eq!(info.names(), ["Name", "Geometry", "Points", "Folder", "Description", "rating"]);
+    assert_eq!(rows[0][..4], [Cell::Text("Home".into()), Cell::Text("Point".into()), Cell::Int(1), Cell::Text("Stops".into())]);
+    assert_eq!(rows[0][5], Cell::Text("5".into()));
+    assert_eq!(rows[1][2], Cell::Int(3));
+    // Zipped: the same, without line links (the lines are the KML's, not the file's).
+    let zipped = libfileparser_data::open(&FileSource::from_bytes("trip.kmz", kmz(kml)), &cx).unwrap();
+    assert_eq!((zipped.format().reader, table(&zipped, &cx).1.len()), ("kmz", 2));
+    assert!(zipped.links(&Place::Row { facet: 0, row: 0 }, &cx).unwrap().iter().all(|p| !matches!(p, Place::Lines(_))));
+
+    let gpx = br#"<?xml version="1.0"?>
+<gpx version="1.1" creator="Watch"><wpt lat="47.0" lon="8.0"><ele>440</ele><name>Start</name></wpt>
+<trk><name>Run</name><trkseg>
+  <trkpt lat="47.0" lon="8.0"><time>2024-11-08T07:00:00Z</time></trkpt>
+  <trkpt lat="47.01" lon="8.0"><time>2024-11-08T07:05:00Z</time></trkpt>
+</trkseg></trk></gpx>"#;
+    let doc = libfileparser_data::open(&FileSource::from_bytes("run.gpx", gpx.to_vec()), &cx).unwrap();
+    let (info, rows) = table(&doc, &cx);
+    assert_eq!(info.names()[..6], ["Type", "Name", "Points", "Start", "End", "Distance (km)"]);
+    assert_eq!(rows[0][..3], [Cell::Text("Waypoint".into()), Cell::Text("Start".into()), Cell::Int(1)]);
+    assert_eq!(rows[0][6], Cell::Float(440.0));
+    assert_eq!(rows[1][..5], [Cell::Text("Track".into()), Cell::Text("Run".into()), Cell::Int(2), Cell::Date("2024-11-08T07:00:00Z".into()), Cell::Date("2024-11-08T07:05:00Z".into())]);
+    assert_eq!(rows[1][5], Cell::Float(1.11));
+    assert_eq!(meta(&doc, "Recorded by"), Some("Watch"));
+}
+
+#[test]
+fn osm_wkt_nmea_and_gml() {
+    let cx = ParseContext::new();
+    let osm = br#"<?xml version="1.0"?><osm version="0.6" generator="test">
+<node id="1" lat="51.5" lon="-0.1"><tag k="name" v="Pub"/><tag k="amenity" v="pub"/></node>
+<node id="2" lat="51.6" lon="-0.2"/>
+<way id="10"><nd ref="1"/><nd ref="2"/><tag k="highway" v="residential"/><tag k="name" v="High St"/></way></osm>"#;
+    let doc = libfileparser_data::open(&FileSource::from_bytes("map.osm", osm.to_vec()), &cx).unwrap();
+    let (info, rows) = table(&doc, &cx);
+    assert_eq!(info.names(), ["Kind", "ID", "Name", "Latitude", "Longitude", "Members", "Tags", "amenity", "highway"]);
+    assert_eq!(rows[2][..3], [Cell::Text("way".into()), Cell::Int(10), Cell::Text("High St".into())]);
+    assert_eq!(rows[2][5], Cell::Int(2));
+    assert_eq!(meta(&doc, "Bounds"), Some("-0.2, 51.5 to -0.1, 51.6"));
+
+    let doc = libfileparser_data::open(&FileSource::from_bytes("shapes.wkt", b"POINT (1 2)\nPOLYGON ((0 0, 4 0, 4 4, 0 0))\n".to_vec()), &cx).unwrap();
+    assert_eq!(table(&doc, &cx).1[1], [Cell::Text("POLYGON".into()), Cell::Int(4)]);
+    assert_eq!(doc.links(&Place::Row { facet: 0, row: 1 }, &cx).unwrap(), [Place::Lines(1..2)]);
+
+    let doc = libfileparser_data::open(&FileSource::from_bytes("drive.txt", NMEA.to_vec()), &cx).unwrap();
+    assert_eq!(doc.format().reader, "nmea", "NMEA is told by its content");
+    let (_, rows) = table(&doc, &cx);
+    assert_eq!(rows[1][0], Cell::Text("GPRMC".into()));
+    assert_eq!(rows[1][2], Cell::Date("2094-03-23".into()));
+    assert_eq!(rows[0][10], Cell::Text("ok".into()));
+
+    let gml = br#"<?xml version="1.0"?><wfs:FeatureCollection xmlns:wfs="http://www.opengis.net/wfs" xmlns:gml="http://www.opengis.net/gml">
+<gml:featureMember><river gml:id="r1"><name>Thames</name><gml:LineString><gml:posList>0 0 1 1 2 2</gml:posList></gml:LineString></river></gml:featureMember>
+</wfs:FeatureCollection>"#;
+    let doc = libfileparser_data::open(&FileSource::from_bytes("rivers.gml", gml.to_vec()), &cx).unwrap();
+    let (info, rows) = table(&doc, &cx);
+    assert_eq!(info.names(), ["Feature", "ID", "Geometry", "Points", "name"]);
+    assert_eq!(rows[0], [Cell::Text("river".into()), Cell::Text("r1".into()), Cell::Text("LineString".into()), Cell::Int(3), Cell::Text("Thames".into())]);
+    // Graph Modelling Language is another .gml: not this.
+    assert!(libfileparser_data::detect(b"graph [ node [ id 1 ] ]", "g.gml").iter().all(|(r, _)| r.info().id != "gml"));
 }

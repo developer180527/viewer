@@ -672,7 +672,7 @@ pub(crate) fn tree_document(
     Document::new(format)
         .with_facet(Role::Primary, "Tree", Content::Tree(tree.clone()))
         .with_meta("Nodes", nodes)
-        .with_links(TreeLinks {
+        .with_links(TreeLinks { lines: true,
             tree,
             tree_facet: 0,
             table: None,
@@ -715,7 +715,7 @@ pub(crate) fn lines_document(tree: DataTree, warnings: Vec<Warning>, src: &FileS
     doc.with_meta("Lines", rows)
         .with_meta("Nodes", nodes)
         .with_warnings(warnings)
-        .with_links(TreeLinks {
+        .with_links(TreeLinks { lines: true,
             table: table_facet.map(|f| (f, tree.roots().into())),
             tree,
             tree_facet,

@@ -131,6 +131,35 @@ path = "corpus/files/data/events.gelf"
 [[file]]
 path = "corpus/files/data/session.har"
 
+# ---------------------------------------------------------------- geo
+
+[[file]]
+path = "corpus/files/geo/cities.geojson"
+
+[[file]]
+path = "corpus/files/geo/regions.topojson"
+
+[[file]]
+path = "corpus/files/geo/places.kml"
+
+[[file]]
+path = "corpus/files/geo/places.kmz"
+
+[[file]]
+path = "corpus/files/geo/run.gpx"
+
+[[file]]
+path = "corpus/files/geo/rivers.gml"
+
+[[file]]
+path = "corpus/files/geo/street.osm"
+
+[[file]]
+path = "corpus/files/geo/shapes.wkt"
+
+[[file]]
+path = "corpus/files/geo/drive.nmea"
+
 # ---------------------------------------------------------------- 3D
 
 [[file]]

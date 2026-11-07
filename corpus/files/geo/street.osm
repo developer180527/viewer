@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<osm version="0.6" generator="example">
+  <bounds minlat="51.5000" minlon="-0.1300" maxlat="51.5100" maxlon="-0.1200"/>
+  <node id="101" lat="51.5050" lon="-0.1250"><tag k="name" v="The Crown"/><tag k="amenity" v="pub"/></node>
+  <node id="102" lat="51.5060" lon="-0.1260"/>
+  <node id="103" lat="51.5070" lon="-0.1270"/>
+  <way id="201"><nd ref="102"/><nd ref="103"/><tag k="highway" v="residential"/><tag k="name" v="Mill Lane"/></way>
+</osm>

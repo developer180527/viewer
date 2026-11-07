@@ -8,9 +8,10 @@ license.workspace = true
 # A feature per family (docs/design/libfileparser.md §2.1). Structured and delimited
 # formats are always in.
 [features]
-default = ["config", "logs"]
+default = ["config", "logs", "geo"]
 config = []
 logs = []
+geo = ["dep:zip"]
 
 [dependencies]
 libfileparser-core.workspace = true
@@ -20,6 +21,9 @@ toml = { version = "1", default-features = false, features = ["std", "parse", "p
 saphyr-parser = "0.0.6"
 quick-xml = "0.41"
 plist = { version = "1", default-features = false }
+# KMZ (feature `geo`): pure-Rust inflate only.
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
 
 [dev-dependencies]
 libfileparser-testkit.workspace = true
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }

@@ -17,6 +17,9 @@ use libfileparser_core::{
 
 const NONE: u32 = u32::MAX;
 
+/// The top level, for [`DataTree::child`]: a file whose one object was hoisted.
+pub(crate) const TOP: u32 = u32::MAX;
+
 struct Node {
     parent: u32,
     label: String,
@@ -198,6 +201,38 @@ impl DataTree {
             return None;
         }
         Some(cell(n.kind, &n.value))
+    }
+
+    /// The first child of `id` labelled `label`; [`TOP`] for the top level.
+    pub fn child(&self, id: u32, label: &str) -> Option<u32> {
+        let ids = if id == TOP { &self.roots } else { &self.nodes[id as usize].children };
+        ids.iter().copied().find(|&c| self.nodes[c as usize].label == label)
+    }
+
+    pub fn parent(&self, id: u32) -> Option<u32> {
+        match self.nodes[id as usize].parent {
+            NONE => None,
+            p => Some(p),
+        }
+    }
+
+    /// `id` and every node below it, in document order.
+    pub fn subtree(&self, id: u32) -> Vec<u32> {
+        if id == TOP {
+            return self.all();
+        }
+        let mut out = Vec::new();
+        let mut stack = vec![id];
+        while let Some(n) = stack.pop() {
+            out.push(n);
+            stack.extend(self.nodes[n as usize].children.iter().rev());
+        }
+        out
+    }
+
+    /// Every node, in document order (top-level nodes and what is below each).
+    pub fn all(&self) -> Vec<u32> {
+        self.roots.iter().flat_map(|&r| self.subtree(r)).collect()
     }
 
     pub fn child_ids(&self, id: u32) -> &[u32] {
@@ -420,6 +455,8 @@ pub(crate) struct TreeLinks {
     pub tree_facet: usize,
     /// A table facet whose row r is node `rows[r]`.
     pub table: Option<(usize, Arc<[u32]>)>,
+    /// Whether the tree's lines are the file's (not a file inside it, as a KMZ's KML).
+    pub lines: bool,
 }
 
 impl Links for TreeLinks {
@@ -427,7 +464,7 @@ impl Links for TreeLinks {
         let t = &self.tree;
         let lines = |id: u32| {
             let l = t.lines(id);
-            (l.start < l.end).then_some(Place::Lines(l.start as u64..l.end as u64))
+            (self.lines && l.start < l.end).then_some(Place::Lines(l.start as u64..l.end as u64))
         };
         let node = |id: u32| Place::Node { facet: self.tree_facet, node: NodeId(id as u64) };
         // The row of the nearest node above `id` (or `id` itself) that is a row.
@@ -455,6 +492,7 @@ impl Links for TreeLinks {
                     None => Vec::new(),
                 }
             }
+            Place::Lines(_) if !self.lines => Vec::new(),
             Place::Lines(ref r) => match u32::try_from(r.start).ok().and_then(|l| t.node_at(l)) {
                 Some(id) => [node(id)].into_iter().chain(row_of(id)).collect(),
                 None => Vec::new(),

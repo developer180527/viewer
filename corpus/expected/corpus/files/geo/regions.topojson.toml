@@ -1,0 +1,15 @@
+loader = "topojson"
+format = "TopoJSON"
+model = "Table"
+
+[table]
+rows = 2
+columns = 4
+headers = ["Object", "ID", "Geometry", "name"]
+kinds = ["Text", "Mixed", "Text", "Text"]
+
+[metadata]
+Features = "2"
+Nodes = "45"
+Bounds = "0, 0 to 10, 10"
+Arcs = "2"

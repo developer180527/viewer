@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2">
+  <Document>
+    <name>Places</name>
+    <Folder>
+      <name>Offices</name>
+      <Placemark>
+        <name>Head office</name>
+        <description>Main building</description>
+        <Point><coordinates>-122.0822,37.4222,0</coordinates></Point>
+        <ExtendedData><Data name="staff"><value>120</value></Data></ExtendedData>
+      </Placemark>
+      <Placemark>
+        <name>Campus loop</name>
+        <LineString><coordinates>-122.0822,37.4222 -122.0850,37.4230 -122.0870,37.4200</coordinates></LineString>
+      </Placemark>
+    </Folder>
+  </Document>
+</kml>

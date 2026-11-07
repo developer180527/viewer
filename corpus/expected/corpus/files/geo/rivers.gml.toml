@@ -1,0 +1,13 @@
+loader = "gml"
+format = "GML"
+model = "Table"
+
+[table]
+rows = 1
+columns = 6
+headers = ["Feature", "ID", "Geometry", "Points", "hy:name", "hy:length"]
+kinds = ["Text", "Text", "Text", "Number", "Text", "Text"]
+
+[metadata]
+Features = "1"
+Nodes = "11"

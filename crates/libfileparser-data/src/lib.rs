@@ -14,6 +14,7 @@
 //! | `ini`, `properties`, `env` | INI-like config, Java properties, `.env` (feature `config`) | Tree |
 //! | `log` | Logs (feature `logs`): syslog (RFC 5424 and BSD), Common and Combined access logs, logfmt, LTSV, CEF, and timestamped lines; a stack trace stays with its entry | Table of entries |
 //! | `har` | HTTP Archives (feature `logs`) | Table of requests; the Tree too |
+//! | `geojson`, `topojson`, `kml`, `kmz`, `gpx`, `gml`, `osm`, `wkt`, `nmea` | Geographic data (feature `geo`): features with their geometry, points and properties, and the bounds of all of them | Table of features; the Tree too |
 //! | `delimited` | CSV, TSV and other delimited text, read by row range | Table |
 //!
 //! Numbers are shown as written; aliases (YAML) are shown, never expanded. Every size
@@ -25,6 +26,8 @@
 
 #[cfg(feature = "config")]
 mod config;
+#[cfg(feature = "geo")]
+mod geo;
 #[cfg(feature = "logs")]
 mod har;
 #[cfg(feature = "logs")]
@@ -52,6 +55,24 @@ pub fn readers() -> &'static [&'static dyn Reader] {
         &PLIST,
         #[cfg(feature = "logs")]
         &HAR,
+        #[cfg(feature = "geo")]
+        &GEOJSON,
+        #[cfg(feature = "geo")]
+        &TOPOJSON,
+        #[cfg(feature = "geo")]
+        &KML,
+        #[cfg(feature = "geo")]
+        &KMZ,
+        #[cfg(feature = "geo")]
+        &GPX,
+        #[cfg(feature = "geo")]
+        &GML,
+        #[cfg(feature = "geo")]
+        &OSM,
+        #[cfg(feature = "geo")]
+        &WKT,
+        #[cfg(feature = "geo")]
+        &NMEA,
         &JSON,
         &JSON_LINES,
         &JSON5,
@@ -166,8 +187,6 @@ static JSON: Data = Data {
         .extensions(&[
             "json",
             "jsonc",
-            "geojson",
-            "topojson",
             "ipynb",
             "webmanifest",
             "jsonld",
@@ -295,8 +314,8 @@ static XML: Data = Data {
     info: ReaderInfo::new("xml", "XML", Category::Data)
         // Formats written in XML that no reader of their own owns yet (§2.1).
         .extensions(&[
-            "xml", "xsd", "xsl", "xslt", "rng", "sch", "wsdl", "rss", "atom", "xspf", "kml", "gpx",
-            "gml", "graphml", "gexf", "gxl", "xlf", "xliff", "tmx", "resx", "xbrl", "trix", "rdf",
+            "xml", "xsd", "xsl", "xslt", "rng", "sch", "wsdl", "rss", "atom", "xspf",
+            "graphml", "gexf", "gxl", "xlf", "xliff", "tmx", "resx", "xbrl", "trix", "rdf",
             "owl",
         ])
         .mime_types(&["application/xml", "text/xml"])
@@ -471,6 +490,105 @@ static HAR: Data = Data {
     language: "json",
     detect: by_extension,
     open: har::document,
+};
+
+// ---------------------------------------------------------------- geo
+
+/// XML or not, by its first character.
+#[cfg(feature = "geo")]
+fn starts_xml(header: &[u8]) -> bool {
+    header.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(header).iter().find(|b| !b.is_ascii_whitespace()) == Some(&b'<')
+}
+
+/// The extension, else (no stronger than another reader's extension, or `Content`
+/// when `strong`) what the content says.
+#[cfg(feature = "geo")]
+fn ext_or(info: &ReaderInfo, header: &[u8], name: &str, sniff: bool) -> Confidence {
+    match by_extension(info, header, name) {
+        Confidence::None if sniff => Confidence::Content,
+        c => c,
+    }
+}
+
+#[cfg(feature = "geo")]
+static GEOJSON: Data = Data {
+    info: ReaderInfo::new("geojson", "GeoJSON", Category::Data).extensions(&["geojson"]).mime_types(&["application/geo+json"]),
+    language: "json",
+    detect: |info, header, name| ext_or(info, header, name, geo::looks_like_geojson(header)),
+    open: geo::geojson,
+};
+
+#[cfg(feature = "geo")]
+static TOPOJSON: Data = Data {
+    info: ReaderInfo::new("topojson", "TopoJSON", Category::Data).extensions(&["topojson"]),
+    language: "json",
+    detect: |info, header, name| ext_or(info, header, name, geo::looks_like_topojson(header)),
+    open: geo::topojson,
+};
+
+#[cfg(feature = "geo")]
+static KML: Data = Data {
+    info: ReaderInfo::new("kml", "KML", Category::Data).extensions(&["kml"]).mime_types(&["application/vnd.google-earth.kml+xml"]),
+    language: "xml",
+    detect: |info, header, name| ext_or(info, header, name, starts_xml(header) && geo::looks_like_kml(header)),
+    open: geo::kml,
+};
+
+#[cfg(feature = "geo")]
+static KMZ: Data = Data {
+    info: ReaderInfo::new("kmz", "KMZ", Category::Data).extensions(&["kmz"]).mime_types(&["application/vnd.google-earth.kmz"]),
+    language: "xml",
+    // A zip named .kmz: it outranks the zip reader.
+    detect: |info, header, name| {
+        if header.starts_with(b"PK\x03\x04") && info.matches_extension(name) { Confidence::Certain } else { Confidence::None }
+    },
+    open: geo::kmz,
+};
+
+#[cfg(feature = "geo")]
+static GPX: Data = Data {
+    info: ReaderInfo::new("gpx", "GPX", Category::Data).extensions(&["gpx"]).mime_types(&["application/gpx+xml"]),
+    language: "xml",
+    detect: |info, header, name| ext_or(info, header, name, starts_xml(header) && geo::looks_like_gpx(header)),
+    open: geo::gpx,
+};
+
+#[cfg(feature = "geo")]
+static GML: Data = Data {
+    info: ReaderInfo::new("gml", "GML", Category::Data).extensions(&["gml"]).mime_types(&["application/gml+xml"]),
+    language: "xml",
+    // `.gml` is also Graph Modelling Language: only XML that names GML is this.
+    detect: |_, header, _| if geo::looks_like_gml(header) { Confidence::Content } else { Confidence::None },
+    open: geo::gml,
+};
+
+#[cfg(feature = "geo")]
+static OSM: Data = Data {
+    info: ReaderInfo::new("osm", "OpenStreetMap XML", Category::Data).extensions(&["osm"]),
+    language: "xml",
+    detect: |info, header, name| {
+        if !starts_xml(header) {
+            return Confidence::None;
+        }
+        ext_or(info, header, name, geo::looks_like_osm(header))
+    },
+    open: geo::osm,
+};
+
+#[cfg(feature = "geo")]
+static WKT: Data = Data {
+    info: ReaderInfo::new("wkt", "WKT", Category::Data).extensions(&["wkt"]),
+    language: "wkt",
+    detect: by_extension,
+    open: geo::wkt_document,
+};
+
+#[cfg(feature = "geo")]
+static NMEA: Data = Data {
+    info: ReaderInfo::new("nmea", "NMEA 0183", Category::Data).extensions(&["nmea"]),
+    language: "nmea",
+    detect: |info, header, name| if geo::looks_like_nmea(header) { ext_or(info, header, name, true) } else { Confidence::None },
+    open: geo::nmea_document,
 };
 
 // ---------------------------------------------------------------- delimited

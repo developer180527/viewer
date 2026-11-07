@@ -1,0 +1,15 @@
+loader = "osm"
+format = "OpenStreetMap XML"
+model = "Table"
+
+[table]
+rows = 4
+columns = 9
+headers = ["Kind", "ID", "Name", "Latitude", "Longitude", "Members", "Tags", "amenity", "highway"]
+kinds = ["Text", "Number", "Text", "Number", "Number", "Number", "Number", "Text", "Text"]
+
+[metadata]
+Features = "4"
+Nodes = "38"
+Bounds = "-0.13, 51.5 to -0.12, 51.51"
+Generator = "example"

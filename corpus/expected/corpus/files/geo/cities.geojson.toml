@@ -1,0 +1,14 @@
+loader = "geojson"
+format = "GeoJSON"
+model = "Table"
+
+[table]
+rows = 3
+columns = 6
+headers = ["ID", "Geometry", "Points", "name", "population", "capital"]
+kinds = ["Mixed", "Text", "Number", "Text", "Number", "Bool"]
+
+[metadata]
+Features = "3"
+Nodes = "40"
+Bounds = "2.3522, 48.8566 to 13.405, 52.52"
