@@ -12,5 +12,5 @@ libfileparser-core.workspace = true
 viewer-formats.workspace = true
 scene-data.workspace = true
 anyhow.workspace = true
-toml = { version = "1", default-features = false, features = ["parse", "display", "preserve_order"] }
+toml = { version = "1", default-features = false, features = ["parse", "display", "serde", "preserve_order"] }
 image = { version = "0.25", default-features = false, features = ["png"] }

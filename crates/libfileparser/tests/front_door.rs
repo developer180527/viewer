@@ -150,3 +150,25 @@ fn an_app_adds_a_format_to_the_front_door_or_replaces_one() {
     assert!(lib.get("stl").is_none() && lib.get("tri").is_some());
     assert_eq!(lib.readers().len(), libfileparser::readers().len());
 }
+
+#[test]
+fn owners_open_their_formats_and_other_categories_add_their_reading() {
+    let cx = cx();
+    // An SVG is an image (-images owns it); -data's XML tree comes after, before Source and Raw.
+    let svg = FileSource::from_bytes("logo.svg", b"<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"4\" height=\"4\"><rect width=\"4\" height=\"4\"/></svg>".to_vec());
+    let doc = libfileparser::open(&svg, &cx).unwrap();
+    assert_eq!(doc.format().reader, "svg");
+    let xml = doc.facet_index("XML").expect("the XML reading");
+    assert_eq!(facets(&doc)[xml..], [(Role::Structure, "XML".into()), (Role::Source, "Source".into()), (Role::Raw, "Raw".into())]);
+    assert!(!doc.is_made(xml), "made when asked for");
+    let Ok(Content::Tree(tree)) = doc.facet(xml, &cx) else { panic!() };
+    assert!(tree.find("/svg/rect/@width").unwrap().is_some());
+    // Used alone, -data opens it as XML.
+    assert_eq!(libfileparser::open_with("xml", &svg, &cx).unwrap().format().reader, "xml");
+
+    // Data files open as data, not text; broken ones as text.
+    let json = FileSource::from_bytes("a.json", b"{\"a\": 1}".to_vec());
+    assert_eq!(names(&libfileparser::open(&json, &cx).unwrap()), ["Tree", "Source", "Raw"]);
+    let broken = FileSource::from_bytes("a.json", b"{\"a\": ".to_vec());
+    assert_eq!(libfileparser::open(&broken, &cx).unwrap().format().reader, "text");
+}

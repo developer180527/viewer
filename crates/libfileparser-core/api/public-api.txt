@@ -652,13 +652,17 @@ pub fn libfileparser_core::Raster::width(&self) -> u32
 impl core::clone::Clone for libfileparser_core::Raster
 pub fn libfileparser_core::Raster::clone(&self) -> libfileparser_core::Raster
 #[non_exhaustive] pub struct libfileparser_core::ReaderInfo
+pub libfileparser_core::ReaderInfo::also_reads: &'static [&'static str]
+pub libfileparser_core::ReaderInfo::also_reads_model: libfileparser_core::Model
 pub libfileparser_core::ReaderInfo::category: libfileparser_core::Category
 pub libfileparser_core::ReaderInfo::extensions: &'static [&'static str]
 pub libfileparser_core::ReaderInfo::id: &'static str
 pub libfileparser_core::ReaderInfo::mime_types: &'static [&'static str]
 pub libfileparser_core::ReaderInfo::name: &'static str
 impl libfileparser_core::ReaderInfo
+pub const fn libfileparser_core::ReaderInfo::also_reads(self, &'static [&'static str], libfileparser_core::Model) -> Self
 pub const fn libfileparser_core::ReaderInfo::extensions(self, &'static [&'static str]) -> Self
+pub fn libfileparser_core::ReaderInfo::matches_also_reads(&self, &str) -> bool
 pub fn libfileparser_core::ReaderInfo::matches_extension(&self, &str) -> bool
 pub const fn libfileparser_core::ReaderInfo::mime_types(self, &'static [&'static str]) -> Self
 pub const fn libfileparser_core::ReaderInfo::new(&'static str, &'static str, libfileparser_core::Category) -> Self

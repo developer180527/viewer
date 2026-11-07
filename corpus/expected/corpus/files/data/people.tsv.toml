@@ -1,5 +1,5 @@
-loader = "csv"
-format = "Delimited table"
+loader = "delimited"
+format = "Tab-separated values"
 model = "Table"
 
 [table]
@@ -10,4 +10,4 @@ headers = ["name", "age", "city"]
 [metadata]
 Rows = "3"
 Columns = "3"
-Delimiter = ''''\t''''
+Delimiter = "tab"

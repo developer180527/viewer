@@ -28,7 +28,7 @@ pub fn registry() -> &'static Registry {
         Registry::new(&[
             adapt(::libfileparser::Category::Images),
             adapt(::libfileparser::Category::Archives),
-            viewer_fmt_data::LOADERS,
+            adapt(::libfileparser::Category::Data),
             viewer_fmt_doc::LOADERS,
             adapt(::libfileparser::Category::ThreeD),
             viewer_fmt_pdf::LOADERS,

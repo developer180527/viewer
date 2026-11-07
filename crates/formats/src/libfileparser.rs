@@ -32,7 +32,10 @@ impl FormatLoader for ReaderLoader {
 
     fn probe(&self, header: &[u8], _: Option<&str>, name: &str) -> viewer_core::Confidence {
         match self.0.detect(header, name).confidence {
-            Confidence::Extension => viewer_core::Confidence::EXTENSION,
+            // A format it owns. A guess from content at that strength, or a format it
+            // only also reads (an SVG, to `-data`), loses to a reader that owns it.
+            Confidence::Extension if self.0.info().matches_extension(name) => viewer_core::Confidence::EXTENSION,
+            Confidence::Extension => viewer_core::Confidence::LIKELY,
             Confidence::Content => viewer_core::Confidence::LIKELY,
             Confidence::Magic => viewer_core::Confidence::MAGIC,
             // A format inside a generic container (USDZ, DOCX) outranks the container.

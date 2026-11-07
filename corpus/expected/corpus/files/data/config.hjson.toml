@@ -1,0 +1,10 @@
+loader = "hjson"
+format = "Hjson"
+model = "Tree"
+
+[tree]
+nodes = 5
+top = ["name", "port", "paths"]
+
+[metadata]
+Nodes = "5"

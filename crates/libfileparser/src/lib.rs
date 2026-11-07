@@ -5,14 +5,17 @@
 //!
 //! 1. **Detection across categories:** every enabled reader, best first.
 //! 2. **The best reading that opens;** on `NotThisFormat` or `Corrupt`, the next.
-//! 3. **The generic facets,** after the reading's own: **Source** (the file as text, in
+//! 3. **Owners first** (docs/design/libfileparser.md §2.1): a reader that only *also
+//!    reads* a format (`-data` reading an SVG as XML) opens it only when no owner
+//!    does; otherwise its reading is added as a Structure facet, made when asked for.
+//! 4. **The generic facets,** after the reading's own: **Source** (the file as text, in
 //!    the language its reader named) when it is text, **Package** (its entries) when
 //!    it is a zip another reader read (a USDZ), and **Raw** (its bytes) always.
 //!    Generic facets are made only when asked for.
 //!
 //! It has no policy of its own: it takes the app's [`ParseContext`] like any category,
 //! with `-core`'s defaults unless the app gives its own. Categories are features
-//! (`images`, `3d`, `text`, `archives`, all on by default); an app that wants one kind of file
+//! (`images`, `3d`, `data`, `text`, `archives`, all on by default); an app that wants one kind of file
 //! takes that category alone.
 //!
 //! ```ignore
@@ -98,6 +101,8 @@ impl Library {
         all.extend(libfileparser_3d::readers());
         #[cfg(feature = "archives")]
         all.extend(libfileparser_archives::readers());
+        #[cfg(feature = "data")]
+        all.extend(libfileparser_data::readers());
         #[cfg(feature = "text")]
         all.extend(libfileparser_text::readers());
         Self { readers: all }
@@ -133,8 +138,13 @@ impl Library {
         &self.readers
     }
 
+    /// The readers that fit a file, best first: owners of its format before readers
+    /// that only also read it, then by confidence.
     pub fn detect(&self, header: &[u8], name: &str) -> Vec<(&'static dyn Reader, Detection)> {
-        libfileparser_core::detect(&self.readers, header, name)
+        let mut found = libfileparser_core::detect(&self.readers, header, name);
+        // Stable: confidence order is kept within each group.
+        found.sort_by_key(|(r, _)| r.info().matches_also_reads(name));
+        found
     }
 
     pub fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
@@ -151,7 +161,10 @@ impl Library {
         }
         for (reader, detection) in self.detect(src.header(), src.name()) {
             match open_guarded(reader, src, cx) {
-                Ok(doc) => return (Ok(with_generic_facets(doc, src, detection.language)), attempts),
+                Ok(doc) => {
+                    let doc = self.with_other_readings(doc, reader, src, cx);
+                    return (Ok(with_generic_facets(doc, src, detection.language)), attempts);
+                }
                 Err(e) if e.try_next_reader() => attempts.push(Attempt { reader: reader.info().id, error: e }),
                 Err(e) => return (Err(e), attempts),
             }
@@ -166,14 +179,56 @@ impl Library {
 
     pub fn open_with(&self, id: &str, src: &FileSource, cx: &ParseContext) -> Result<Document> {
         let doc = libfileparser_core::open_with(&self.readers, id, src, cx)?;
-        let reader = self.readers.iter().find(|r| r.info().id == id);
+        let reader = self.readers.iter().copied().find(|r| r.info().id == id);
         let language = reader.and_then(|r| r.detect(src.header(), src.name()).language);
+        let doc = match reader {
+            Some(r) => self.with_other_readings(doc, r, src, cx),
+            None => doc,
+        };
         Ok(with_generic_facets(doc, src, language))
+    }
+
+    /// Adds the readings of readers that also read this format (§2.1), each as a
+    /// Structure facet named after the reader ("XML"), before Source and Raw.
+    fn with_other_readings(&self, doc: Document, opened: &'static dyn Reader, src: &FileSource, cx: &ParseContext) -> Document {
+        let others: Vec<&'static dyn Reader> = self
+            .detect(src.header(), src.name())
+            .into_iter()
+            .map(|(r, _)| r)
+            .filter(|r| r.info().id != opened.info().id && r.info().matches_also_reads(src.name()))
+            .collect();
+        if others.is_empty() {
+            return doc;
+        }
+        let mut with = cx.clone();
+        with.facet_providers = others.into_iter().map(|reader| Arc::new(OtherReading { reader, src: src.clone() }) as Arc<dyn FacetProvider>).collect();
+        doc.with_provided_facets(&with)
     }
 
     /// The reader called `id`.
     pub fn get(&self, id: &str) -> Option<&'static dyn Reader> {
         self.readers.iter().copied().find(|r| r.info().id == id)
+    }
+}
+
+/// Another category's reading of a file, as one facet: its primary one.
+struct OtherReading {
+    reader: &'static dyn Reader,
+    src: FileSource,
+}
+
+impl FacetProvider for OtherReading {
+    fn formats(&self) -> &[&str] {
+        &[]
+    }
+
+    fn facets(&self, _: &Document) -> Vec<FacetInfo> {
+        let info = self.reader.info();
+        vec![FacetInfo::new(Role::Structure, info.name, info.also_reads_model)]
+    }
+
+    fn make(&self, _: &Document, _: &FacetInfo, cx: &ParseContext) -> Result<Content> {
+        open_guarded(self.reader, &self.src, cx)?.facet(0, cx)
     }
 }
 

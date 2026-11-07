@@ -1,10 +1,13 @@
-loader = "json"
+loader = "json-lines"
 format = "JSON Lines"
-model = "Tree"
+model = "Table"
 
-[tree]
-nodes = 15
-top = ["0", "1", "2", "3", "4"]
+[table]
+rows = 5
+columns = 2
+headers = ["id", "kind"]
 
 [metadata]
-Nodes = "16"
+Columns = "2"
+Lines = "5"
+Nodes = "15"

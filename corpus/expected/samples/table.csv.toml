@@ -1,5 +1,5 @@
-loader = "csv"
-format = "Delimited table"
+loader = "delimited"
+format = "CSV"
 model = "Table"
 
 [table]
@@ -10,4 +10,4 @@ headers = ["id", "city", "country", "population"]
 [metadata]
 Rows = "2000"
 Columns = "4"
-Delimiter = "','"
+Delimiter = ","

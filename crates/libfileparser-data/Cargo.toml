@@ -1,0 +1,24 @@
+[package]
+name = "libfileparser-data"
+description = "Any data file written as text into a document: JSON and its dialects, YAML, TOML, XML, property lists, INI-like config and delimited tables, as trees and tables that link to their lines (docs/design/libfileparser.md §2.1)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# A feature per family (docs/design/libfileparser.md §2.1). Structured and delimited
+# formats are always in.
+[features]
+default = ["config"]
+config = []
+
+[dependencies]
+libfileparser-core.workspace = true
+memchr.workspace = true
+csv = "1"
+toml = { version = "1", default-features = false, features = ["std", "parse", "preserve_order"] }
+saphyr-parser = "0.0.6"
+quick-xml = "0.41"
+plist = { version = "1", default-features = false }
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true

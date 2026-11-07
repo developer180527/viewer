@@ -7,4 +7,4 @@ nodes = 9
 top = ["package", "dependencies"]
 
 [metadata]
-Nodes = "10"
+Nodes = "9"

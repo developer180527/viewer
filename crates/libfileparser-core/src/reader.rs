@@ -3,7 +3,7 @@
 
 use std::path::Path;
 
-use crate::{Document, FileSource, ParseContext, ParseError, Result};
+use crate::{Document, FileSource, Model, ParseContext, ParseError, Result};
 
 /// The categories of file, one library each.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -70,14 +70,21 @@ pub struct ReaderInfo {
     /// For people: "glTF".
     pub name: &'static str,
     pub category: Category,
-    /// Lower case, without the dot.
+    /// The formats it owns, by extension: lower case, without the dot.
     pub extensions: &'static [&'static str],
     pub mime_types: &'static [&'static str],
+    /// Formats another category owns that this reader also reads, from its own angle
+    /// (`-data` reads an SVG as an XML tree; docs/design/libfileparser.md §2.1). Used
+    /// alone, the reader opens them; in the front door the owner opens them, and this
+    /// reader's primary facet is added as a [`Role::Structure`](crate::Role) facet.
+    pub also_reads: &'static [&'static str],
+    /// The model of that facet.
+    pub also_reads_model: Model,
 }
 
 impl ReaderInfo {
     pub const fn new(id: &'static str, name: &'static str, category: Category) -> Self {
-        Self { id, name, category, extensions: &[], mime_types: &[] }
+        Self { id, name, category, extensions: &[], mime_types: &[], also_reads: &[], also_reads_model: Model::Tree }
     }
 
     pub const fn extensions(mut self, extensions: &'static [&'static str]) -> Self {
@@ -90,13 +97,26 @@ impl ReaderInfo {
         self
     }
 
-    /// Whether `name` ends in one of this reader's extensions.
-    pub fn matches_extension(&self, name: &str) -> bool {
-        Path::new(name)
-            .extension()
-            .and_then(|e| e.to_str())
-            .is_some_and(|e| self.extensions.iter().any(|x| x.eq_ignore_ascii_case(e)))
+    /// Formats owned elsewhere that this reader also reads, as a facet of `model`.
+    pub const fn also_reads(mut self, extensions: &'static [&'static str], model: Model) -> Self {
+        self.also_reads = extensions;
+        self.also_reads_model = model;
+        self
     }
+
+    /// Whether `name` ends in one of the extensions this reader owns.
+    pub fn matches_extension(&self, name: &str) -> bool {
+        has_extension(self.extensions, name)
+    }
+
+    /// Whether `name` ends in one of the extensions this reader only also reads.
+    pub fn matches_also_reads(&self, name: &str) -> bool {
+        has_extension(self.also_reads, name)
+    }
+}
+
+fn has_extension(extensions: &[&str], name: &str) -> bool {
+    Path::new(name).extension().and_then(|e| e.to_str()).is_some_and(|e| extensions.iter().any(|x| x.eq_ignore_ascii_case(e)))
 }
 
 /// One format. Implement it to add a format to a category (docs/design/libfileparser.md §6).

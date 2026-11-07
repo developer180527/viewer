@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Viewer &amp; friends</title>
+  <entry id="1"><title>First</title></entry>
+  <entry id="2"><title>Second</title><summary><![CDATA[<b>bold</b>]]></summary></entry>
+</feed>

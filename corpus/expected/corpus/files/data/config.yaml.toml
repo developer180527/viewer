@@ -1,0 +1,10 @@
+loader = "yaml"
+format = "YAML"
+model = "Tree"
+
+[tree]
+nodes = 15
+top = ["defaults", "services", "notes"]
+
+[metadata]
+Nodes = "16"

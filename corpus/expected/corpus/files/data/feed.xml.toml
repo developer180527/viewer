@@ -1,0 +1,10 @@
+loader = "xml"
+format = "XML"
+model = "Tree"
+
+[tree]
+nodes = 10
+top = ["feed"]
+
+[metadata]
+Nodes = "10"

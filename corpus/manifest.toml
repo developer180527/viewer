@@ -80,6 +80,33 @@ path = "corpus/files/data/people.tsv"
 [[file]]
 path = "corpus/files/data/events.jsonl"
 
+[[file]]
+path = "corpus/files/data/config.yaml"
+
+[[file]]
+path = "corpus/files/data/feed.xml"
+
+[[file]]
+path = "corpus/files/data/Info.plist"
+
+[[file]]
+path = "corpus/files/data/binary.plist"
+
+[[file]]
+path = "corpus/files/data/settings.json5"
+
+[[file]]
+path = "corpus/files/data/config.hjson"
+
+[[file]]
+path = "corpus/files/data/app.ini"
+
+[[file]]
+path = "corpus/files/data/app.properties"
+
+[[file]]
+path = "corpus/files/data/sample.env"
+
 # ---------------------------------------------------------------- 3D
 
 [[file]]

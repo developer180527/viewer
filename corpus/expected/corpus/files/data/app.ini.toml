@@ -1,0 +1,10 @@
+loader = "ini"
+format = "INI"
+model = "Tree"
+
+[tree]
+nodes = 6
+top = ["core", 'remote "origin"']
+
+[metadata]
+Nodes = "6"

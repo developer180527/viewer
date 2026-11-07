@@ -289,9 +289,9 @@ Today (one repo, one Cargo workspace):
 crates/
   core/                 viewer-core: FileSource, Document, Content, PageSource, registry, hex fallback
   libfileparser/  libfileparser-core/  libfileparser-testkit/          libfileparser (docs/design/libfileparser.md)
-  libfileparser-3d/  -images/  -text/  -archives/                       its categories; each crate's api/ holds its API snapshot
+  libfileparser-3d/  -images/  -data/  -text/  -archives/               its categories; each crate's api/ holds its API snapshot
   libviewer/            views for every content model (docs/design/libviewer.md)
-  fmt-doc/  fmt-data/  fmt-pdf/                                         Viewer's loaders still to move to libfileparser
+  fmt-doc/  fmt-pdf/                                                    Viewer's loaders still to move to libfileparser
   pdf-mupdf/            MuPDF backend (AGPL)        pdf-pdfkit/   PDFKit backend
   rendererx/  scene-data/  gltf-lite/      the reusable 3D renderer (docs/design/3d-renderer.md)
   usd-lite/             pure-Rust USD reader and composition

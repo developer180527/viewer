@@ -1,0 +1,7 @@
+# Hjson: no quotes, no commas.
+name: Viewer, the app
+port: 8080
+paths: [
+  /usr/local
+  ~/Library
+]

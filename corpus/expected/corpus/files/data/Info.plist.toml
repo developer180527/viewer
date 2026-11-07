@@ -1,0 +1,10 @@
+loader = "plist"
+format = "Property list"
+model = "Tree"
+
+[tree]
+nodes = 6
+top = ["CFBundleName", "CFBundleVersion", "LSMinimumSystemVersion", "CFBundleDocumentTypes"]
+
+[metadata]
+Nodes = "6"

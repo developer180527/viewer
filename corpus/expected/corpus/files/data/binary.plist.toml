@@ -1,0 +1,10 @@
+loader = "plist"
+format = "Property list (binary)"
+model = "Tree"
+
+[tree]
+nodes = 6
+top = ["name", "on", "sizes"]
+
+[metadata]
+Nodes = "6"

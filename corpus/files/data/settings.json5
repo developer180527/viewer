@@ -1,0 +1,7 @@
+// JSON5: comments, unquoted keys, trailing commas.
+{
+  name: 'viewer',
+  version: 0x2,
+  ratio: .75,
+  features: ['trees', 'tables',],
+}

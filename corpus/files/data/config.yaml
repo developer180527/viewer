@@ -1,0 +1,14 @@
+# A service's settings.
+defaults: &defaults
+  retries: 3
+  timeout: 2.5s
+services:
+  - name: api
+    port: 8080
+    <<: *defaults
+  - name: worker
+    port: 8081
+    tags: [batch, "night"]
+notes: |
+  Two lines
+  of text.

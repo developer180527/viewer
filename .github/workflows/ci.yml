@@ -121,7 +121,7 @@ jobs:
       - name: Build
         run: >
           cargo ndk -t arm64-v8a build
-          -p viewer-core -p viewer-fmt-doc -p viewer-fmt-data
+          -p viewer-core -p viewer-fmt-doc -p libfileparser-data
           -p libfileparser -p libfileparser-core -p libfileparser-3d -p libfileparser-images -p libfileparser-text -p libfileparser-archives
           -p scene-data -p rendererx -p gltf-lite -p usd-lite -p libviewer
 
@@ -154,6 +154,7 @@ jobs:
       - name: Semver
         run: |
           # Against the commit before this push on main, else where the branch left main.
+          # A crate joins this list once it is on main (libfileparser-data: after 2026-11-08's).
           if [ "$GITHUB_REF" = refs/heads/main ]; then base=HEAD~1; else base=$(git merge-base HEAD origin/main); fi
           cargo semver-checks --baseline-rev "$base" \
             -p libfileparser-core -p libfileparser -p libfileparser-3d -p libfileparser-images -p libfileparser-text \
@@ -175,6 +176,6 @@ jobs:
       - name: Build
         run: >
           cargo build --target aarch64-apple-ios -p viewer
-          -p viewer-core -p viewer-fmt-doc -p viewer-fmt-data
+          -p viewer-core -p viewer-fmt-doc -p libfileparser-data
           -p libfileparser -p libfileparser-core -p libfileparser-3d -p libfileparser-images -p libfileparser-text -p libfileparser-archives
           -p scene-data -p rendererx -p gltf-lite -p usd-lite -p libviewer

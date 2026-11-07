@@ -1,0 +1,10 @@
+loader = "properties"
+format = "Java properties"
+model = "Tree"
+
+[tree]
+nodes = 3
+top = ["app.name", "app.title", "greeting:en"]
+
+[metadata]
+Nodes = "3"

@@ -1,0 +1,10 @@
+loader = "json5"
+format = "JSON5"
+model = "Tree"
+
+[tree]
+nodes = 6
+top = ["name", "version", "ratio", "features"]
+
+[metadata]
+Nodes = "6"

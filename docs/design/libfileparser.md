@@ -62,7 +62,7 @@ optional, beside them:
 
 ### 2.1 Which category owns which format
 
-Decided 2026-11-08. Not built yet, except where marked.
+Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads` (item 6); `Library::detect` puts owners first and adds the others' primary facets as Structure facets, made when asked for; Viewer's adapter ranks the same way. Formats: as marked below.
 
 **The rule.**
 
@@ -71,16 +71,16 @@ Decided 2026-11-08. Not built yet, except where marked.
 3. **No owner enabled or built yet:** the best other reading opens the file instead. Subtitles open as `-data`'s cue table until `-media` exists; then the media facet goes in front and the cue table stays. Adding an owner later is a minor version (§5).
 4. **Text needs no claim:** `-core` gives every text file Source and Raw (§2, boundary 2), so `-text` owns plain text and code only, never JSON, SQL or logs.
 5. **Content decides; the extension is a hint.** A reader claims a file only when its bytes match (the ambiguous extensions are below). What nothing claims opens as text or Raw, never as a wrong tree.
-6. **How:** each entry in a reader's format list says *owns* or *also reads* (a new field on a `#[non_exhaustive]` type, so not breaking). The Library opens with the owner and adds the others as facet providers.
+6. **How:** a reader's `extensions` are the formats it owns; `also_reads(extensions, model)` names the ones it only also reads, and the model of the facet it adds (a new field on a `#[non_exhaustive]` type, so not breaking). The Library opens with the owner and adds the others as facet providers. A guess from content is no stronger than an extension (`Confidence::Extension`), so it never outranks a reader that owns the file's extension: a `.gltf` is glTF, though it looks like JSON.
 7. **Parsing lives once.** When two categories read one format, the parser is in one crate (or a `-lite` format library) and the other uses it, keeping §2's boundary 3.
 
 **`-data`: owner.** One crate, a Cargo feature per family, all on by default.
 
 | Family (feature) | Formats | Facets |
 |---|---|---|
-| Structured (always) | `.json` `.jsonl` `.ndjson` `.json5` `.jsonc` `.hjson` `.yaml` `.yml` `.toml` `.xml` `.sgml` `.sgm` `.plist` | Tree; JSON Lines also Table |
-| Delimited (always) | `.csv` `.tsv` `.dsv` `.psv` `.ssv` `.fwf` `.dat` `.prn` | Table |
-| `config` | `.ini` `.properties` `.env` `.conf` `.cfg` `.hcl` `.tf` `.cue` `.dhall` `.ncl` `.kdl` `.cron` | Tree (parsed as written, never evaluated); cron a Table |
+| Structured (always) | ✅ `.json` `.jsonl` `.ndjson` `.json5` `.jsonc` `.hjson` `.yaml` `.yml` `.toml` `.xml` `.plist`; `.sgml` `.sgm` not yet | Tree; JSON Lines a Table of its keys first |
+| Delimited (always) | ✅ `.csv` `.tsv` `.dsv` `.psv` `.ssv` `.dat` `.prn`; `.fwf` not yet | Table |
+| `config` | ✅ `.ini` `.properties` `.env` `.conf` `.cfg`; `.hcl` `.tf` `.cue` `.dhall` `.ncl` `.kdl` `.cron` not yet | Tree (parsed as written, never evaluated); cron a Table |
 | `schemas` | `.proto` `.avsc` `.thrift` `.fbs` `.capnp` `.smithy` `.graphql` `.gql` `.openapi` `.asyncapi` `.xsd` `.rng` `.sch` `.wsdl` `.dbml` `.prisma` | Tree of types and fields |
 | `rdf` | `.rdf` `.owl` `.ttl` `.nt` `.nq` `.trig` `.jsonld` `.trix` `.rq` `.sparql` | Table of triples or quads, Tree; queries a Tree |
 | `graphs` | `.graphml` `.gexf` `.gxl` `.dot`, Graph Modelling `.gml` | Tables of nodes and edges, Tree |
@@ -93,7 +93,15 @@ Decided 2026-11-08. Not built yet, except where marked.
 | `l10n` | `.po` `.pot` `.mo` `.xlf` `.xliff` `.tmx` `.resx` `.strings` `.stringsdict` `.arb` | Table of keys and translations |
 | `feeds` | `.m3u` `.m3u8` `.pls` `.xspf` `.rss` `.atom` | Table of entries, Tree |
 
-The JSON, JSON Lines, TOML, YAML, XML and CSV/TSV readers move from Viewer's `viewer-fmt-data`. `.kmz` is a zip: `-data` reads the KML inside, and the zip is a Package facet from `-archives`.
+✅ Built (2026-11-08), `crates/libfileparser-data`, replacing Viewer's `viewer-fmt-data`. Readers `json`, `json-lines`, `json5`, `hjson`, `yaml`, `toml`, `xml`, `plist`, `ini`, `properties`, `env`, `delimited`.
+- **Trees** keep the file's order and show numbers as written; YAML aliases are shown, never expanded. Every node links to its lines in Source and back (`Links`), and JSON Lines' rows to their lines and nodes.
+- **Tables** are read by row range from an index of row starts (12 bytes a row), quotes respected; rows link to their lines.
+- **No input overflows the stack:** the parsers keep nesting on their own stacks or in events, and `limits.depth` (512 on desktop) stops them.
+- A `.json` with comments or trailing commas opens as "JSON with comments". `.conf`, `.cfg`, `.dat` and `.prn` are claimed only when their content fits.
+- Until a family's own reader exists, formats written in JSON (`.geojson`, `.har`, `.ipynb`, `.jsonld`, `.avsc`, `.arb`, …) open as JSON trees and formats written in XML (`.xsd`, `.rss`, `.kml`, `.gpx`, `.graphml`, `.xliff`, `.rdf`, …) as XML trees. `-data` also reads `.svg`, `.xhtml` and `.ttml` as XML.
+- The other families are still to come, each a reader of its own.
+
+`.kmz` is a zip: `-data` reads the KML inside, and the zip is a Package facet from `-archives`.
 
 **`-sheets` and `-datasets`: owners.** They are separate from `-data` because of their dependencies and models (2026-11-08):
 
@@ -293,7 +301,7 @@ An app may rely on these; changing one is a breaking change, with a version bump
 | Reader ids | `gltf`, `usd`, `fbx`, `obj`, `stl`, `ply`, `blend`, `image`, `svg`, `text`, `zip`, `tar`, `gzip` |
 | Facet names a category's design lists for a format | Scene, Stage, Layers, Variants, glTF, JSON chunk, Chunks, Records, Embedded media, Objects, Header, Blocks, Packed files, Package, Dependencies, Materials, Textures, Extensions used, Source, Raw, Image, Text, Files |
 | Facet order: the primary first; Source then Raw last | |
-| Tree path syntaxes | USD prim and property paths; JSON pointers (glTF); `Objects/<record>/<name>` (FBX); object names and `usemtl <name>` (OBJ); layer identifiers (Layers) |
+| Tree path syntaxes | USD prim and property paths; JSON pointers (glTF); `Objects/<record>/<name>` (FBX); object names and `usemtl <name>` (OBJ); layer identifiers (Layers); `-data`'s trees: `/`-separated labels, `~0` `~1` `~2` for `~` `/` `[`, `[n]` for the n-th sibling of a label (a JSON Pointer for JSON; `/feed/entry[2]/@id` for XML) |
 | A table's columns: their number, order and meaning | Materials: name, shading, maps, base colour, metallic, roughness, alpha |
 
 Display text, which may change in any release: format names ("glTF binary (GLB)"), metadata keys and values, tree labels and values, column headings, cell text, warnings and error messages. An app that needs one of these to be stable asks for it to become contract: a typed accessor, not a string to parse.
@@ -454,7 +462,7 @@ The corpus passes after every step.
 1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse` (`FacetProvider` was listed here but only written 2026-11-07, §6); the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ✅ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI (2026-11-07, §5).
 2. 🟡 **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md) (moved and on the hooks 2026-11-06; its other facets to come): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
 3. ✅ **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it (2026-11-07). `-archives` is Viewer's former `fmt-archive`, moved: limits come from the context, tar entries are views of the archive. Viewer keeps the front door's document with the page, so View as lists its facets (Scene, Stage, Layers…, Source, Raw) and switches between them without reading the file again; `--view-as` takes a facet name too. Until 2026-11-07 Viewer converted a facet to its own content to show it; now libviewer's views read the content models directly ([libviewer.md](libviewer.md)).
-4. 🟡 **The other categories,** one at a time: `-images`, `-data` (with §2.1's owner and also-reads field), `-docs`, then `-sheets` and `-datasets`, moving today's `viewer-fmt-*` loaders, each meeting §1. ✅ `-images` (2026-11-07): Viewer's `fmt-image` moved. Opening reads the header only (size, colour type, the image-pixel limit); pixels are a band source: non-interlaced PNGs row by row, other formats decoded whole in their own layout and converted to RGBA a band at a time, SVG rendered when asked. Viewer decodes images up to 16 megapixels whole on its loader thread and streams bigger ones band by band to the GPU from a thread of its own, as before. Not yet: `-3d` decoding its textures through `-images` (§2's "sideways toward leaves"), §4.1's reduced-size and region decoding.
+4. 🟡 **The other categories,** one at a time: `-images`, `-data` (with §2.1's owner and also-reads field), `-docs`, then `-sheets` and `-datasets`, moving today's `viewer-fmt-*` loaders, each meeting §1. ✅ `-images` (2026-11-07): Viewer's `fmt-image` moved. Opening reads the header only (size, colour type, the image-pixel limit); pixels are a band source: non-interlaced PNGs row by row, other formats decoded whole in their own layout and converted to RGBA a band at a time, SVG rendered when asked. Viewer decodes images up to 16 megapixels whole on its loader thread and streams bigger ones band by band to the GPU from a thread of its own, as before. Not yet: `-3d` decoding its textures through `-images` (§2's "sideways toward leaves"), §4.1's reduced-size and region decoding. ✅ `-data` (2026-11-08): Viewer's `fmt-data` moved and grown to the structured, delimited and config formats of §2.1, with the owner/also-reads rule in `-core` and the front door.
 5. **`-thumb`** and a thumbnail CLI, as the first user outside Viewer.
 6. **`-remote`** (MuPDF in a helper on desktop), then **`-c`**.
 
