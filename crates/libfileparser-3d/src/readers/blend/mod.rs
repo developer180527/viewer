@@ -128,11 +128,11 @@ impl Reader for BlendReader {
         // The preview was found, so the header is good; damaged blocks further on only
         // cost these facets.
         let header = Header::parse(src.bytes()).context("not a .blend file").map_err(super::parse_error)?;
-        if let Ok(file) = blocks::BlendFile::read(src.bytes(), &header, cx.limits.items) {
+        if let Ok(file) = blocks::BlendFile::read(src.bytes(), &header, cx.limits.nodes) {
             let from = src.clone();
             doc = doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Blocks", Model::Tree), move |cx| {
                 let header = Header::parse(from.bytes()).ok_or_else(|| libfileparser_core::ParseError::corrupt("not a .blend file"))?;
-                let file = blocks::BlendFile::read(from.bytes(), &header, cx.limits.items).map_err(super::parse_error)?;
+                let file = blocks::BlendFile::read(from.bytes(), &header, cx.limits.nodes).map_err(super::parse_error)?;
                 Ok(Content::Tree(Arc::new(file.tree())))
             });
             let packed = file.packed();

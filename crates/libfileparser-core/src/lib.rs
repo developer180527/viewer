@@ -22,6 +22,7 @@ mod limits;
 mod link;
 mod reader;
 mod source;
+mod value;
 
 pub use bytes::Bytes;
 pub use content::{
@@ -29,11 +30,12 @@ pub use content::{
     TableSource, TextInfo, TextSource, TreeNode, TreeSource,
 };
 pub use dependency::{Dependencies, Dependency, DependencyStatus, DependencyTable, Unreadable};
-pub use document::{Document, FacetInfo, FormatInfo, Role};
-pub use error::{LimitExceeded, ParseError, Result};
+pub use document::{Document, FacetInfo, FormatInfo, Role, Warning};
+pub use error::{LimitExceeded, ParseError, Position, Result};
 pub use generic::{FacetProvider, FileParts, is_text};
 pub use hooks::{AnyFiles, Cancel, FileResolver, FolderFiles, InlineSpawn, NoFiles, NoNotify, Notify, ParseContext, Spawn};
 pub use limits::{Limit, Limits};
 pub use link::{Links, Place, SceneItem};
 pub use reader::{Category, Confidence, Detection, Reader, ReaderInfo, detect, open, open_guarded, open_with};
 pub use source::FileSource;
+pub use value::{Cell, Column, ValueKind};

@@ -1,13 +1,19 @@
 //! TOML 1.1, keys in the order written, each value on the lines it was written on.
 
-use libfileparser_core::{ParseContext, ParseError, Result};
+use libfileparser_core::{ParseContext, ParseError, Position, Result, ValueKind};
 use toml::de::{DeTable, DeValue};
 
 use crate::tree::{Builder, DataTree, LineCounter};
 
 pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
     let table = DeTable::parse(text)
-        .map_err(|e| ParseError::corrupt(format!("TOML: {}", e.to_string().trim_end())))?;
+        .map_err(|e| {
+            let why = format!("TOML: {}", e.message().trim_end());
+            match e.span() {
+                Some(span) => ParseError::corrupt_at(why, Position::in_text(text.as_bytes(), span.start)),
+                None => ParseError::corrupt(why),
+            }
+        })?;
     let mut b = Builder::new(cx);
     let mut lines = LineCounter::new(text.as_bytes());
     members(&mut b, &mut lines, None, 1, table.get_ref())?;
@@ -49,16 +55,16 @@ fn add(
 ) -> Result<u32> {
     let first = lines.line(span.start);
     let last = lines.line(span.end.saturating_sub(1).max(span.start));
-    let shown = match value {
-        DeValue::String(s) => format!("{s:?}"),
-        DeValue::Integer(i) => i.to_string(),
-        DeValue::Float(f) => f.to_string(),
-        DeValue::Boolean(v) => v.to_string(),
-        DeValue::Datetime(d) => d.to_string(),
-        DeValue::Array(a) => format!("[{}]", a.len()),
-        DeValue::Table(t) => format!("{{{}}}", t.len()),
+    let (shown, kind) = match value {
+        DeValue::String(s) => (s.to_string(), ValueKind::Text),
+        DeValue::Integer(i) => (i.to_string(), ValueKind::Number),
+        DeValue::Float(f) => (f.to_string(), ValueKind::Number),
+        DeValue::Boolean(v) => (v.to_string(), ValueKind::Bool),
+        DeValue::Datetime(d) => (d.to_string(), ValueKind::Date),
+        DeValue::Array(a) => (format!("[{}]", a.len()), ValueKind::List),
+        DeValue::Table(t) => (format!("{{{}}}", t.len()), ValueKind::Map),
     };
-    let id = b.add(parent, depth, label, shown, first..last + 1)?;
+    let id = b.add(parent, depth, label, shown, kind, first..last + 1)?;
     match value {
         DeValue::Array(items) => {
             for (i, item) in items.iter().enumerate() {
@@ -96,7 +102,7 @@ mod tests {
             .children(None, 0..10)
             .unwrap()
             .into_iter()
-            .map(|n| (n.label, n.value))
+            .map(|n| (n.label.clone(), crate::tree::shown(&n)))
             .collect();
         assert_eq!(
             top,

@@ -16,6 +16,12 @@ pub enum Category {
     Text,
     Archives,
     Media,
+    /// Workbooks: ODS, XLSX (`libfileparser-sheets`).
+    Sheets,
+    /// Binary data sets and databases: HDF5, Parquet, SQLite (`libfileparser-datasets`).
+    Datasets,
+    /// No category: a file nothing reads, shown as its bytes (and text).
+    Other,
 }
 
 /// How sure a reader is that a file is its format.
@@ -174,7 +180,7 @@ pub fn open_guarded(reader: &dyn Reader, src: &FileSource, cx: &ParseContext) ->
 /// Runs `f`, turning a panic in it into [`ParseError::Corrupt`] that names `what`: no
 /// panic in format code crosses the library's boundary (docs/design/libfileparser.md §7).
 pub(crate) fn guard<T>(what: &str, f: impl FnOnce() -> Result<T>) -> Result<T> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| Err(ParseError::Corrupt(format!("{what} panicked: {}", panic_message(&*payload)))))
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|payload| Err(ParseError::corrupt(format!("{what} panicked: {}", panic_message(&*payload)))))
 }
 
 pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {

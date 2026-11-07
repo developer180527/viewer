@@ -11,19 +11,18 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use libfileparser_core::{
-    Count, Document, Limit, Links, MemoryUse, NodeId, ParseContext, ParseError, Place, Result,
-    TreeNode, TreeSource,
+    Cell, Count, Document, Limit, Links, MemoryUse, NodeId, ParseContext, ParseError, Place,
+    Result, TreeNode, TreeSource, ValueKind,
 };
-
-/// Leaf values longer than this are cut, with `…`.
-pub(crate) const MAX_VALUE_CHARS: usize = 300;
 
 const NONE: u32 = u32::MAX;
 
 struct Node {
     parent: u32,
     label: String,
+    /// The whole value of a leaf, as text; a summary for a branch.
     value: String,
+    kind: ValueKind,
     children: Vec<u32>,
     /// Lines of the file, from 0, end exclusive.
     lines: Range<u32>,
@@ -60,10 +59,11 @@ impl<'c> Builder<'c> {
         depth: usize,
         label: impl Into<String>,
         value: impl Into<String>,
+        kind: ValueKind,
         lines: Range<u32>,
     ) -> Result<u32> {
         let n = self.tree.nodes.len();
-        self.cx.limits.check(Limit::Items, n as u64 + 1)?;
+        self.cx.limits.check(Limit::Nodes, n as u64 + 1)?;
         self.cx.limits.check(Limit::Depth, depth as u64)?;
         if n.is_multiple_of(4096) {
             self.cx.cancel.check()?;
@@ -82,7 +82,8 @@ impl<'c> Builder<'c> {
         self.tree.nodes.push(Node {
             parent,
             label: label.into(),
-            value: cut(value.into()),
+            value: value.into(),
+            kind,
             children: Vec::new(),
             lines,
         });
@@ -96,7 +97,21 @@ impl<'c> Builder<'c> {
     }
 
     pub fn set_value(&mut self, id: u32, value: impl Into<String>) {
-        self.tree.nodes[id as usize].value = cut(value.into());
+        self.tree.nodes[id as usize].value = value.into();
+    }
+
+    /// Removes every node added since the builder had `mark` nodes: what a bad line
+    /// of JSON Lines added before it failed. Those nodes are top-level or under each other.
+    pub fn rollback(&mut self, mark: usize) {
+        self.tree.nodes.truncate(mark);
+        let mark = mark as u32;
+        while self.tree.roots.last().is_some_and(|&r| r >= mark) {
+            self.tree.roots.pop();
+        }
+    }
+
+    pub fn set_kind(&mut self, id: u32, kind: ValueKind) {
+        self.tree.nodes[id as usize].kind = kind;
     }
 
     pub fn set_label(&mut self, id: u32, label: impl Into<String>) {
@@ -145,8 +160,10 @@ impl<'c> Builder<'c> {
     }
 }
 
-fn cut(mut value: String) -> String {
-    if let Some((at, _)) = value.char_indices().nth(MAX_VALUE_CHARS) {
+/// A long value shortened for [`TreeNode::value`]; [`TreeSource::value`] has it whole.
+fn preview(value: &str) -> String {
+    let mut value = value.to_string();
+    if let Some((at, _)) = value.char_indices().nth(TreeNode::PREVIEW_CHARS) {
         value.truncate(at);
         value.push('…');
     }
@@ -168,6 +185,19 @@ impl DataTree {
 
     pub fn value(&self, id: u32) -> &str {
         &self.nodes[id as usize].value
+    }
+
+    pub fn kind(&self, id: u32) -> ValueKind {
+        self.nodes[id as usize].kind
+    }
+
+    /// Node `id`'s whole value, typed: `None` for a branch.
+    pub fn cell(&self, id: u32) -> Option<Cell> {
+        let n = &self.nodes[id as usize];
+        if !n.children.is_empty() || matches!(n.kind, ValueKind::Map | ValueKind::List | ValueKind::Group) {
+            return None;
+        }
+        Some(cell(n.kind, &n.value))
     }
 
     pub fn child_ids(&self, id: u32) -> &[u32] {
@@ -199,12 +229,8 @@ impl DataTree {
 
     fn tree_node(&self, id: u32) -> TreeNode {
         let n = &self.nodes[id as usize];
-        TreeNode::new(
-            NodeId(id as u64),
-            n.label.clone(),
-            n.value.clone(),
-            !n.children.is_empty(),
-        )
+        TreeNode::new(NodeId(id as u64), n.label.clone(), preview(&n.value), !n.children.is_empty())
+            .with_kind(n.kind)
     }
 
     /// The node on `line` most closely: the smallest one whose lines hold it.
@@ -278,6 +304,13 @@ impl TreeSource for DataTree {
         )
     }
 
+    fn value(&self, node: NodeId) -> Result<Option<Cell>> {
+        match u32::try_from(node.0).ok().filter(|&i| (i as usize) < self.nodes.len()) {
+            Some(id) => Ok(self.cell(id)),
+            None => Err(ParseError::invalid(format!("no node {}", node.0))),
+        }
+    }
+
     fn find(&self, path: &str) -> Result<Option<NodeId>> {
         let Some(rest) = path.strip_prefix('/') else {
             return Ok(None);
@@ -334,6 +367,18 @@ impl TreeSource for DataTree {
         }
         segments.reverse();
         Ok(Some(format!("/{}", segments.join("/"))))
+    }
+}
+
+/// A value of `kind` written as `text`, as a cell.
+pub(crate) fn cell(kind: ValueKind, text: &str) -> Cell {
+    match kind {
+        ValueKind::Null => Cell::Null,
+        ValueKind::Bool => Cell::Bool(text == "true"),
+        ValueKind::Number => Cell::number(text),
+        ValueKind::Date => Cell::Date(text.to_string()),
+        ValueKind::Error => Cell::Error(text.to_string()),
+        _ => Cell::Text(text.to_string()),
     }
 }
 
@@ -432,6 +477,12 @@ impl Links for TreeLinks {
     }
 }
 
+/// A node as a view shows it: text in quotes, escaped, so tests see kinds too.
+#[cfg(test)]
+pub(crate) fn shown(n: &TreeNode) -> String {
+    if n.kind == ValueKind::Text { format!("{:?}", n.value) } else { n.value.clone() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -440,10 +491,10 @@ mod tests {
     fn paths_round_trip_through_find() {
         let cx = ParseContext::new();
         let mut b = Builder::new(&cx);
-        let a = b.add(None, 1, "a/b", "{2}", 0..1).unwrap();
-        b.add(Some(a), 2, "item", "1", 0..1).unwrap();
-        let second = b.add(Some(a), 2, "item", "2", 0..1).unwrap();
-        b.add(None, 1, "x[0]~", "", 1..2).unwrap();
+        let a = b.add(None, 1, "a/b", "{2}", ValueKind::Map, 0..1).unwrap();
+        b.add(Some(a), 2, "item", "1", ValueKind::Number, 0..1).unwrap();
+        let second = b.add(Some(a), 2, "item", "2", ValueKind::Number, 0..1).unwrap();
+        b.add(None, 1, "x[0]~", "", ValueKind::Text, 1..2).unwrap();
         let t = b.finish().unwrap();
         for id in 0..t.len() as u64 {
             let path = t.path(NodeId(id)).unwrap().unwrap();

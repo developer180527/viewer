@@ -1,6 +1,6 @@
 //! Apple property lists, XML and binary.
 
-use libfileparser_core::{ParseContext, ParseError, Result};
+use libfileparser_core::{ParseContext, ParseError, Result, ValueKind};
 use plist::Value;
 
 use crate::tree::{Builder, DataTree};
@@ -28,20 +28,21 @@ pub(crate) fn parse(bytes: &[u8], cx: &ParseContext) -> Result<DataTree> {
 }
 
 fn add(b: &mut Builder, parent: Option<u32>, depth: usize, label: String, v: &Value) -> Result<()> {
-    let shown = match v {
-        Value::Dictionary(d) => format!("{{{}}}", d.len()),
-        Value::Array(a) => format!("[{}]", a.len()),
-        Value::String(s) => format!("{s:?}"),
-        Value::Boolean(v) => v.to_string(),
-        Value::Integer(i) => i.to_string(),
-        Value::Real(r) => r.to_string(),
-        Value::Date(d) => d.to_xml_format(),
-        Value::Data(d) => format!("{} bytes", d.len()),
-        Value::Uid(u) => format!("UID {}", u.get()),
-        _ => String::new(),
+    let (shown, kind) = match v {
+        Value::Dictionary(d) => (format!("{{{}}}", d.len()), ValueKind::Map),
+        Value::Array(a) => (format!("[{}]", a.len()), ValueKind::List),
+        Value::String(s) => (s.clone(), ValueKind::Text),
+        Value::Boolean(v) => (v.to_string(), ValueKind::Bool),
+        Value::Integer(i) => (i.to_string(), ValueKind::Number),
+        Value::Real(r) => (r.to_string(), ValueKind::Number),
+        Value::Date(d) => (d.to_xml_format(), ValueKind::Date),
+        // Shown by size; a view that wants the bytes reads the file.
+        Value::Data(d) => (format!("{} bytes", d.len()), ValueKind::Unknown),
+        Value::Uid(u) => (format!("UID {}", u.get()), ValueKind::Unknown),
+        _ => (String::new(), ValueKind::Unknown),
     };
     // Binary plists have no lines.
-    let id = b.add(parent, depth, label, shown, 0..0)?;
+    let id = b.add(parent, depth, label, shown, kind, 0..0)?;
     match v {
         Value::Dictionary(d) => {
             for (k, v) in d {
@@ -74,7 +75,7 @@ mod tests {
             .children(None, 0..10)
             .unwrap()
             .into_iter()
-            .map(|n| (n.label, n.value))
+            .map(|n| (n.label.clone(), crate::tree::shown(&n)))
             .collect();
         assert_eq!(
             top,

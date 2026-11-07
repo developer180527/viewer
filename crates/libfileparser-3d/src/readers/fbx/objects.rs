@@ -49,7 +49,7 @@ pub fn index(text: &[u8], max_nodes: u64) -> Result<ObjIndex> {
     let mut nodes = 0u64;
     let mut count = |n: u64| -> Result<()> {
         nodes += n;
-        if nodes > max_nodes { Err(ParseError::too_large(libfileparser_core::Limit::Items, nodes, max_nodes)) } else { Ok(()) }
+        if nodes > max_nodes { Err(ParseError::too_large(libfileparser_core::Limit::Nodes, nodes, max_nodes)) } else { Ok(()) }
     };
     for (i, line) in text.split(|&b| b == b'\n').enumerate() {
         let line = String::from_utf8_lossy(line);
@@ -147,7 +147,7 @@ impl Shared {
         if let Some(i) = &*index {
             return Ok(i.clone());
         }
-        let i = Arc::new(self::index(self.src.bytes(), cx.limits.items)?);
+        let i = Arc::new(self::index(self.src.bytes(), cx.limits.nodes)?);
         *index = Some(i.clone());
         Ok(i)
     }

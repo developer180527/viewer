@@ -45,7 +45,7 @@ pub fn blocks(b: &[u8], h: &Header, max: u64) -> Result<Vec<Block>> {
         let start = at + header;
         let end = usize::try_from(len).ok().and_then(|l| start.checked_add(l)).filter(|&e| e <= b.len()).context("a block runs past the end of the file")?;
         if out.len() as u64 >= max {
-            bail!(ParseError::too_large(libfileparser_core::Limit::Items, max + 1, max));
+            bail!(ParseError::too_large(libfileparser_core::Limit::Nodes, max + 1, max));
         }
         out.push(Block { code, data: start..end, old, sdna: sdna as usize });
         at = end;

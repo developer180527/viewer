@@ -4,13 +4,18 @@
 //! **Columns** (contract, docs/design/libfileparser.md §5): a delimited file's are its
 //! first row, in order, then empty names for cells past it; JSON Lines', the keys of
 //! its objects in the order first seen.
+//!
+//! **Cells:** JSON Lines' are typed as the JSON was (a missing key is null). A
+//! delimited file's columns are numbers when every value in its first rows is one
+//! (empty cells there are null); else text, as written.
 
 use std::ops::Range;
 use std::sync::Arc;
 
 use libfileparser_core::{
-    Category, Content, Count, Document, FileSource, FormatInfo, Limit, Links, MemoryUse,
-    ParseContext, ParseError, Place, Result, Role, TableInfo, TableSource,
+    Category, Cell, Column, Content, Count, Document, FileSource, FormatInfo, Limit, Links,
+    MemoryUse, ParseContext, ParseError, Place, Position, Result, Role, TableInfo, TableSource,
+    ValueKind,
 };
 
 use crate::tree::DataTree;
@@ -22,20 +27,23 @@ const MAX_COLUMNS: usize = 256;
 
 pub(crate) struct JsonLinesTable {
     tree: Arc<DataTree>,
-    columns: Vec<String>,
+    columns: Vec<Column>,
 }
 
 impl JsonLinesTable {
     pub fn new(tree: Arc<DataTree>) -> Self {
-        let mut columns: Vec<String> = Vec::new();
+        let mut columns: Vec<Column> = Vec::new();
         for &row in tree.roots().iter().take(COLUMN_SAMPLE) {
-            if !tree.value(row).starts_with('{') {
+            if tree.kind(row) != ValueKind::Map {
                 continue;
             }
             for &cell in tree.child_ids(row) {
                 let key = tree.label(cell);
-                if columns.len() < MAX_COLUMNS && !columns.iter().any(|c| c == key) {
-                    columns.push(key.to_string());
+                let kind = tree.kind(cell);
+                match columns.iter().position(|c| c.name == key) {
+                    Some(i) => columns[i].kind = join(columns[i].kind, kind),
+                    None if columns.len() < MAX_COLUMNS => columns.push(Column::new(key).with_kind(kind)),
+                    None => {}
                 }
             }
         }
@@ -46,34 +54,48 @@ impl JsonLinesTable {
         !self.columns.is_empty()
     }
 
-    pub fn columns(&self) -> &[String] {
+    pub fn columns(&self) -> &[Column] {
         &self.columns
+    }
+}
+
+/// The kind of a column holding `a` and `b`: nulls fit any kind.
+fn join(a: ValueKind, b: ValueKind) -> ValueKind {
+    match (a, b) {
+        (a, b) if a == b => a,
+        (ValueKind::Null, b) => b,
+        (a, ValueKind::Null) => a,
+        _ => ValueKind::Mixed,
     }
 }
 
 impl TableSource for JsonLinesTable {
     fn info(&self) -> TableInfo {
-        TableInfo::new(
-            self.columns.clone(),
-            Count::Exact(self.tree.roots().len() as u64),
-        )
+        TableInfo::new(self.columns.clone(), Count::Exact(self.tree.roots().len() as u64))
     }
 
-    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
-        let roots = self.tree.roots();
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
+        let t = &self.tree;
+        let roots = t.roots();
         let end = range.end.min(roots.len() as u64) as usize;
         let start = (range.start as usize).min(end);
         Ok(roots[start..end]
             .iter()
             .map(|&row| {
-                let cells = self.tree.child_ids(row);
+                // A line that wasn't JSON: marked in its first cell.
+                if t.kind(row) == ValueKind::Error {
+                    let mut cells = vec![Cell::Null; self.columns.len()];
+                    if let Some(first) = cells.first_mut() {
+                        *first = Cell::Error(t.value(row).to_string());
+                    }
+                    return cells;
+                }
+                let cells = t.child_ids(row);
                 self.columns
                     .iter()
-                    .map(|c| {
-                        cells
-                            .iter()
-                            .find(|&&id| self.tree.label(id) == c)
-                            .map_or_else(String::new, |&id| cell(self.tree.value(id)))
+                    .map(|c| match cells.iter().find(|&&id| t.label(id) == c.name) {
+                        Some(&id) => t.cell(id).unwrap_or_else(|| Cell::Text(t.value(id).to_string())),
+                        None => Cell::Null,
                     })
                     .collect()
             })
@@ -81,15 +103,7 @@ impl TableSource for JsonLinesTable {
     }
 
     fn memory(&self) -> MemoryUse {
-        MemoryUse::heap(self.columns.iter().map(|c| c.len() as u64 + 24).sum())
-    }
-}
-
-/// A tree value as a cell: strings without their quotes.
-fn cell(value: &str) -> String {
-    match value.strip_prefix('"').and_then(|v| v.strip_suffix('"')) {
-        Some(inner) => inner.replace("\\\"", "\""),
-        None => value.to_string(),
+        MemoryUse::heap(self.columns.iter().map(|c| c.name.len() as u64 + 32).sum())
     }
 }
 
@@ -97,7 +111,7 @@ fn cell(value: &str) -> String {
 pub(crate) struct Delimited {
     src: FileSource,
     delimiter: u8,
-    columns: Vec<String>,
+    columns: Vec<Column>,
     /// Where each row after the header starts, and one past the last.
     starts: Vec<u64>,
     /// The line each of those rows starts on (from 0).
@@ -139,7 +153,7 @@ impl Delimited {
                         row_line = line;
                         if starts.len() % 65536 == 0 {
                             cx.cancel.check()?;
-                            cx.limits.check(Limit::Items, starts.len() as u64)?;
+                            cx.limits.check(Limit::Rows, starts.len() as u64)?;
                         }
                     }
                 }
@@ -158,26 +172,61 @@ impl Delimited {
             }
             width = width.max(row_width);
         }
-        cx.limits.check(Limit::Items, starts.len() as u64)?;
+        cx.limits.check(Limit::Rows, starts.len() as u64)?;
         cx.limits.check(Limit::Memory, starts.len() as u64 * 12)?;
-        let mut columns = parse_rows(&bytes[..header_end], delimiter)?
+        let mut names = parse_rows(&bytes[..header_end], delimiter, 0)?
             .into_iter()
             .next()
             .unwrap_or_default();
-        columns.resize(width.max(columns.len()), String::new());
+        names.resize(width.max(names.len()), String::new());
         starts.push(bytes.len() as u64);
-        Ok(Self {
+        let mut table = Self {
             src: src.clone(),
             delimiter,
-            columns,
+            columns: names.into_iter().map(|n| Column::new(n).with_kind(ValueKind::Text)).collect(),
             starts,
             lines,
-        })
+        };
+        table.infer_kinds()?;
+        Ok(table)
     }
 
     fn row_count(&self) -> usize {
         self.starts.len() - 1
     }
+
+    /// Columns whose every value in the first rows is a number are numbers.
+    fn infer_kinds(&mut self) -> Result<()> {
+        let sample = self.text_rows(0..KIND_SAMPLE as u64)?;
+        for (i, column) in self.columns.iter_mut().enumerate() {
+            let mut values = sample.iter().filter_map(|r| r.get(i)).map(|v| v.trim()).filter(|v| !v.is_empty()).peekable();
+            if values.peek().is_some() && values.all(is_number) {
+                column.kind = ValueKind::Number;
+            }
+        }
+        Ok(())
+    }
+
+    fn text_rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
+        let end = range.end.min(self.row_count() as u64) as usize;
+        let start = (range.start as usize).min(end);
+        if start == end {
+            return Ok(Vec::new());
+        }
+        let bytes = &self.src.bytes()[self.starts[start] as usize..self.starts[end] as usize];
+        let mut rows = parse_rows(bytes, self.delimiter, self.lines[start])?;
+        rows.truncate(end - start);
+        Ok(rows)
+    }
+}
+
+/// Rows sampled to tell a column's kind.
+const KIND_SAMPLE: usize = 200;
+
+/// A number as a spreadsheet would read it: `42`, `-1.5`, `1e3`; not `0x1F` or `1,000`.
+fn is_number(v: &str) -> bool {
+    let digits = v.strip_prefix(['-', '+']).unwrap_or(v);
+    digits.starts_with(|c: char| c.is_ascii_digit() || c == '.') && v.parse::<f64>().is_ok_and(f64::is_finite)
 }
 
 impl TableSource for Delimited {
@@ -185,19 +234,22 @@ impl TableSource for Delimited {
         TableInfo::new(self.columns.clone(), Count::Exact(self.row_count() as u64))
     }
 
-    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
-        let end = range.end.min(self.row_count() as u64) as usize;
-        let start = (range.start as usize).min(end);
-        if start == end {
-            return Ok(Vec::new());
-        }
-        let bytes = &self.src.bytes()[self.starts[start] as usize..self.starts[end] as usize];
-        let mut rows = parse_rows(bytes, self.delimiter)?;
-        rows.truncate(end - start);
-        for row in &mut rows {
-            row.resize(self.columns.len(), String::new());
-        }
-        Ok(rows)
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
+        Ok(self
+            .text_rows(range)?
+            .into_iter()
+            .map(|mut row| {
+                row.resize(self.columns.len(), String::new());
+                row.into_iter()
+                    .zip(&self.columns)
+                    .map(|(v, c)| match c.kind {
+                        ValueKind::Number if v.trim().is_empty() => Cell::Null,
+                        ValueKind::Number if is_number(v.trim()) => Cell::number(v.trim()),
+                        _ => Cell::Text(v),
+                    })
+                    .collect()
+            })
+            .collect())
     }
 
     fn memory(&self) -> MemoryUse {
@@ -205,7 +257,8 @@ impl TableSource for Delimited {
     }
 }
 
-fn parse_rows(bytes: &[u8], delimiter: u8) -> Result<Vec<Vec<String>>> {
+/// The rows of `bytes`, which start on line `first_line` (from 0) of the file.
+fn parse_rows(bytes: &[u8], delimiter: u8, first_line: u32) -> Result<Vec<Vec<String>>> {
     let mut reader = csv::ReaderBuilder::new()
         .delimiter(delimiter)
         .has_headers(false)
@@ -215,7 +268,10 @@ fn parse_rows(bytes: &[u8], delimiter: u8) -> Result<Vec<Vec<String>>> {
     let mut record = csv::ByteRecord::new();
     while reader
         .read_byte_record(&mut record)
-        .map_err(|e| ParseError::corrupt(format!("CSV: {e}")))?
+        .map_err(|e| {
+            let line = e.position().map_or(1, |p| p.line()) + u64::from(first_line);
+            ParseError::corrupt_at(format!("CSV: {e}"), Position::line(line))
+        })?
     {
         out.push(
             record
@@ -356,12 +412,12 @@ mod tests {
             b"name,note\nann,\"two\nlines, quoted\"\nbob,x,extra\n\n".to_vec(),
         );
         let t = Delimited::index(&src, b',', &cx).unwrap();
-        assert_eq!(t.info().columns, ["name", "note", ""]);
+        assert_eq!(t.info().names(), ["name", "note", ""]);
         assert_eq!(t.info().rows, Count::Exact(2));
-        assert_eq!(t.rows(1..5).unwrap(), [vec!["bob", "x", "extra"]]);
+        assert_eq!(t.rows(1..5).unwrap(), [["bob", "x", "extra"].map(Cell::from).to_vec()]);
         assert_eq!(
             t.rows(0..1).unwrap(),
-            [vec!["ann", "two\nlines, quoted", ""]]
+            [["ann", "two\nlines, quoted", ""].map(Cell::from).to_vec()]
         );
         assert_eq!(t.lines, [1, 3]);
     }

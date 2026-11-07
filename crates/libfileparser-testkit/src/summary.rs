@@ -61,10 +61,10 @@ pub fn content_summary(content: &Content, out: &mut String) {
         }
         Content::Table(t) => {
             let info = t.info();
-            let _ = writeln!(out, "  table: {} rows; {}", info.rows, info.columns.join(" | "));
+            let _ = writeln!(out, "  table: {} rows; {}", info.rows, info.names().join(" | "));
             match t.rows(0..SHOWN as u64) {
                 Ok(rows) => rows.iter().for_each(|row| {
-                    let _ = writeln!(out, "  | {}", row.join(" | "));
+                    let _ = writeln!(out, "  | {}", row.iter().map(ToString::to_string).collect::<Vec<_>>().join(" | "));
                 }),
                 Err(e) => {
                     let _ = writeln!(out, "  rows failed: {e}");

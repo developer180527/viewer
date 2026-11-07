@@ -129,7 +129,7 @@ impl BinaryRecords {
         let Some(r) = self.rec(at as usize) else { return TreeNode::new(NodeId(at), "?", "", false) };
         let name = String::from_utf8_lossy(&self.bytes()[r.name.clone()]).into_owned();
         let has_children = r.nested_at < r.end && self.rec(r.nested_at).is_some_and(|c| c.end <= r.end);
-        TreeNode::new(NodeId(at), name, self.properties(&r).0.join(", "), has_children)
+        TreeNode::new(NodeId(at), name, self.properties(&r).0.join(", "), has_children).with_kind(libfileparser_core::ValueKind::Group)
     }
 
     /// The first properties of a record as text, and any `R` (raw) property's bytes.
@@ -321,7 +321,7 @@ pub fn ascii_records(text: &[u8], max_nodes: u64, max_depth: u64) -> Result<Owne
         let Some((key, values, n)) = pending.take() else { return Ok(None) };
         nodes += 1;
         if nodes > max_nodes {
-            return Err(ParseError::too_large(libfileparser_core::Limit::Items, nodes, max_nodes));
+            return Err(ParseError::too_large(libfileparser_core::Limit::Nodes, nodes, max_nodes));
         }
         let mut value = values.join(", ");
         if n > values.len() {

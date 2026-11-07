@@ -219,17 +219,17 @@ impl DependencyTable {
 
 impl TableSource for DependencyTable {
     fn info(&self) -> TableInfo {
-        TableInfo::new(Self::COLUMNS.map(String::from).to_vec(), Count::Exact(self.0.len() as u64))
+        TableInfo::new(Self::COLUMNS.map(|c| crate::Column::new(c).with_kind(crate::ValueKind::Text)).to_vec(), Count::Exact(self.0.len() as u64))
     }
 
-    fn rows(&self, range: std::ops::Range<u64>) -> crate::Result<Vec<Vec<String>>> {
+    fn rows(&self, range: std::ops::Range<u64>) -> crate::Result<Vec<Vec<crate::Cell>>> {
         let list = self.0.lock();
         let (start, end) = (range.start.min(list.len() as u64) as usize, range.end.min(list.len() as u64) as usize);
         Ok(list[start..end.max(start)]
             .iter()
             .map(|d| {
                 let found = d.found.clone().filter(|f| *f != d.reference).unwrap_or_default();
-                vec![d.reference.clone(), d.kind.clone(), found, d.status.label().to_string()]
+                [d.reference.clone(), d.kind.clone(), found, d.status.label().to_string()].map(crate::Cell::Text).to_vec()
             })
             .collect())
     }

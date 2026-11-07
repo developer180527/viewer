@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use scene_data::CpuScene;
 
-use crate::{Bytes, FileSource, ParseError, Result};
+use crate::{Bytes, Cell, Column, FileSource, ParseError, Result, ValueKind};
 
 /// One facet's data. Cheap to clone: every variant shares its data.
 #[derive(Clone)]
@@ -348,14 +348,27 @@ pub struct TreeNode {
     pub id: NodeId,
     /// The key or name: "Cube", "materials", `[3]`.
     pub label: String,
-    /// A value for leaves, or a summary for branches ("{3}", "Mesh").
+    /// A value for leaves, as plain text without quotes, or a summary for branches
+    /// ("{3}", "Mesh"). A source may shorten a long value, ending it with `…`, to keep
+    /// listing children cheap; [`TreeSource::value`] gives it whole.
     pub value: String,
+    /// What the node is: a string, a number, an object… A view uses it to show `"1"`
+    /// and `1` apart. [`ValueKind::Unknown`] when the source doesn't say.
+    pub kind: ValueKind,
     pub has_children: bool,
 }
 
 impl TreeNode {
+    /// Values longer than this many characters may be shortened in [`TreeNode::value`].
+    pub const PREVIEW_CHARS: usize = 1000;
+
     pub fn new(id: NodeId, label: impl Into<String>, value: impl Into<String>, has_children: bool) -> Self {
-        Self { id, label: label.into(), value: value.into(), has_children }
+        Self { id, label: label.into(), value: value.into(), kind: ValueKind::Unknown, has_children }
+    }
+
+    pub fn with_kind(mut self, kind: ValueKind) -> Self {
+        self.kind = kind;
+        self
     }
 }
 
@@ -369,6 +382,12 @@ pub trait TreeSource: Send + Sync {
     fn children(&self, parent: Option<NodeId>, range: Range<u64>) -> Result<Vec<TreeNode>>;
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
+    }
+    /// A node's whole value, typed, when it has one (leaves): never shortened, unlike
+    /// [`TreeNode::value`]. `None` for branches, and from sources that keep only text.
+    fn value(&self, node: NodeId) -> Result<Option<Cell>> {
+        let _ = node;
+        Ok(None)
     }
     /// The node a path names, in the tree's own path syntax (a USD prim path, a JSON
     /// pointer), so an app or a link can go straight to it. `None` when no node has that
@@ -399,6 +418,13 @@ impl OwnedTree {
     }
 
     /// Adds a node under `parent` (or at the top) and returns its id.
+    /// Sets what kind of node `id` is.
+    pub fn set_kind(&mut self, id: NodeId, kind: ValueKind) {
+        if let Some((node, _)) = self.nodes.get_mut(id.0 as usize) {
+            node.kind = kind;
+        }
+    }
+
     pub fn add(&mut self, parent: Option<NodeId>, label: impl Into<String>, value: impl Into<String>) -> NodeId {
         let id = NodeId(self.nodes.len() as u64);
         self.nodes.push((TreeNode::new(id, label, value, false), Vec::new()));
@@ -472,21 +498,26 @@ impl TreeSource for OwnedTree {
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct TableInfo {
-    pub columns: Vec<String>,
+    pub columns: Vec<Column>,
     pub rows: Count,
 }
 
 impl TableInfo {
-    pub fn new(columns: Vec<String>, rows: Count) -> Self {
+    pub fn new(columns: Vec<Column>, rows: Count) -> Self {
         Self { columns, rows }
+    }
+
+    /// The columns' names, in order.
+    pub fn names(&self) -> Vec<&str> {
+        self.columns.iter().map(|c| c.name.as_str()).collect()
     }
 }
 
 /// A table read by row range.
 pub trait TableSource: Send + Sync {
     fn info(&self) -> TableInfo;
-    /// The cells of rows in `range`; fewer past the end.
-    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>>;
+    /// The cells of rows in `range`, one per column; fewer rows past the end.
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>>;
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }
@@ -494,13 +525,19 @@ pub trait TableSource: Send + Sync {
 
 /// A table built up front.
 pub struct OwnedTable {
-    columns: Vec<String>,
-    rows: Vec<Vec<String>>,
+    columns: Vec<Column>,
+    rows: Vec<Vec<Cell>>,
 }
 
 impl OwnedTable {
-    pub fn new(columns: Vec<String>, rows: Vec<Vec<String>>) -> Self {
+    pub fn new(columns: Vec<Column>, rows: Vec<Vec<Cell>>) -> Self {
         Self { columns, rows }
+    }
+
+    /// A table of text: every column [`ValueKind::Text`].
+    pub fn text(columns: Vec<String>, rows: Vec<Vec<String>>) -> Self {
+        let columns = columns.into_iter().map(|c| Column::new(c).with_kind(ValueKind::Text)).collect();
+        Self { columns, rows: rows.into_iter().map(|r| r.into_iter().map(Cell::Text).collect()).collect() }
     }
 }
 
@@ -509,12 +546,17 @@ impl TableSource for OwnedTable {
         TableInfo::new(self.columns.clone(), Count::Exact(self.rows.len() as u64))
     }
 
-    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
         Ok(self.rows[clamp(range, self.rows.len() as u64)].to_vec())
     }
 
     fn memory(&self) -> MemoryUse {
-        MemoryUse::heap(self.rows.iter().flatten().chain(&self.columns).map(|c| c.len() as u64 + 24).sum())
+        let cell = |c: &Cell| match c {
+            Cell::Text(s) | Cell::Number(s) | Cell::Date(s) | Cell::Error(s) => s.len() as u64,
+            Cell::Bytes(b) => b.len() as u64,
+            _ => 0,
+        } + size_of::<Cell>() as u64;
+        MemoryUse::heap(self.rows.iter().flatten().map(cell).sum::<u64>() + self.columns.iter().map(|c| c.name.len() as u64 + 32).sum::<u64>())
     }
 }
 

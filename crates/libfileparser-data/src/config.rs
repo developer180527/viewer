@@ -1,7 +1,7 @@
 //! Line-based config: INI (sections of `key = value`), Java properties and `.env`
 //! files. Every key is a node on its line; INI sections are nodes holding theirs.
 
-use libfileparser_core::{ParseContext, ParseError, Result};
+use libfileparser_core::{ParseContext, ParseError, Position, Result, ValueKind};
 
 use crate::tree::{Builder, DataTree};
 
@@ -32,7 +32,7 @@ pub(crate) fn parse_ini(text: &str, cx: &ParseContext) -> Result<DataTree> {
             continue;
         }
         if let Some(name) = line.strip_prefix('[').and_then(|l| l.strip_suffix(']')) {
-            let id = b.add(None, 1, name.trim(), "", n..n + 1)?;
+            let id = b.add(None, 1, name.trim(), "", ValueKind::Map, n..n + 1)?;
             section = Some(id);
             last = None;
             continue;
@@ -46,6 +46,7 @@ pub(crate) fn parse_ini(text: &str, cx: &ParseContext) -> Result<DataTree> {
             if section.is_some() { 2 } else { 1 },
             key,
             value,
+            ValueKind::Text,
             n..n + 1,
         )?;
         if let Some(s) = section {
@@ -107,7 +108,11 @@ pub(crate) fn parse_properties(text: &str, cx: &ParseContext) -> Result<DataTree
             }
         }
         let (key, value) = split_property(&logical);
-        b.add(None, 1, unescape(key)?, unescape(value)?, first..last + 1)?;
+        let at = |e: ParseError| match e {
+            ParseError::Corrupt { why, .. } => ParseError::corrupt_at(why, Position::line(u64::from(first) + 1)),
+            other => other,
+        };
+        b.add(None, 1, unescape(key).map_err(at)?, unescape(value).map_err(at)?, ValueKind::Text, first..last + 1)?;
     }
     b.finish()
 }
@@ -180,10 +185,7 @@ pub(crate) fn parse_env(text: &str, cx: &ParseContext) -> Result<DataTree> {
         }
         let line = line.strip_prefix("export ").map_or(line, str::trim_start);
         let Some((key, value)) = line.split_once('=') else {
-            return Err(ParseError::corrupt(format!(
-                ".env line {}: expected KEY=value",
-                first + 1
-            )));
+            return Err(ParseError::corrupt_at(".env: expected KEY=value", Position::line(u64::from(first) + 1)));
         };
         let value = value.trim_start();
         let shown = if let Some(rest) = value.strip_prefix('"') {
@@ -208,7 +210,7 @@ pub(crate) fn parse_env(text: &str, cx: &ParseContext) -> Result<DataTree> {
                 .trim_end()
                 .to_string()
         };
-        b.add(None, 1, key.trim(), shown, first..n as u32)?;
+        b.add(None, 1, key.trim(), shown, ValueKind::Text, first..n as u32)?;
     }
     b.finish()
 }
@@ -245,7 +247,7 @@ mod tests {
         t.children(None, 0..100)
             .unwrap()
             .into_iter()
-            .map(|n| (n.label, n.value))
+            .map(|n| (n.label.clone(), crate::tree::shown(&n)))
             .collect()
     }
 
@@ -265,7 +267,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             top(&t),
-            pairs(&[("root", "1"), ("core", "{2}"), ("core", "{1}")])
+            pairs(&[("root", "\"1\""), ("core", "{2}"), ("core", "{1}")])
         );
         let multi = t.find("/core/multi").unwrap().unwrap();
         assert_eq!(
@@ -290,7 +292,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             top(&t),
-            pairs(&[("a", "1"), ("b", "two lines"), ("c:d", "value"), ("u", "é")])
+            pairs(&[("a", "\"1\""), ("b", "\"two lines\""), ("c:d", "\"value\""), ("u", "\"é\"")])
         );
         assert_eq!(t.lines(t.find("/b").unwrap().unwrap().0 as u32), 2..4);
         let e = parse_env(
@@ -300,7 +302,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             top(&e),
-            pairs(&[("A", "1"), ("B", "$x y"), ("C", "line\n2\nmore")])
+            pairs(&[("A", "\"1\""), ("B", "\"$x y\""), ("C", "\"line\\n2\\nmore\"")])
         );
         assert!(parse_env("nonsense\n", &cx).is_err());
     }

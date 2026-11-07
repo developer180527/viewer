@@ -203,10 +203,8 @@ static JSON_LINES: Data = Data {
     language: "json",
     detect: by_extension,
     open: |src, cx| {
-        Ok(json::lines_document(
-            json::parse_lines(src.bytes(), cx)?,
-            src,
-        ))
+        let (tree, warnings) = json::parse_lines(src.bytes(), cx)?;
+        Ok(json::lines_document(tree, warnings, src))
     },
 };
 

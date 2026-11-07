@@ -16,8 +16,10 @@ pub type Result<T> = std::result::Result<T, ParseError>;
 pub enum ParseError {
     /// The file isn't in this reader's format.
     NotThisFormat,
-    /// The file is in this format but damaged or not understood.
-    Corrupt(String),
+    /// The file is in this format but damaged or not understood: why, and where when
+    /// the reader knows ("line 3, column 14").
+    #[non_exhaustive]
+    Corrupt { why: String, at: Option<Position> },
     /// The file claims more than the limits allow.
     TooLarge(LimitExceeded),
     /// A file this one needs couldn't be read.
@@ -35,7 +37,20 @@ pub enum ParseError {
 
 impl ParseError {
     pub fn corrupt(why: impl fmt::Display) -> Self {
-        ParseError::Corrupt(why.to_string())
+        ParseError::Corrupt { why: why.to_string(), at: None }
+    }
+
+    /// Damage at a known place in the file.
+    pub fn corrupt_at(why: impl fmt::Display, at: Position) -> Self {
+        ParseError::Corrupt { why: why.to_string(), at: Some(at) }
+    }
+
+    /// Where in the file the error is, when it says.
+    pub fn position(&self) -> Option<Position> {
+        match self {
+            ParseError::Corrupt { at, .. } => *at,
+            _ => None,
+        }
     }
 
     pub fn unsupported(why: impl fmt::Display) -> Self {
@@ -53,7 +68,7 @@ impl ParseError {
 
     /// Whether another reader may still read the file.
     pub fn try_next_reader(&self) -> bool {
-        matches!(self, ParseError::NotThisFormat | ParseError::Corrupt(_))
+        matches!(self, ParseError::NotThisFormat | ParseError::Corrupt { .. })
     }
 }
 
@@ -61,7 +76,8 @@ impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             ParseError::NotThisFormat => write!(f, "not in this format"),
-            ParseError::Corrupt(why) => write!(f, "damaged or not understood: {why}"),
+            ParseError::Corrupt { why, at: Some(at) } => write!(f, "damaged or not understood: {at}: {why}"),
+            ParseError::Corrupt { why, at: None } => write!(f, "damaged or not understood: {why}"),
             ParseError::TooLarge(e) => write!(f, "{e}"),
             ParseError::Unreadable { reference, reason } => write!(f, "{reference}: {reason}"),
             ParseError::Cancelled => write!(f, "cancelled"),
@@ -84,6 +100,56 @@ impl std::error::Error for ParseError {
 impl From<std::io::Error> for ParseError {
     fn from(e: std::io::Error) -> Self {
         ParseError::Io(e)
+    }
+}
+
+/// A place in a file: a line, and a column on it, both from 1 as editors show them;
+/// or a byte offset, for binary files.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+pub struct Position {
+    /// From 1.
+    pub line: Option<u64>,
+    /// From 1, in characters.
+    pub column: Option<u64>,
+    /// From 0.
+    pub byte: Option<u64>,
+}
+
+impl Position {
+    /// Line `line` (from 1).
+    pub fn line(line: u64) -> Self {
+        Self { line: Some(line), column: None, byte: None }
+    }
+
+    /// Line `line`, column `column` (both from 1).
+    pub fn line_column(line: u64, column: u64) -> Self {
+        Self { line: Some(line), column: Some(column), byte: None }
+    }
+
+    /// Byte `offset` (from 0).
+    pub fn byte(offset: u64) -> Self {
+        Self { line: None, column: None, byte: Some(offset) }
+    }
+
+    /// The line and column of byte `offset` in `text`.
+    pub fn in_text(text: &[u8], offset: usize) -> Self {
+        let before = &text[..offset.min(text.len())];
+        let line_start = before.iter().rposition(|&c| c == b'\n').map_or(0, |p| p + 1);
+        let column = String::from_utf8_lossy(&before[line_start..]).chars().count() as u64 + 1;
+        let line = before.iter().filter(|&&c| c == b'\n').count() as u64 + 1;
+        Self { line: Some(line), column: Some(column), byte: Some(offset as u64) }
+    }
+}
+
+impl fmt::Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match (self.line, self.column, self.byte) {
+            (Some(l), Some(c), _) => write!(f, "line {l}, column {c}"),
+            (Some(l), None, _) => write!(f, "line {l}"),
+            (None, _, Some(b)) => write!(f, "byte {b}"),
+            (None, _, None) => f.write_str("somewhere"),
+        }
     }
 }
 

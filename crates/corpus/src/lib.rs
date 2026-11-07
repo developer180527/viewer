@@ -149,7 +149,8 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
                 let info = table.info();
                 t.insert("rows".into(), int(info.rows.known() as usize));
                 t.insert("columns".into(), int(info.columns.len()));
-                t.insert("headers".into(), list(info.columns.iter().cloned(), info.columns.len()));
+                t.insert("headers".into(), list(info.columns.iter().map(|c| c.name.clone()), info.columns.len()));
+                t.insert("kinds".into(), list(info.columns.iter().map(|c| format!("{:?}", c.kind)), info.columns.len()));
                 "table"
             }
             Model::Container(c) => {

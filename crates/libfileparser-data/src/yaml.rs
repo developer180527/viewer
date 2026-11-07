@@ -3,7 +3,7 @@
 
 use std::collections::HashMap;
 
-use libfileparser_core::{ParseContext, ParseError, Result};
+use libfileparser_core::{ParseContext, ParseError, Position, Result, ValueKind};
 use saphyr_parser::{Event, Parser, ScalarStyle};
 
 use crate::tree::{Builder, DataTree};
@@ -49,6 +49,42 @@ fn place(
     }
 }
 
+/// The kind of a plain scalar, by the YAML 1.2 core schema.
+fn plain_kind(v: &str) -> ValueKind {
+    match v {
+        "" | "~" | "null" | "Null" | "NULL" => ValueKind::Null,
+        "true" | "True" | "TRUE" | "false" | "False" | "FALSE" => ValueKind::Bool,
+        ".inf" | "-.inf" | "+.inf" | ".Inf" | ".INF" | "-.Inf" | "-.INF" | ".nan" | ".NaN" | ".NAN" => ValueKind::Number,
+        _ if is_core_number(v) => ValueKind::Number,
+        _ => ValueKind::Text,
+    }
+}
+
+/// `[-+]?[0-9]+`, `0o[0-7]+`, `0x[0-9a-fA-F]+`, or a decimal float.
+fn is_core_number(v: &str) -> bool {
+    if let Some(h) = v.strip_prefix("0x") {
+        return !h.is_empty() && h.bytes().all(|c| c.is_ascii_hexdigit());
+    }
+    if let Some(o) = v.strip_prefix("0o") {
+        return !o.is_empty() && o.bytes().all(|c| (b'0'..=b'7').contains(&c));
+    }
+    let d = v.strip_prefix(['-', '+']).unwrap_or(v);
+    d.starts_with(|c: char| c.is_ascii_digit() || c == '.')
+        && d.bytes().all(|c| c.is_ascii_digit() || matches!(c, b'.' | b'e' | b'E' | b'-' | b'+'))
+        && v.parse::<f64>().is_ok()
+}
+
+fn core_tag(suffix: &str) -> ValueKind {
+    match suffix {
+        "null" => ValueKind::Null,
+        "bool" => ValueKind::Bool,
+        "int" | "float" => ValueKind::Number,
+        "timestamp" => ValueKind::Date,
+        "binary" => ValueKind::Bytes,
+        _ => ValueKind::Text,
+    }
+}
+
 /// Parses `text` into a tree: one document's mapping or sequence members at the top,
 /// or, for several documents, one top-level node per document.
 pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
@@ -58,7 +94,10 @@ pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
     let mut docs: Vec<u32> = Vec::new();
     let mut anchors: HashMap<usize, String> = HashMap::new();
     for event in Parser::new_from_str(text) {
-        let (event, span) = event.map_err(|e| ParseError::corrupt(format!("YAML: {e}")))?;
+        let (event, span) = event.map_err(|e| {
+            let m = e.marker();
+            ParseError::corrupt_at(format!("YAML: {}", e.info()), Position::line_column(m.line() as u64, m.col() as u64 + 1))
+        })?;
         let line = span.start.line().saturating_sub(1) as u32;
         match event {
             Event::Scalar(value, style, anchor, tag) => {
@@ -66,17 +105,13 @@ pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
                 else {
                     continue;
                 };
-                let shown = match style {
-                    ScalarStyle::Plain => value.to_string(),
-                    _ => format!("{value:?}"),
-                };
-                let shown = match &tag {
-                    // As written: `!!str`, not the URI it stands for.
-                    Some(t) if t.handle == "tag:yaml.org,2002:" => {
-                        format!("!!{} {shown}", t.suffix)
-                    }
-                    Some(t) => format!("{}{} {shown}", t.handle, t.suffix),
-                    None => shown,
+                let (shown, kind) = match (&tag, style) {
+                    // The core schema's tags say the kind.
+                    (Some(t), _) if t.handle == "tag:yaml.org,2002:" => (value.to_string(), core_tag(&t.suffix)),
+                    // Others are the application's: kept with the value.
+                    (Some(t), _) => (format!("{}{} {value}", t.handle, t.suffix), ValueKind::Unknown),
+                    (None, ScalarStyle::Plain) => (value.to_string(), plain_kind(&value)),
+                    (None, _) => (value.to_string(), ValueKind::Text),
                 };
                 let last = span
                     .end
@@ -88,6 +123,7 @@ pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
                     stack.len() + 1,
                     label.clone(),
                     shown,
+                    kind,
                     line..last + 1,
                 )?;
                 if anchor > 0 {
@@ -109,6 +145,7 @@ pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
                     stack.len() + 1,
                     label,
                     format!("alias of {target}"),
+                    ValueKind::Unknown,
                     line..line + 1,
                 )?;
                 if stack.is_empty() {
@@ -119,7 +156,8 @@ pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
                 let map = matches!(event, Event::MappingStart(..));
                 let (parent, label) = place(&mut stack, docs.len(), true, None)
                     .expect("a container always has a place");
-                let id = b.add(parent, stack.len() + 1, label.clone(), "", line..line + 1)?;
+                let kind = if map { ValueKind::Map } else { ValueKind::List };
+                let id = b.add(parent, stack.len() + 1, label.clone(), "", kind, line..line + 1)?;
                 if anchor > 0 {
                     anchors.insert(anchor, label);
                 }
@@ -177,7 +215,7 @@ mod tests {
         t.children(None, 0..100)
             .unwrap()
             .into_iter()
-            .map(|n| (n.label, n.value))
+            .map(|n| (n.label.clone(), crate::tree::shown(&n)))
             .collect()
     }
 
@@ -200,10 +238,14 @@ mod tests {
             .map(|(a, b)| (a.to_string(), b.to_string()))
         );
         let list = t.find("/list/1").unwrap().unwrap();
-        assert_eq!(
-            t.children(t.find("/list").ok().flatten(), 1..2).unwrap()[0].value,
-            "!!str 2"
-        );
+        // `!!str 2` is the text "2", not a number; a plain `2` is a number.
+        let two = &t.children(t.find("/list").ok().flatten(), 1..2).unwrap()[0];
+        assert_eq!((two.value.as_str(), two.kind), ("2", ValueKind::Text));
+        let n = parse("a: 2\nb: '2'\nc: ~\nd: yes\n", &cx).unwrap();
+        let kinds: Vec<_> = n.children(None, 0..4).unwrap().into_iter().map(|n| n.kind).collect();
+        assert_eq!(kinds, [ValueKind::Number, ValueKind::Text, ValueKind::Null, ValueKind::Text]);
+        let err = parse("a: [1,\n", &cx).err().unwrap();
+        assert_eq!(err.position().and_then(|p| p.line), Some(2));
         assert_eq!(t.lines(list.0 as u32), 5..6);
         let two = parse("a: 1\n---\n- x\n", &cx).unwrap();
         assert_eq!(
@@ -212,7 +254,7 @@ mod tests {
         );
         assert_eq!(
             top(&parse("just text", &cx).unwrap())[0],
-            ("value".into(), "just text".into())
+            ("value".into(), "\"just text\"".into())
         );
         assert!(parse("a: [1, 2\n", &cx).is_err());
     }

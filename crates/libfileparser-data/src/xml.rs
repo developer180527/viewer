@@ -2,7 +2,7 @@
 //! its value when it holds only text, else as `#text` children among its elements.
 //! Comments, processing instructions and the doctype aren't shown.
 
-use libfileparser_core::{ParseContext, ParseError, Result};
+use libfileparser_core::{ParseContext, ParseError, Position, Result, ValueKind};
 use quick_xml::events::{BytesStart, Event};
 use quick_xml::reader::Reader;
 
@@ -27,8 +27,7 @@ pub(crate) fn parse(bytes: &[u8], cx: &ParseContext) -> Result<DataTree> {
         let start = reader.buffer_position() as usize;
         let event = reader.read_event().map_err(|e| {
             let at = reader.error_position() as usize;
-            let line = memchr::memchr_iter(b'\n', &bytes[..at.min(bytes.len())]).count() + 1;
-            ParseError::corrupt(format!("XML line {line}: {e}"))
+            ParseError::corrupt_at(format!("XML: {e}"), Position::in_text(bytes, at))
         })?;
         let end = reader.buffer_position() as usize;
         match event {
@@ -74,7 +73,12 @@ pub(crate) fn parse(bytes: &[u8], cx: &ParseContext) -> Result<DataTree> {
                     ));
                 };
                 if open.elements == 0 && b.children(open.id) == 0 {
-                    b.set_value(open.id, open.text.trim().to_string());
+                    // Only text: the element is that text.
+                    let text = open.text.trim();
+                    if !text.is_empty() {
+                        b.set_kind(open.id, ValueKind::Text);
+                    }
+                    b.set_value(open.id, text.to_string());
                 } else if open.elements == 0 && !open.text.trim().is_empty() {
                     // Attributes and text: the text as the value.
                     b.set_value(open.id, open.text.trim().to_string());
@@ -138,6 +142,7 @@ fn flush(b: &mut Builder, open: &mut Open, depth: usize) -> Result<()> {
             depth,
             "#text",
             text.to_string(),
+            ValueKind::Text,
             open.text_line..open.text_line + lines + 1,
         )?;
     }
@@ -153,7 +158,7 @@ fn element(
     last: u32,
 ) -> Result<u32> {
     let name = String::from_utf8_lossy(e.name().as_ref()).into_owned();
-    let id = b.add(parent, depth, name, "", first..last + 1)?;
+    let id = b.add(parent, depth, name, "", ValueKind::Group, first..last + 1)?;
     for attr in e.attributes().with_checks(false) {
         let attr = attr.map_err(|e| ParseError::corrupt(format!("XML: {e}")))?;
         let key = format!("@{}", String::from_utf8_lossy(attr.key.as_ref()));
@@ -161,7 +166,7 @@ fn element(
             .normalized_value(quick_xml::XmlVersion::Implicit1_0)
             .map(|v| v.into_owned())
             .unwrap_or_else(|_| String::from_utf8_lossy(&attr.value).into_owned());
-        b.add(Some(id), depth + 1, key, value, first..last + 1)?;
+        b.add(Some(id), depth + 1, key, value, ValueKind::Text, first..last + 1)?;
     }
     Ok(id)
 }
@@ -180,14 +185,14 @@ mod tests {
             t.children(Some(id), 0..10)
                 .unwrap()
                 .into_iter()
-                .map(|n| (n.label, n.value))
+                .map(|n| (n.label.clone(), crate::tree::shown(&n)))
                 .collect()
         };
         assert_eq!(
             kids("/feed"),
             [
-                ("@lang", "en"),
-                ("title", "A & B"),
+                ("@lang", "\"en\""),
+                ("title", "\"A & B\""),
                 ("entry", ""),
                 ("entry", "")
             ]
@@ -195,7 +200,7 @@ mod tests {
         );
         assert_eq!(
             kids("/feed/entry[2]"),
-            [("@id", "2"), ("#text", "x"), ("b", "y")].map(|(a, b)| (a.to_string(), b.to_string()))
+            [("@id", "\"2\""), ("#text", "\"x\""), ("b", "\"y\"")].map(|(a, b)| (a.to_string(), b.to_string()))
         );
         let title = t.find("/feed/title").unwrap().unwrap();
         assert_eq!(t.lines(title.0 as u32), 2..3);

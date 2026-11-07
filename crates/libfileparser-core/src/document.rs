@@ -41,6 +41,34 @@ impl FacetInfo {
     }
 }
 
+/// Something wrong in a file that didn't stop it opening: a bad line of a log, a
+/// texture that couldn't be decoded. Shown with the document, not instead of it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub struct Warning {
+    pub message: String,
+    /// Where in the file, when known.
+    pub at: Option<crate::Position>,
+    /// The item it concerns (a row marked as an error), when there is one.
+    pub place: Option<crate::Place>,
+}
+
+impl Warning {
+    pub fn new(message: impl Into<String>) -> Self {
+        Self { message: message.into(), at: None, place: None }
+    }
+
+    pub fn at(mut self, at: crate::Position) -> Self {
+        self.at = Some(at);
+        self
+    }
+
+    pub fn on(mut self, place: crate::Place) -> Self {
+        self.place = Some(place);
+        self
+    }
+}
+
 /// Which format a document was read as.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -78,13 +106,14 @@ pub struct Document {
     format: FormatInfo,
     facets: Vec<Facet>,
     metadata: Vec<(String, String)>,
+    warnings: Vec<Warning>,
     dependencies: Dependencies,
     links: Vec<std::sync::Arc<dyn crate::Links>>,
 }
 
 impl Document {
     pub fn new(format: FormatInfo) -> Self {
-        Self { format, facets: Vec::new(), metadata: Vec::new(), dependencies: Dependencies::new(), links: Vec::new() }
+        Self { format, facets: Vec::new(), metadata: Vec::new(), warnings: Vec::new(), dependencies: Dependencies::new(), links: Vec::new() }
     }
 
     /// Adds a facet whose content is already made.
@@ -124,6 +153,16 @@ impl Document {
                 at += 1;
             }
         }
+        self
+    }
+
+    pub fn with_warning(mut self, warning: Warning) -> Self {
+        self.warnings.push(warning);
+        self
+    }
+
+    pub fn with_warnings(mut self, warnings: impl IntoIterator<Item = Warning>) -> Self {
+        self.warnings.extend(warnings);
         self
     }
 
@@ -217,6 +256,11 @@ impl Document {
 
     pub fn metadata(&self) -> &[(String, String)] {
         &self.metadata
+    }
+
+    /// What was wrong in the file without stopping it opening.
+    pub fn warnings(&self) -> &[Warning] {
+        &self.warnings
     }
 
     pub fn dependencies(&self) -> &Dependencies {

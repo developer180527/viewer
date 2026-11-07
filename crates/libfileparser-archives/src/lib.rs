@@ -128,7 +128,7 @@ struct ZipContainer {
 impl ZipContainer {
     fn new(src: &FileSource, cx: &ParseContext) -> Result<Self> {
         let mut archive = zip::ZipArchive::new(Cursor::new(src.bytes())).map_err(|e| ParseError::corrupt(format!("zip: {e}")))?;
-        cx.limits.check(Limit::Items, archive.len() as u64)?;
+        cx.limits.check(Limit::Entries, archive.len() as u64)?;
         let entries = (0..archive.len())
             .map(|i| {
                 let f = archive.by_index_raw(i).map_err(|e| ParseError::corrupt(format!("zip entry {i}: {e}")))?;
@@ -209,8 +209,8 @@ impl Reader for TarReader {
         let mut archive = tar::Archive::new(data.bytes());
         for entry in archive.entries().map_err(ParseError::corrupt)? {
             let entry = entry.map_err(|e| ParseError::corrupt(format!("tar: {e}")))?;
-            if entries.len() as u64 >= cx.limits.items {
-                return Err(ParseError::too_large(Limit::Items, entries.len() as u64 + 1, cx.limits.items));
+            if entries.len() as u64 >= cx.limits.entries {
+                return Err(ParseError::too_large(Limit::Entries, entries.len() as u64 + 1, cx.limits.entries));
             }
             let path = entry.path().map_err(ParseError::corrupt)?.to_string_lossy().into_owned();
             let start = entry.raw_file_position() as usize;
@@ -327,7 +327,7 @@ pub const MAX_FOLDER_FILES: usize = 50_000;
 /// items limit, if lower) lists the first ones, so one corner of a big tree never hides
 /// the rest.
 pub fn open_folder(root: &Path, cx: &ParseContext) -> Result<Document> {
-    let max = MAX_FOLDER_FILES.min(cx.limits.items.min(usize::MAX as u64) as usize);
+    let max = MAX_FOLDER_FILES.min(cx.limits.entries.min(usize::MAX as u64) as usize);
     let mut entries = Vec::new();
     let mut skipped: Vec<String> = Vec::new();
     let mut truncated = false;

@@ -6,6 +6,7 @@ model = "Table"
 rows = 2000
 columns = 4
 headers = ["id", "city", "country", "population"]
+kinds = ["Number", "Text", "Text", "Number"]
 
 [metadata]
 Rows = "2000"

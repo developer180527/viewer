@@ -118,7 +118,11 @@ pub fn tiny_limits() -> Limits {
     l.unpack_ratio = 2;
     l.unpack_always = 4096;
     l.depth = 4;
-    l.items = 16;
+    l.geometry = 16;
+    l.nodes = 16;
+    l.rows = 16;
+    l.entries = 16;
+    l.expansion = 16;
     l.memory = 64 << 10;
     l.dependencies = 2;
     l

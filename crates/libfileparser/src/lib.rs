@@ -171,7 +171,10 @@ impl Library {
         }
         // As a category's `open`: the last reader's reason.
         let last = match attempts.last().map(|a| &a.error) {
-            Some(ParseError::Corrupt(why)) => ParseError::Corrupt(why.clone()),
+            Some(ParseError::Corrupt { why, at, .. }) => match at {
+                Some(at) => ParseError::corrupt_at(why, *at),
+                None => ParseError::corrupt(why),
+            },
             _ => ParseError::NotThisFormat,
         };
         (Err(last), attempts)
@@ -235,7 +238,7 @@ impl FacetProvider for OtherReading {
 /// A document of the generic facets alone: for a file no reader reads, its bytes (and
 /// its text, when it is text).
 pub fn open_raw(src: &FileSource) -> Document {
-    let doc = Document::new(FormatInfo::new("raw", "File", Category::Data)).with_meta("Size", format!("{} bytes", src.len()));
+    let doc = Document::new(FormatInfo::new("raw", "File", Category::Other)).with_meta("Size", format!("{} bytes", src.len()));
     with_generic_facets(doc, src, None)
 }
 

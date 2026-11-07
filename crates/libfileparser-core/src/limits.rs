@@ -17,8 +17,17 @@ pub enum Limit {
     Unpacked,
     /// Nesting: brackets, records, composition arcs.
     Depth,
-    /// Items of one kind: vertices, indices, rows, records.
-    Items,
+    /// Geometry: vertices, indices, triangles, array elements of a scene.
+    Geometry,
+    /// Nodes of a tree, and a format's records (FBX records, `.blend` blocks).
+    Nodes,
+    /// Rows of a table.
+    Rows,
+    /// Entries of an archive or folder.
+    Entries,
+    /// Values reached through references rather than written out: YAML aliases, XML
+    /// entities, instancing. Caps what a small file can expand to.
+    Expansion,
     /// Everything one document holds.
     Memory,
     /// Other files one document may read.
@@ -32,7 +41,11 @@ impl fmt::Display for Limit {
             Limit::Allocation => "one allocation",
             Limit::Unpacked => "unpacked size",
             Limit::Depth => "nesting depth",
-            Limit::Items => "item count",
+            Limit::Geometry => "geometry",
+            Limit::Nodes => "node count",
+            Limit::Rows => "row count",
+            Limit::Entries => "entry count",
+            Limit::Expansion => "expansion",
             Limit::Memory => "document memory",
             Limit::Dependencies => "files referenced",
         })
@@ -55,7 +68,12 @@ pub struct Limits {
     /// …or this many bytes, whichever is more.
     pub unpack_always: u64,
     pub depth: u64,
-    pub items: u64,
+    /// Vertices, indices, triangles: [`Limit::Geometry`].
+    pub geometry: u64,
+    pub nodes: u64,
+    pub rows: u64,
+    pub entries: u64,
+    pub expansion: u64,
     pub memory: u64,
     pub dependencies: u64,
 }
@@ -69,7 +87,11 @@ impl Limits {
             unpack_ratio: 200,
             unpack_always: 64 << 20,
             depth: 512,
-            items: 1 << 28,
+            geometry: 1 << 28,
+            nodes: 1 << 26,
+            rows: 1 << 31,
+            entries: 1 << 20,
+            expansion: 1 << 20,
             memory: 4 << 30,
             dependencies: 10_000,
         }
@@ -77,7 +99,17 @@ impl Limits {
 
     /// A phone or tablet: a quarter of the desktop's memory-bound limits.
     pub fn mobile() -> Self {
-        Self { image_pixels: 1 << 26, allocation: 512 << 20, items: 1 << 26, memory: 1 << 30, ..Self::desktop() }
+        Self {
+            image_pixels: 1 << 26,
+            allocation: 512 << 20,
+            geometry: 1 << 26,
+            nodes: 1 << 24,
+            rows: 1 << 29,
+            entries: 1 << 18,
+            expansion: 1 << 18,
+            memory: 1 << 30,
+            ..Self::desktop()
+        }
     }
 
     /// The most allowed for `limit`. For [`Limit::Unpacked`] the cap depends on the
@@ -88,7 +120,11 @@ impl Limits {
             Limit::Allocation => self.allocation,
             Limit::Unpacked => self.unpack_always,
             Limit::Depth => self.depth,
-            Limit::Items => self.items,
+            Limit::Geometry => self.geometry,
+            Limit::Nodes => self.nodes,
+            Limit::Rows => self.rows,
+            Limit::Entries => self.entries,
+            Limit::Expansion => self.expansion,
             Limit::Memory => self.memory,
             Limit::Dependencies => self.dependencies,
         }

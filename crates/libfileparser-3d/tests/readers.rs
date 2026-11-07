@@ -108,7 +108,7 @@ fn open_in_corpus(path: &str, spawn: impl libfileparser_core::Spawn + 'static) -
 fn table(doc: &Document, cx: &ParseContext, name: &str) -> Option<Vec<Vec<String>>> {
     let i = doc.facets().position(|f| f.name == name)?;
     let Ok(Content::Table(t)) = doc.facet(i, cx) else { panic!("{name} isn't a table") };
-    Some(t.rows(0..100).unwrap())
+    Some(t.rows(0..100).unwrap().into_iter().map(|r| r.iter().map(ToString::to_string).collect()).collect())
 }
 
 fn row(cells: &[&str]) -> Vec<String> {

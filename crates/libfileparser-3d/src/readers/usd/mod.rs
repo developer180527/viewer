@@ -109,7 +109,7 @@ impl Files<'_> {
 /// usd-lite's limits within the context's.
 fn limits(cx: &ParseContext) -> Limits {
     let d = Limits::default();
-    d.with_max_elements(d.max_elements.min(cx.limits.items as usize)).with_max_decompressed(d.max_decompressed.min(cx.limits.allocation as usize))
+    d.with_max_elements(d.max_elements.min(cx.limits.geometry as usize)).with_max_decompressed(d.max_decompressed.min(cx.limits.allocation as usize))
 }
 
 /// usd-lite names a limit only in words; its element cap is the document's items limit.
@@ -117,7 +117,7 @@ fn limited(limits: Limits) -> impl Fn(usd_lite::Error) -> anyhow::Error {
     move |e| match e {
         usd_lite::Error::Limit(_) => {
             let max = limits.max_elements as u64;
-            libfileparser_core::ParseError::too_large(libfileparser_core::Limit::Items, max.saturating_add(1), max).into()
+            libfileparser_core::ParseError::too_large(libfileparser_core::Limit::Geometry, max.saturating_add(1), max).into()
         }
         other => other.into(),
     }

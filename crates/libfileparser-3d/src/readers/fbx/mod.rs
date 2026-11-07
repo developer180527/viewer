@@ -455,7 +455,7 @@ fn open_with_ufbx(reader: &dyn Reader, format: ufbx::FileFormat, name: &str, src
             if media.is_empty() { doc } else { doc.with_facet(Role::Package, "Embedded media", Content::Container(Arc::new(libfileparser_core::FileParts::new(&from, media)))) }
         }
         _ => doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Records", Model::Tree), move |cx| {
-            Ok(Content::Tree(Arc::new(records::ascii_records(from.bytes(), cx.limits.items, cx.limits.depth)?)))
+            Ok(Content::Tree(Arc::new(records::ascii_records(from.bytes(), cx.limits.nodes, cx.limits.depth)?)))
         }),
     };
     let structure = if format == ufbx::FileFormat::Obj { "Objects" } else { "Records" };

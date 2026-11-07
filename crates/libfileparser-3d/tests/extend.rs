@@ -37,7 +37,7 @@ impl Reader for OffReader {
         let mut number = || words.next().and_then(|w| w.parse::<f32>().ok()).ok_or_else(|| ParseError::corrupt("truncated"));
         let (vertices, faces) = (number()? as u64, number()? as u64);
         number()?; // edges
-        cx.limits.check(libfileparser_core::Limit::Items, vertices + faces)?;
+        cx.limits.check(libfileparser_core::Limit::Geometry, vertices + faces)?;
         let positions = (0..vertices).map(|_| Ok(Vec3::new(number()?, number()?, number()?))).collect::<Result<Vec<_>>>()?;
         let mut indices = Vec::new();
         for _ in 0..faces {
@@ -109,7 +109,7 @@ impl libfileparser_core::FacetProvider for PrimCount {
         let stage = doc.facet_index("Stage").ok_or_else(|| libfileparser_core::ParseError::invalid("no Stage"))?;
         let Content::Tree(t) = doc.facet(stage, cx)? else { return Err(libfileparser_core::ParseError::invalid("Stage isn't a tree")) };
         let n = t.child_count(None)?.known();
-        Ok(Content::Table(std::sync::Arc::new(libfileparser_core::OwnedTable::new(vec!["Top-level items".into()], vec![vec![n.to_string()]]))))
+        Ok(Content::Table(std::sync::Arc::new(libfileparser_core::OwnedTable::new(vec!["Top-level items".into()], vec![vec![libfileparser_core::Cell::Int(n as i64)]]))))
     }
 }
 
@@ -139,7 +139,7 @@ fn an_app_adds_its_own_facet_to_a_format_without_changing_its_reader() {
     // Before the file's own Source and Raw, which stay last.
     assert_eq!(names[names.len() - 3..], ["Prim count", "Source", "Raw"]);
     let Ok(Content::Table(t)) = doc.facet(doc.facet_index("Prim count").unwrap(), &cx) else { panic!() };
-    assert_eq!(t.rows(0..1).unwrap(), [vec!["2".to_string()]]);
+    assert_eq!(t.rows(0..1).unwrap(), [vec![libfileparser_core::Cell::Int(2)]]);
     // Other formats don't get it.
     let stl = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files/3d/cube.stl");
     let doc = libfileparser_3d::open(&FileSource::open(&stl).unwrap(), &cx).unwrap();

@@ -159,14 +159,18 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 | `Flow` (later) | Reflowing styled text with images (DOCX, EPUB) | Blocks |
 | `Text` (`TextSource`) | `info()`: line count, encoding, language | `lines(a..b)` as shared bytes |
 | `Markdown` (with `-text`) | Source text | — |
-| `Table` (`TableSource`) | `info()`: columns, row count (maybe estimated); later sheets | `rows(a..b)` |
-| `Tree` (`TreeSource`) | Nodes with an id, a label, a value and whether they have children | `child_count(node)`, then `children(node, a..b)`; `find(path)` and `path(node)` where the tree has paths |
+| `Table` (`TableSource`) | `info()`: columns (a name and a `ValueKind` each), row count (maybe estimated) | `rows(a..b)` as typed `Cell`s |
+| `Tree` (`TreeSource`) | Nodes with an id, a label, a value, a `ValueKind` and whether they have children | `child_count(node)`, then `children(node, a..b)`; `value(node)` for a leaf's whole value as a `Cell`; `find(path)` and `path(node)` where the tree has paths |
 | `Container` | `entry_count()`; entries (path, size, packed size, kind) | `entries(a..b)`; open one entry as a file |
 | `Scene` | `scene-data` data: meshes, materials, textures, nodes; no GPU | Arrives progressively |
 | `Media` (later) | Streams and metadata; decode a frame or samples into the caller's buffer | Time |
 | `Hex` | The bytes | Offset ranges |
 
 Built so far: `Raster`, `Text`, `Tree`, `Table`, `Container`, `Scene` and `Hex`, what `-3d` needs; `Pages`, `Flow`, `Markdown` and `Media` arrive with their categories.
+
+**Typed values** (2026-11-08). A table cell is a `Cell`: `Null`, `Bool`, `Int`, `Float`, `Number` (kept as written when converting would change it: `1.50`, `007`, a 30-digit integer), `Text`, `Bytes`, `Date`, or `Error` (a value that couldn't be read). Null is not empty text. A column says its `ValueKind` (`Number`, `Text`…, `Mixed`, or `Unknown`), so a view aligns numbers and can sort. A tree node says its kind too (`Map`, `List`, `Group`, `Text`, `Number`, `Null`…), so `"1"` and `1` look different. `TreeNode::value` is plain text without quotes, possibly shortened past `TreeNode::PREVIEW_CHARS` to keep listing children cheap; `TreeSource::value` gives a leaf whole. Shortening for display, and quoting text, are the view's.
+
+**Sources take no context.** `lines`, `rows`, `children` and the like run long after `open`, without a `ParseContext`: a source that may do long work keeps the document's `Cancel` (and limits) from when it was made, and checks them itself.
 
 `-core` also holds the generic implementations every category shares: `LineText` (a `TextSource` over any bytes, indexed by line), `OwnedTree`, `OwnedTable`, and the hex model. `FileSource::part` makes a range of a file a file of its own, sharing its bytes: a container's entries (a GLB's chunks, an image inside a model) open that way without a copy.
 
@@ -176,7 +180,7 @@ Built so far: `Raster`, `Text`, `Tree`, `Table`, `Container`, `Scene` and `Hex`,
 #[derive(Clone)]
 pub struct ParseContext {
     pub files: Arc<dyn FileResolver>,  // neighbouring files: textures, .mtl, layers, buffers
-    pub limits: Limits,                // pixels, sizes, unpack ratio, depth, items, memory
+    pub limits: Limits,                // pixels, sizes, unpack ratio, depth, geometry, nodes, rows, entries, expansion, memory
     pub cancel: Cancel,                // the document was closed: stop
     pub spawn: Arc<dyn Spawn>,         // where background work runs
     pub notify: Arc<dyn Notify>,       // "more arrived": a band, a texture, a page
@@ -186,6 +190,8 @@ let cx = ParseContext::new()                     // no other files, desktop limi
     .with_files(FolderFiles::new())              // background work inline, no notifications
     .with_limits(Limits::mobile());
 ```
+
+**Limits by kind** (2026-11-08): one count for vertices, rows and records was too coarse, so each kind has its own: `geometry` (vertices, indices, triangles), `nodes` (tree nodes, a format's records), `rows`, `entries` (archives, folders), and `expansion`, the values reached through references rather than written out (YAML aliases, XML entities, instancing), so a small file can't expand past it without any one allocation being large. Today's readers don't expand references (`-data` shows aliases and leaves unknown entities as written); a reader that does checks `expansion`.
 
 The hooks are owned, not borrowed: background work (texture decoding) outlives the `open` call that started it, and takes its own clone of the context.
 
@@ -217,7 +223,8 @@ Why: a hostile model could otherwise name `/home/me/private.png` as a texture an
 #[non_exhaustive]
 pub enum ParseError {
     NotThisFormat,          // the front door tries the next reading
-    Corrupt(String),        // the next reading, keeping the reason
+    #[non_exhaustive]
+    Corrupt { why: String, at: Option<Position> },   // the next reading, keeping the reason and where
     TooLarge(Limit),        // stop and say so; don't fall back to hex silently
     Unreadable { reference: String, reason: Unreadable },   // a file it needs is blocked, missing or outside
     Cancelled,
@@ -228,6 +235,12 @@ pub enum ParseError {
 ```
 
 Only `NotThisFormat` and `Corrupt` let the front door try the next reading.
+
+**Where** (2026-11-08): `ParseError::corrupt_at(why, Position)` and `error.position()`. A `Position` is a line and column (from 1, as editors show them) or a byte offset; `Position::in_text` finds the line and column of an offset. `-data` gives every parse error one: "line 3, column 14".
+
+**Warnings:** damage that doesn't stop a file opening is a `Warning` on the document (`Document::warnings`): a message, where in the file, and the item it concerns. A bad line of a JSON Lines file is a row whose first cell is `Cell::Error`, with a warning on that row, not a failed file shown as text; only a bad first line means the file isn't JSON Lines.
+
+**Categories:** `Category::Other` is for files no category reads (`open_raw`), so an app filtering on Data never sees them. `Sheets` and `Datasets` are in the enum for the crates to come.
 
 ## 4. The API of every category library
 
@@ -303,12 +316,13 @@ An app may rely on these; changing one is a breaking change, with a version bump
 | Facet order: the primary first; Source then Raw last | |
 | Tree path syntaxes | USD prim and property paths; JSON pointers (glTF); `Objects/<record>/<name>` (FBX); object names and `usemtl <name>` (OBJ); layer identifiers (Layers); `-data`'s trees: `/`-separated labels, `~0` `~1` `~2` for `~` `/` `[`, `[n]` for the n-th sibling of a label (a JSON Pointer for JSON; `/feed/entry[2]/@id` for XML) |
 | A table's columns: their number, order and meaning | Materials: name, shading, maps, base colour, metallic, roughness, alpha |
+| Value kinds and cell types: a column's or node's `ValueKind`, and which `Cell` variant a reader gives | `-data`: JSON numbers are numbers, strings text, `null` null; a CSV column of numbers is `Number` |
 
-Display text, which may change in any release: format names ("glTF binary (GLB)"), metadata keys and values, tree labels and values, column headings, cell text, warnings and error messages. An app that needs one of these to be stable asks for it to become contract: a typed accessor, not a string to parse.
+Display text, which may change in any release: format names ("glTF binary (GLB)"), metadata keys and values, tree labels and values, column headings, the text of text cells, warnings and error messages (their positions are contract). An app that needs one of these to be stable asks for it to become contract: a typed accessor, not a string to parse.
 
 ### Versions
 
-Every crate is 0.x until its API settles. A breaking change (as `cargo semver-checks` finds it) bumps the crate's minor version (0.1 → 0.2), and every crate that re-exports it. Before an item is removed it is `#[deprecated]` for one minor release, pointing at its replacement, so an app updating one step at a time compiles at each step.
+Every crate is 0.x until its API settles. A breaking change (as `cargo semver-checks` finds it) bumps the crate's minor version (0.1 → 0.2), and every crate that re-exports it. 0.3.0 (2026-11-08): typed cells and columns, node kinds and whole values, positioned errors and warnings, `Category::Other`, limits by kind. Before an item is removed it is `#[deprecated]` for one minor release, pointing at its replacement, so an app updating one step at a time compiles at each step.
 
 ## 6. Adding a format, and other extensions
 

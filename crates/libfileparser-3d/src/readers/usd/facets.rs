@@ -9,7 +9,7 @@ use std::sync::{Arc, Mutex};
 
 use libfileparser_core::{
     Content, Count, Dependencies, Document, FileSource, Links, MemoryUse, NodeId, OwnedTree, ParseContext, ParseError, Place, Result, TreeNode,
-    TreeSource,
+    TreeSource, ValueKind,
 };
 use usd_lite::{ArcKind, Layer, LayerArc, Spec, Stage, Value, VariantSet, property_path};
 
@@ -136,7 +136,11 @@ impl StageTree {
                 (name, self.layer().spec(path).map(property_summary).unwrap_or_default(), false)
             }
         };
-        TreeNode::new(self.id(key), label, value, has_children)
+        let kind = match &key {
+            Key::StageMetadata | Key::Prim(_) => ValueKind::Group,
+            _ => ValueKind::Unknown,
+        };
+        TreeNode::new(self.id(key), label, value, has_children).with_kind(kind)
     }
 }
 

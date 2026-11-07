@@ -117,9 +117,9 @@ fn sources_hand_out_ranges_and_reject_unknown_ids() {
     assert_eq!(tree.children(Some(root), 8..100).unwrap().len(), 2);
     assert!(matches!(tree.children(Some(NodeId(999)), 0..1), Err(ParseError::InvalidRequest(_))));
 
-    let table = OwnedTable::new(vec!["a".into()], (0..5).map(|i| vec![i.to_string()]).collect());
+    let table = OwnedTable::new(vec!["a".into()], (0..5).map(|i| vec![Cell::Int(i)]).collect());
     assert_eq!(table.info().rows, Count::Exact(5));
-    assert_eq!(table.rows(3..10).unwrap(), [vec!["3".to_string()], vec!["4".to_string()]]);
+    assert_eq!(table.rows(3..10).unwrap(), [vec![Cell::Int(3)], vec![Cell::Int(4)]]);
 }
 
 
@@ -166,7 +166,7 @@ fn routing_tries_the_next_reader_on_damage_and_stops_on_other_errors() {
     let src = FileSource::from_bytes("f", vec![0]);
     let cx = ParseContext::new();
     let damaged = Fails("a", || ParseError::corrupt("bad"));
-    let too_large = Fails("a", || ParseError::TooLarge(match Limits::desktop().check(Limit::Items, u64::MAX) {
+    let too_large = Fails("a", || ParseError::TooLarge(match Limits::desktop().check(Limit::Rows, u64::MAX) {
         Err(ParseError::TooLarge(e)) => e,
         _ => unreachable!(),
     }));
@@ -185,7 +185,7 @@ fn panics_in_format_code_stay_inside() {
     let doc = Document::new(FormatInfo::new("t", "Test", Category::Data))
         .with_facet(Role::Primary, "Fine", Content::Table(Arc::new(OwnedTable::new(vec!["a".into()], Vec::new()))))
         .with_lazy_facet(FacetInfo::new(Role::Inspector, "Broken", Model::Tree), |_| panic!("bad node"));
-    assert!(matches!(doc.facet(1, &cx), Err(ParseError::Corrupt(why)) if why.contains("bad node")));
+    assert!(matches!(doc.facet(1, &cx), Err(ParseError::Corrupt { why, .. }) if why.contains("bad node")));
     assert!(doc.facet(0, &cx).is_ok());
     assert!(matches!(doc.facet(7, &cx), Err(ParseError::InvalidRequest(_))), "a facet that doesn't exist is the caller's mistake");
     assert!(!ParseError::invalid("x").try_next_reader() && !ParseError::unsupported("x").try_next_reader());

@@ -22,8 +22,8 @@ use std::sync::Arc;
 use std::collections::HashMap;
 
 use libfileparser_core::{
-    Category, Confidence, Content, Count, Dependencies, DependencyStatus, Detection, Document, FacetInfo, FormatInfo, Limit, Links, Model,
-    FileSource, ParseContext, ParseError, Place, Reader, ReaderInfo, Result, Role, SceneDoc, SceneItem, TableInfo, TableSource, Unreadable,
+    Category, Cell, Column, Confidence, Content, Count, Dependencies, DependencyStatus, Detection, Document, FacetInfo, FormatInfo, Limit, Links, Model,
+    FileSource, ParseContext, ParseError, Place, Reader, ReaderInfo, Result, Role, SceneDoc, SceneItem, TableInfo, TableSource, Unreadable, ValueKind,
 };
 use scene_data::{AlphaMode, ColorSpace, CpuScene, ParamValue, SceneBuilder, SceneLimits, SceneRead, ShadingSource, Topology};
 
@@ -34,11 +34,11 @@ pub use crate::textures::{ImageJob, ImageSource, MAX_SIDE as MAX_TEXTURE_SIDE, T
 pub fn new_scene(cx: &ParseContext) -> (CpuScene, SceneBuilder) {
     let l = &cx.limits;
     let d = SceneLimits::default();
-    let small = |v: u32| v.min(l.items.min(u32::MAX as u64) as u32);
+    let small = |v: u32| v.min(l.geometry.min(u32::MAX as u64) as u32);
     let mut s = SceneLimits::default();
-    s.max_triangles = d.max_triangles.min(l.items);
-    s.max_drawn_triangles = d.max_drawn_triangles.min(l.items.saturating_mul(16));
-    s.max_vertices = d.max_vertices.min(l.items);
+    s.max_triangles = d.max_triangles.min(l.geometry);
+    s.max_drawn_triangles = d.max_drawn_triangles.min(l.geometry.saturating_mul(16));
+    s.max_vertices = d.max_vertices.min(l.geometry);
     s.max_bytes = d.max_bytes.min(l.memory);
     s.max_node_depth = d.max_node_depth.min(l.depth.min(u32::MAX as u64) as u32);
     s.max_nodes = small(d.max_nodes);
@@ -52,7 +52,7 @@ pub fn new_scene(cx: &ParseContext) -> (CpuScene, SceneBuilder) {
 /// be fine, the app chose to stop there), anything else is damage.
 pub fn scene_error(e: &scene_data::Error) -> ParseError {
     match e {
-        scene_data::Error::LimitExceeded { limit, .. } => ParseError::too_large(Limit::Items, limit.saturating_add(1), *limit),
+        scene_data::Error::LimitExceeded { limit, .. } => ParseError::too_large(Limit::Geometry, limit.saturating_add(1), *limit),
         other => ParseError::corrupt(other),
     }
 }
@@ -442,10 +442,10 @@ impl MaterialTable {
 
 impl TableSource for MaterialTable {
     fn info(&self) -> TableInfo {
-        TableInfo::new(Self::COLUMNS.map(String::from).to_vec(), Count::Exact(self.all().len() as u64))
+        TableInfo::new(text_columns(&Self::COLUMNS), Count::Exact(self.all().len() as u64))
     }
 
-    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
         Ok(slice(self.all(), range))
     }
 }
@@ -468,10 +468,15 @@ fn param_text(v: ParamValue) -> String {
     }
 }
 
-fn slice(all: Vec<Vec<String>>, range: Range<u64>) -> Vec<Vec<String>> {
+/// Rows `range` of `all`, as text cells.
+fn slice(all: Vec<Vec<String>>, range: Range<u64>) -> Vec<Vec<Cell>> {
     let end = (range.end.min(all.len() as u64)) as usize;
     let start = (range.start as usize).min(end);
-    all[start..end].to_vec()
+    all.into_iter().skip(start).take(end - start).map(|r| r.into_iter().map(Cell::Text).collect()).collect()
+}
+
+fn text_columns(names: &[&str]) -> Vec<Column> {
+    names.iter().map(|&n| Column::new(n).with_kind(ValueKind::Text)).collect()
 }
 
 /// The Textures facet: one row per texture the scene uses, as it is now (decoding,
@@ -508,10 +513,10 @@ impl TextureTable {
 
 impl TableSource for TextureTable {
     fn info(&self) -> TableInfo {
-        TableInfo::new(Self::COLUMNS.map(String::from).to_vec(), Count::Exact(self.all().len() as u64))
+        TableInfo::new(text_columns(&Self::COLUMNS), Count::Exact(self.all().len() as u64))
     }
 
-    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
         Ok(slice(self.all(), range))
     }
 }

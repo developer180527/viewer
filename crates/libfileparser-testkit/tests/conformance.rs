@@ -67,7 +67,7 @@ impl Reader for KvReader {
 
         let rows: Vec<Vec<String>> = pairs.iter().map(|(k, v)| vec![k.clone(), v.clone()]).collect();
         let inspector = FacetInfo::new(Role::Inspector, "Pairs", Model::Table);
-        let make_table = move |_: &ParseContext| Ok(Content::Table(Arc::new(OwnedTable::new(vec!["Key".into(), "Value".into()], rows.clone()))));
+        let make_table = move |_: &ParseContext| Ok(Content::Table(Arc::new(OwnedTable::text(vec!["Key".into(), "Value".into()], rows.clone()))));
         let doc = Document::new(FormatInfo::new("kv", "Key-value", Category::Data)).with_dependencies(deps);
         let doc = if self.0 == Flaw::InspectorFirst {
             doc.with_lazy_facet(inspector, make_table).with_facet(Role::Primary, "Keys", Content::Tree(Arc::new(tree)))
@@ -85,7 +85,7 @@ fn read_pairs(flaw: Flaw, src: &FileSource, cx: &ParseContext, deps: &Dependenci
     let text = std::str::from_utf8(src.bytes()).map_err(libfileparser_core::ParseError::corrupt)?;
     for line in text.lines().filter(|l| !l.starts_with('#') && !l.trim().is_empty()) {
         if flaw != Flaw::IgnoresLimits {
-            cx.limits.check(Limit::Items, out.len() as u64 + 1)?;
+            cx.limits.check(Limit::Rows, out.len() as u64 + 1)?;
         }
         if let Some(name) = line.strip_prefix("include ") {
             let found = if flaw == Flaw::UnrecordedRead { cx.files.resolve(src, name).ok() } else { deps.resolve(cx, src, name) };

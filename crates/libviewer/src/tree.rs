@@ -5,7 +5,7 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-use libfileparser_core::{NodeId, TreeSource};
+use libfileparser_core::{NodeId, TreeSource, ValueKind};
 use libgui::*;
 
 /// Children shown per node; past this the rest are summarised in one row.
@@ -53,10 +53,11 @@ impl Lazy<'_> {
         let mut read = self.read.borrow_mut();
         let mut kids = Vec::with_capacity(nodes.len() + 1);
         for n in nodes {
-            let label = match (n.label.is_empty(), n.value.is_empty()) {
+            let value = shown(&n);
+            let label = match (n.label.is_empty(), value.is_empty()) {
                 (_, true) => n.label,
-                (true, false) => n.value,
-                (false, false) => format!("{}: {}", n.label, n.value),
+                (true, false) => value,
+                (false, false) => format!("{}: {value}", n.label),
             };
             read.nodes.insert(n.id.0, (label, n.has_children));
             kids.push(n.id.0);
@@ -99,4 +100,14 @@ pub fn tree(ui: &mut Ui, source: &dyn TreeSource, view: &mut TreeView) {
     ui.container(Layout::column().padding(Insets::xy(8.0, 4.0)), Frame::none(), |ui| {
         ui.tree_view("tree", &mut view.state, &lazy);
     });
+}
+
+/// A node's value as one line: text in quotes with its line breaks escaped, so `"1"`
+/// and `1` look different; an error marked.
+fn shown(n: &libfileparser_core::TreeNode) -> String {
+    match n.kind {
+        ValueKind::Text => format!("{:?}", n.value),
+        ValueKind::Error => format!("⚠ {}", n.value),
+        _ => n.value.clone(),
+    }
 }

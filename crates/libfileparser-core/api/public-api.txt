@@ -2,9 +2,12 @@ pub mod libfileparser_core
 #[non_exhaustive] pub enum libfileparser_core::Category
 pub libfileparser_core::Category::Archives
 pub libfileparser_core::Category::Data
+pub libfileparser_core::Category::Datasets
 pub libfileparser_core::Category::Docs
 pub libfileparser_core::Category::Images
 pub libfileparser_core::Category::Media
+pub libfileparser_core::Category::Other
+pub libfileparser_core::Category::Sheets
 pub libfileparser_core::Category::Text
 pub libfileparser_core::Category::ThreeD
 impl core::clone::Clone for libfileparser_core::Category
@@ -18,6 +21,35 @@ impl core::hash::Hash for libfileparser_core::Category
 pub fn libfileparser_core::Category::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for libfileparser_core::Category
 impl core::marker::StructuralPartialEq for libfileparser_core::Category
+#[non_exhaustive] pub enum libfileparser_core::Cell
+pub libfileparser_core::Cell::Bool(bool)
+pub libfileparser_core::Cell::Bytes(alloc::sync::Arc<[u8]>)
+pub libfileparser_core::Cell::Date(alloc::string::String)
+pub libfileparser_core::Cell::Error(alloc::string::String)
+pub libfileparser_core::Cell::Float(f64)
+pub libfileparser_core::Cell::Int(i64)
+pub libfileparser_core::Cell::Null
+pub libfileparser_core::Cell::Number(alloc::string::String)
+pub libfileparser_core::Cell::Text(alloc::string::String)
+impl libfileparser_core::Cell
+pub fn libfileparser_core::Cell::as_f64(&self) -> core::option::Option<f64>
+pub fn libfileparser_core::Cell::as_str(&self) -> core::option::Option<&str>
+pub fn libfileparser_core::Cell::is_null(&self) -> bool
+pub fn libfileparser_core::Cell::kind(&self) -> libfileparser_core::ValueKind
+pub fn libfileparser_core::Cell::number(&str) -> libfileparser_core::Cell
+impl core::clone::Clone for libfileparser_core::Cell
+pub fn libfileparser_core::Cell::clone(&self) -> libfileparser_core::Cell
+impl core::cmp::PartialEq for libfileparser_core::Cell
+pub fn libfileparser_core::Cell::eq(&self, &libfileparser_core::Cell) -> bool
+impl core::convert::From<&str> for libfileparser_core::Cell
+pub fn libfileparser_core::Cell::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for libfileparser_core::Cell
+pub fn libfileparser_core::Cell::from(alloc::string::String) -> Self
+impl core::fmt::Debug for libfileparser_core::Cell
+pub fn libfileparser_core::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for libfileparser_core::Cell
+pub fn libfileparser_core::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for libfileparser_core::Cell
 #[non_exhaustive] pub enum libfileparser_core::Confidence
 pub libfileparser_core::Confidence::Certain
 pub libfileparser_core::Confidence::Content
@@ -107,9 +139,13 @@ impl core::marker::StructuralPartialEq for libfileparser_core::EntryKind
 pub libfileparser_core::Limit::Allocation
 pub libfileparser_core::Limit::Dependencies
 pub libfileparser_core::Limit::Depth
+pub libfileparser_core::Limit::Entries
+pub libfileparser_core::Limit::Expansion
+pub libfileparser_core::Limit::Geometry
 pub libfileparser_core::Limit::ImagePixels
-pub libfileparser_core::Limit::Items
 pub libfileparser_core::Limit::Memory
+pub libfileparser_core::Limit::Nodes
+pub libfileparser_core::Limit::Rows
 pub libfileparser_core::Limit::Unpacked
 impl core::clone::Clone for libfileparser_core::Limit
 pub fn libfileparser_core::Limit::clone(&self) -> libfileparser_core::Limit
@@ -145,7 +181,9 @@ impl core::marker::Copy for libfileparser_core::Model
 impl core::marker::StructuralPartialEq for libfileparser_core::Model
 #[non_exhaustive] pub enum libfileparser_core::ParseError
 pub libfileparser_core::ParseError::Cancelled
-pub libfileparser_core::ParseError::Corrupt(alloc::string::String)
+#[non_exhaustive] pub libfileparser_core::ParseError::Corrupt
+pub libfileparser_core::ParseError::Corrupt::at: core::option::Option<libfileparser_core::Position>
+pub libfileparser_core::ParseError::Corrupt::why: alloc::string::String
 pub libfileparser_core::ParseError::InvalidRequest(alloc::string::String)
 pub libfileparser_core::ParseError::Io(core::io::error::Error)
 pub libfileparser_core::ParseError::NotThisFormat
@@ -156,7 +194,9 @@ pub libfileparser_core::ParseError::Unreadable::reference: alloc::string::String
 pub libfileparser_core::ParseError::Unsupported(alloc::string::String)
 impl libfileparser_core::ParseError
 pub fn libfileparser_core::ParseError::corrupt(impl core::fmt::Display) -> Self
+pub fn libfileparser_core::ParseError::corrupt_at(impl core::fmt::Display, libfileparser_core::Position) -> Self
 pub fn libfileparser_core::ParseError::invalid(impl core::fmt::Display) -> Self
+pub fn libfileparser_core::ParseError::position(&self) -> core::option::Option<libfileparser_core::Position>
 pub fn libfileparser_core::ParseError::too_large(libfileparser_core::Limit, u64, u64) -> Self
 pub fn libfileparser_core::ParseError::try_next_reader(&self) -> bool
 pub fn libfileparser_core::ParseError::unsupported(impl core::fmt::Display) -> Self
@@ -258,6 +298,34 @@ impl core::hash::Hash for libfileparser_core::Unreadable
 pub fn libfileparser_core::Unreadable::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for libfileparser_core::Unreadable
 impl core::marker::StructuralPartialEq for libfileparser_core::Unreadable
+#[non_exhaustive] pub enum libfileparser_core::ValueKind
+pub libfileparser_core::ValueKind::Bool
+pub libfileparser_core::ValueKind::Bytes
+pub libfileparser_core::ValueKind::Date
+pub libfileparser_core::ValueKind::Error
+pub libfileparser_core::ValueKind::Group
+pub libfileparser_core::ValueKind::List
+pub libfileparser_core::ValueKind::Map
+pub libfileparser_core::ValueKind::Mixed
+pub libfileparser_core::ValueKind::Null
+pub libfileparser_core::ValueKind::Number
+pub libfileparser_core::ValueKind::Text
+pub libfileparser_core::ValueKind::Unknown
+impl libfileparser_core::ValueKind
+pub fn libfileparser_core::ValueKind::is_numeric(self) -> bool
+impl core::clone::Clone for libfileparser_core::ValueKind
+pub fn libfileparser_core::ValueKind::clone(&self) -> libfileparser_core::ValueKind
+impl core::cmp::Eq for libfileparser_core::ValueKind
+impl core::cmp::PartialEq for libfileparser_core::ValueKind
+pub fn libfileparser_core::ValueKind::eq(&self, &libfileparser_core::ValueKind) -> bool
+impl core::default::Default for libfileparser_core::ValueKind
+pub fn libfileparser_core::ValueKind::default() -> libfileparser_core::ValueKind
+impl core::fmt::Debug for libfileparser_core::ValueKind
+pub fn libfileparser_core::ValueKind::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for libfileparser_core::ValueKind
+pub fn libfileparser_core::ValueKind::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for libfileparser_core::ValueKind
+impl core::marker::StructuralPartialEq for libfileparser_core::ValueKind
 pub struct libfileparser_core::AnyFiles
 impl core::clone::Clone for libfileparser_core::AnyFiles
 pub fn libfileparser_core::AnyFiles::clone(&self) -> libfileparser_core::AnyFiles
@@ -315,6 +383,24 @@ impl core::default::Default for libfileparser_core::Cancel
 pub fn libfileparser_core::Cancel::default() -> libfileparser_core::Cancel
 impl core::fmt::Debug for libfileparser_core::Cancel
 pub fn libfileparser_core::Cancel::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct libfileparser_core::Column
+pub libfileparser_core::Column::kind: libfileparser_core::ValueKind
+pub libfileparser_core::Column::name: alloc::string::String
+impl libfileparser_core::Column
+pub fn libfileparser_core::Column::new(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn libfileparser_core::Column::with_kind(self, libfileparser_core::ValueKind) -> Self
+impl core::clone::Clone for libfileparser_core::Column
+pub fn libfileparser_core::Column::clone(&self) -> libfileparser_core::Column
+impl core::cmp::Eq for libfileparser_core::Column
+impl core::cmp::PartialEq for libfileparser_core::Column
+pub fn libfileparser_core::Column::eq(&self, &libfileparser_core::Column) -> bool
+impl core::convert::From<&str> for libfileparser_core::Column
+pub fn libfileparser_core::Column::from(&str) -> Self
+impl core::convert::From<alloc::string::String> for libfileparser_core::Column
+pub fn libfileparser_core::Column::from(alloc::string::String) -> Self
+impl core::fmt::Debug for libfileparser_core::Column
+pub fn libfileparser_core::Column::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for libfileparser_core::Column
 pub struct libfileparser_core::Dependencies(_)
 impl libfileparser_core::Dependencies
 pub fn libfileparser_core::Dependencies::count(&self, libfileparser_core::DependencyStatus) -> usize
@@ -351,7 +437,7 @@ pub struct libfileparser_core::DependencyTable(_)
 impl libfileparser_core::TableSource for libfileparser_core::DependencyTable
 pub fn libfileparser_core::DependencyTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::DependencyTable::memory(&self) -> libfileparser_core::MemoryUse
-pub fn libfileparser_core::DependencyTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
+pub fn libfileparser_core::DependencyTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 #[non_exhaustive] pub struct libfileparser_core::Detection
 pub libfileparser_core::Detection::confidence: libfileparser_core::Confidence
 pub libfileparser_core::Detection::language: core::option::Option<&'static str>
@@ -381,6 +467,7 @@ pub fn libfileparser_core::Document::links(&self, &libfileparser_core::Place, &l
 pub fn libfileparser_core::Document::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::Document::metadata(&self) -> &[(alloc::string::String, alloc::string::String)]
 pub fn libfileparser_core::Document::new(libfileparser_core::FormatInfo) -> Self
+pub fn libfileparser_core::Document::warnings(&self) -> &[libfileparser_core::Warning]
 pub fn libfileparser_core::Document::with_dependencies(self, libfileparser_core::Dependencies) -> Self
 pub fn libfileparser_core::Document::with_dependencies_facet(self) -> Self
 pub fn libfileparser_core::Document::with_facet(self, libfileparser_core::Role, impl core::convert::Into<alloc::string::String>, libfileparser_core::Content) -> Self
@@ -388,6 +475,8 @@ pub fn libfileparser_core::Document::with_lazy_facet(self, libfileparser_core::F
 pub fn libfileparser_core::Document::with_links(self, impl libfileparser_core::Links + 'static) -> Self
 pub fn libfileparser_core::Document::with_meta(self, impl core::convert::Into<alloc::string::String>, impl alloc::string::ToString) -> Self
 pub fn libfileparser_core::Document::with_provided_facets(self, &libfileparser_core::ParseContext) -> Self
+pub fn libfileparser_core::Document::with_warning(self, libfileparser_core::Warning) -> Self
+pub fn libfileparser_core::Document::with_warnings(self, impl core::iter::traits::collect::IntoIterator<Item = libfileparser_core::Warning>) -> Self
 impl libfileparser_core::Document
 pub fn libfileparser_core::Document::has_role(&self, libfileparser_core::Role) -> bool
 pub fn libfileparser_core::Document::with_file_facets(self, &libfileparser_core::FileSource, core::option::Option<&str>) -> Self
@@ -509,9 +598,13 @@ impl core::marker::StructuralPartialEq for libfileparser_core::LimitExceeded
 pub libfileparser_core::Limits::allocation: u64
 pub libfileparser_core::Limits::dependencies: u64
 pub libfileparser_core::Limits::depth: u64
+pub libfileparser_core::Limits::entries: u64
+pub libfileparser_core::Limits::expansion: u64
+pub libfileparser_core::Limits::geometry: u64
 pub libfileparser_core::Limits::image_pixels: u64
-pub libfileparser_core::Limits::items: u64
 pub libfileparser_core::Limits::memory: u64
+pub libfileparser_core::Limits::nodes: u64
+pub libfileparser_core::Limits::rows: u64
 pub libfileparser_core::Limits::unpack_always: u64
 pub libfileparser_core::Limits::unpack_ratio: u64
 impl libfileparser_core::Limits
@@ -599,11 +692,12 @@ impl core::marker::Copy for libfileparser_core::NodeId
 impl core::marker::StructuralPartialEq for libfileparser_core::NodeId
 pub struct libfileparser_core::OwnedTable
 impl libfileparser_core::OwnedTable
-pub fn libfileparser_core::OwnedTable::new(alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>) -> Self
+pub fn libfileparser_core::OwnedTable::new(alloc::vec::Vec<libfileparser_core::Column>, alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>) -> Self
+pub fn libfileparser_core::OwnedTable::text(alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>) -> Self
 impl libfileparser_core::TableSource for libfileparser_core::OwnedTable
 pub fn libfileparser_core::OwnedTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::OwnedTable::memory(&self) -> libfileparser_core::MemoryUse
-pub fn libfileparser_core::OwnedTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
+pub fn libfileparser_core::OwnedTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 pub struct libfileparser_core::OwnedTree
 impl libfileparser_core::OwnedTree
 pub fn libfileparser_core::OwnedTree::add(&mut self, core::option::Option<libfileparser_core::NodeId>, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>) -> libfileparser_core::NodeId
@@ -611,6 +705,7 @@ pub fn libfileparser_core::OwnedTree::add_at(&mut self, core::option::Option<lib
 pub fn libfileparser_core::OwnedTree::is_empty(&self) -> bool
 pub fn libfileparser_core::OwnedTree::len(&self) -> usize
 pub fn libfileparser_core::OwnedTree::new() -> Self
+pub fn libfileparser_core::OwnedTree::set_kind(&mut self, libfileparser_core::NodeId, libfileparser_core::ValueKind)
 impl core::default::Default for libfileparser_core::OwnedTree
 pub fn libfileparser_core::OwnedTree::default() -> libfileparser_core::OwnedTree
 impl libfileparser_core::TreeSource for libfileparser_core::OwnedTree
@@ -619,6 +714,7 @@ pub fn libfileparser_core::OwnedTree::children(&self, core::option::Option<libfi
 pub fn libfileparser_core::OwnedTree::find(&self, &str) -> libfileparser_core::Result<core::option::Option<libfileparser_core::NodeId>>
 pub fn libfileparser_core::OwnedTree::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::OwnedTree::path(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<alloc::string::String>>
+pub fn libfileparser_core::OwnedTree::value(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<libfileparser_core::Cell>>
 #[non_exhaustive] pub struct libfileparser_core::ParseContext
 pub libfileparser_core::ParseContext::cancel: libfileparser_core::Cancel
 pub libfileparser_core::ParseContext::facet_providers: alloc::vec::Vec<alloc::sync::Arc<dyn libfileparser_core::FacetProvider>>
@@ -640,6 +736,28 @@ impl core::clone::Clone for libfileparser_core::ParseContext
 pub fn libfileparser_core::ParseContext::clone(&self) -> libfileparser_core::ParseContext
 impl core::default::Default for libfileparser_core::ParseContext
 pub fn libfileparser_core::ParseContext::default() -> Self
+#[non_exhaustive] pub struct libfileparser_core::Position
+pub libfileparser_core::Position::byte: core::option::Option<u64>
+pub libfileparser_core::Position::column: core::option::Option<u64>
+pub libfileparser_core::Position::line: core::option::Option<u64>
+impl libfileparser_core::Position
+pub fn libfileparser_core::Position::byte(u64) -> Self
+pub fn libfileparser_core::Position::in_text(&[u8], usize) -> Self
+pub fn libfileparser_core::Position::line(u64) -> Self
+pub fn libfileparser_core::Position::line_column(u64, u64) -> Self
+impl core::clone::Clone for libfileparser_core::Position
+pub fn libfileparser_core::Position::clone(&self) -> libfileparser_core::Position
+impl core::cmp::Eq for libfileparser_core::Position
+impl core::cmp::PartialEq for libfileparser_core::Position
+pub fn libfileparser_core::Position::eq(&self, &libfileparser_core::Position) -> bool
+impl core::fmt::Debug for libfileparser_core::Position
+pub fn libfileparser_core::Position::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for libfileparser_core::Position
+pub fn libfileparser_core::Position::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for libfileparser_core::Position
+pub fn libfileparser_core::Position::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for libfileparser_core::Position
+impl core::marker::StructuralPartialEq for libfileparser_core::Position
 pub struct libfileparser_core::Raster
 impl libfileparser_core::Raster
 pub fn libfileparser_core::Raster::decode(&self) -> libfileparser_core::Result<alloc::vec::Vec<u8>>
@@ -680,10 +798,11 @@ pub fn libfileparser_core::SceneDoc::textures_pending(&self) -> usize
 impl core::clone::Clone for libfileparser_core::SceneDoc
 pub fn libfileparser_core::SceneDoc::clone(&self) -> libfileparser_core::SceneDoc
 #[non_exhaustive] pub struct libfileparser_core::TableInfo
-pub libfileparser_core::TableInfo::columns: alloc::vec::Vec<alloc::string::String>
+pub libfileparser_core::TableInfo::columns: alloc::vec::Vec<libfileparser_core::Column>
 pub libfileparser_core::TableInfo::rows: libfileparser_core::Count
 impl libfileparser_core::TableInfo
-pub fn libfileparser_core::TableInfo::new(alloc::vec::Vec<alloc::string::String>, libfileparser_core::Count) -> Self
+pub fn libfileparser_core::TableInfo::names(&self) -> alloc::vec::Vec<&str>
+pub fn libfileparser_core::TableInfo::new(alloc::vec::Vec<libfileparser_core::Column>, libfileparser_core::Count) -> Self
 impl core::clone::Clone for libfileparser_core::TableInfo
 pub fn libfileparser_core::TableInfo::clone(&self) -> libfileparser_core::TableInfo
 impl core::cmp::Eq for libfileparser_core::TableInfo
@@ -711,10 +830,13 @@ impl core::marker::StructuralPartialEq for libfileparser_core::TextInfo
 #[non_exhaustive] pub struct libfileparser_core::TreeNode
 pub libfileparser_core::TreeNode::has_children: bool
 pub libfileparser_core::TreeNode::id: libfileparser_core::NodeId
+pub libfileparser_core::TreeNode::kind: libfileparser_core::ValueKind
 pub libfileparser_core::TreeNode::label: alloc::string::String
 pub libfileparser_core::TreeNode::value: alloc::string::String
 impl libfileparser_core::TreeNode
+pub const libfileparser_core::TreeNode::PREVIEW_CHARS: usize
 pub fn libfileparser_core::TreeNode::new(libfileparser_core::NodeId, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::string::String>, bool) -> Self
+pub fn libfileparser_core::TreeNode::with_kind(self, libfileparser_core::ValueKind) -> Self
 impl core::clone::Clone for libfileparser_core::TreeNode
 pub fn libfileparser_core::TreeNode::clone(&self) -> libfileparser_core::TreeNode
 impl core::cmp::Eq for libfileparser_core::TreeNode
@@ -723,6 +845,22 @@ pub fn libfileparser_core::TreeNode::eq(&self, &libfileparser_core::TreeNode) ->
 impl core::fmt::Debug for libfileparser_core::TreeNode
 pub fn libfileparser_core::TreeNode::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for libfileparser_core::TreeNode
+#[non_exhaustive] pub struct libfileparser_core::Warning
+pub libfileparser_core::Warning::at: core::option::Option<libfileparser_core::Position>
+pub libfileparser_core::Warning::message: alloc::string::String
+pub libfileparser_core::Warning::place: core::option::Option<libfileparser_core::Place>
+impl libfileparser_core::Warning
+pub fn libfileparser_core::Warning::at(self, libfileparser_core::Position) -> Self
+pub fn libfileparser_core::Warning::new(impl core::convert::Into<alloc::string::String>) -> Self
+pub fn libfileparser_core::Warning::on(self, libfileparser_core::Place) -> Self
+impl core::clone::Clone for libfileparser_core::Warning
+pub fn libfileparser_core::Warning::clone(&self) -> libfileparser_core::Warning
+impl core::cmp::Eq for libfileparser_core::Warning
+impl core::cmp::PartialEq for libfileparser_core::Warning
+pub fn libfileparser_core::Warning::eq(&self, &libfileparser_core::Warning) -> bool
+impl core::fmt::Debug for libfileparser_core::Warning
+pub fn libfileparser_core::Warning::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for libfileparser_core::Warning
 pub trait libfileparser_core::BandSource: core::marker::Send + core::marker::Sync
 pub fn libfileparser_core::BandSource::bands(&self) -> libfileparser_core::Result<libfileparser_core::Bands>
 pub fn libfileparser_core::BandSource::memory(&self) -> libfileparser_core::MemoryUse
@@ -765,15 +903,15 @@ pub fn libfileparser_core::InlineSpawn::spawn(&self, alloc::boxed::Box<(dyn core
 pub trait libfileparser_core::TableSource: core::marker::Send + core::marker::Sync
 pub fn libfileparser_core::TableSource::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::TableSource::memory(&self) -> libfileparser_core::MemoryUse
-pub fn libfileparser_core::TableSource::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
+pub fn libfileparser_core::TableSource::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 impl libfileparser_core::TableSource for libfileparser_core::DependencyTable
 pub fn libfileparser_core::DependencyTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::DependencyTable::memory(&self) -> libfileparser_core::MemoryUse
-pub fn libfileparser_core::DependencyTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
+pub fn libfileparser_core::DependencyTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 impl libfileparser_core::TableSource for libfileparser_core::OwnedTable
 pub fn libfileparser_core::OwnedTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::OwnedTable::memory(&self) -> libfileparser_core::MemoryUse
-pub fn libfileparser_core::OwnedTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>>
+pub fn libfileparser_core::OwnedTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 pub trait libfileparser_core::TextSource: core::marker::Send + core::marker::Sync
 pub fn libfileparser_core::TextSource::info(&self) -> libfileparser_core::TextInfo
 pub fn libfileparser_core::TextSource::lines(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<libfileparser_core::Bytes>>
@@ -788,12 +926,14 @@ pub fn libfileparser_core::TreeSource::children(&self, core::option::Option<libf
 pub fn libfileparser_core::TreeSource::find(&self, &str) -> libfileparser_core::Result<core::option::Option<libfileparser_core::NodeId>>
 pub fn libfileparser_core::TreeSource::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::TreeSource::path(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<alloc::string::String>>
+pub fn libfileparser_core::TreeSource::value(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<libfileparser_core::Cell>>
 impl libfileparser_core::TreeSource for libfileparser_core::OwnedTree
 pub fn libfileparser_core::OwnedTree::child_count(&self, core::option::Option<libfileparser_core::NodeId>) -> libfileparser_core::Result<libfileparser_core::Count>
 pub fn libfileparser_core::OwnedTree::children(&self, core::option::Option<libfileparser_core::NodeId>, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<libfileparser_core::TreeNode>>
 pub fn libfileparser_core::OwnedTree::find(&self, &str) -> libfileparser_core::Result<core::option::Option<libfileparser_core::NodeId>>
 pub fn libfileparser_core::OwnedTree::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::OwnedTree::path(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<alloc::string::String>>
+pub fn libfileparser_core::OwnedTree::value(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<libfileparser_core::Cell>>
 pub fn libfileparser_core::detect<'a>(&[&'a dyn libfileparser_core::Reader], &[u8], &str) -> alloc::vec::Vec<(&'a dyn libfileparser_core::Reader, libfileparser_core::Detection)>
 pub fn libfileparser_core::is_text(&[u8]) -> bool
 pub fn libfileparser_core::open(&[&dyn libfileparser_core::Reader], &libfileparser_core::FileSource, &libfileparser_core::ParseContext) -> libfileparser_core::Result<libfileparser_core::Document>

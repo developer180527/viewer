@@ -9,7 +9,7 @@ use std::sync::Mutex;
 
 use gltf_lite::{ExtensionSupport, GlbChunk};
 use libfileparser_core::{
-    Count, FileParts, FileSource, LineText, MemoryUse, NodeId, OwnedTable, ParseError, Result, TreeNode, TreeSource,
+    Cell, Count, FileParts, FileSource, LineText, MemoryUse, NodeId, OwnedTable, ParseError, Result, TreeNode, TreeSource, ValueKind,
 };
 use serde_json::Value;
 
@@ -129,7 +129,7 @@ impl GltfTree {
             text = format!("{text} · {name}");
         }
         let has_children = matches!(value, Value::Object(o) if !o.is_empty()) || matches!(value, Value::Array(a) if !a.is_empty());
-        TreeNode::new(self.id(path), label, text, has_children)
+        TreeNode::new(self.id(path), label, text, has_children).with_kind(kind(value))
     }
 }
 
@@ -172,6 +172,17 @@ impl TreeSource for GltfTree {
         MemoryUse::heap(size(&self.root))
     }
 
+    fn value(&self, node: NodeId) -> Result<Option<Cell>> {
+        let path = self.segments(Some(node))?;
+        Ok(match self.at(&path) {
+            Some(Value::String(s)) => Some(Cell::Text(s.clone())),
+            Some(Value::Number(n)) => Some(Cell::number(&n.to_string())),
+            Some(Value::Bool(b)) => Some(Cell::Bool(*b)),
+            Some(Value::Null) => Some(Cell::Null),
+            _ => None,
+        })
+    }
+
     /// A JSON pointer (RFC 6901): `/nodes/3`, `/meshes/0/primitives/1`.
     fn find(&self, path: &str) -> Result<Option<NodeId>> {
         let Some(rest) = path.strip_prefix('/') else { return Ok(None) };
@@ -202,6 +213,17 @@ impl TreeSource for GltfTree {
     }
 }
 
+fn kind(v: &Value) -> ValueKind {
+    match v {
+        Value::Object(_) => ValueKind::Map,
+        Value::Array(_) => ValueKind::List,
+        Value::String(_) => ValueKind::Text,
+        Value::Number(_) => ValueKind::Number,
+        Value::Bool(_) => ValueKind::Bool,
+        Value::Null => ValueKind::Null,
+    }
+}
+
 /// A path as a JSON pointer.
 fn pointer(segs: &[Seg]) -> String {
     segs.iter()
@@ -225,11 +247,12 @@ fn summary(v: &Value) -> String {
             }
         },
         Value::Array(a) => format!("[{}]", a.len()),
+        // Text without quotes (its kind says it is text); a `data:` URI cut short.
         Value::String(s) if s.chars().count() > 80 => {
             let head: String = s.chars().take(60).collect();
-            format!("\"{head}…\" ({} characters)", s.chars().count())
+            format!("{head}…")
         }
-        Value::String(s) => format!("\"{s}\""),
+        Value::String(s) => s.clone(),
         other => other.to_string(),
     }
 }
@@ -330,7 +353,7 @@ pub fn extensions_table(used: &[String], required: &[String]) -> Option<OwnedTab
             vec![name.clone(), if required { "yes" } else { "no" }.into(), support.into()]
         })
         .collect();
-    Some(OwnedTable::new(vec!["Extension".into(), "Required".into(), "Here".into()], rows))
+    Some(OwnedTable::text(vec!["Extension".into(), "Required".into(), "Here".into()], rows))
 }
 
 #[cfg(test)]
@@ -362,7 +385,9 @@ mod tests {
         assert_eq!(primitive[1].value, "0 · Rubber");
         assert_eq!(all(Some(primitive[0].id))[0].value, "0 · positions");
         let image = all(Some(all(Some(top[4].id))[0].id));
-        assert!(image[0].value.ends_with("…\" (222 characters)"), "{}", image[0].value);
+        // A long string is cut in the listing, and whole when asked for.
+        assert!(image[0].value.ends_with('…'), "{}", image[0].value);
+        assert!(matches!(tree.value(image[0].id).unwrap(), Some(Cell::Text(uri)) if uri.chars().count() == 222));
         // The same node asked for twice has the same id; an unknown one is an error.
         assert_eq!(all(None)[0].id, top[0].id);
         assert!(tree.children(Some(NodeId(999)), 0..1).is_err());

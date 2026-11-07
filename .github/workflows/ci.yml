@@ -154,11 +154,11 @@ jobs:
       - name: Semver
         run: |
           # Against the commit before this push on main, else where the branch left main.
-          # A crate joins this list once it is on main (libfileparser-data: after 2026-11-08's).
+          # A crate joins this list once it is on main.
           if [ "$GITHUB_REF" = refs/heads/main ]; then base=HEAD~1; else base=$(git merge-base HEAD origin/main); fi
           cargo semver-checks --baseline-rev "$base" \
             -p libfileparser-core -p libfileparser -p libfileparser-3d -p libfileparser-images -p libfileparser-text \
-            -p libfileparser-archives -p libfileparser-testkit -p usd-lite -p gltf-lite -p scene-data -p libviewer
+            -p libfileparser-archives -p libfileparser-data -p libfileparser-testkit -p usd-lite -p gltf-lite -p scene-data -p libviewer
 
   # The shared crates and the app itself (ios/run-sim.sh runs it on a simulator).
   ios:

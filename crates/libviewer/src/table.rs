@@ -5,7 +5,7 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
-use libfileparser_core::{Container, Entry, EntryKind, TableSource};
+use libfileparser_core::{Cell, Container, Entry, EntryKind, TableSource};
 use libgui::*;
 
 /// A table's state: its columns (made when it is first shown) and libgui's.
@@ -16,7 +16,13 @@ pub struct TableView {
 impl TableView {
     pub fn for_table(t: &dyn TableSource) -> Self {
         let columns = t.info().columns;
-        Self { state: TableState::new(columns.iter().map(|c| Column::new(c).width(160.0).unsortable())) }
+        // Numbers right-aligned, so their digits line up.
+        Self {
+            state: TableState::new(columns.iter().map(|c| {
+                let column = Column::new(c.name.as_str()).width(160.0).unsortable();
+                if c.kind.is_numeric() { column.align(Align::End) } else { column }
+            })),
+        }
     }
 
     /// Name and size, and Packed when the entries listed so far say how they were packed.
@@ -53,7 +59,13 @@ pub fn table(ui: &mut Ui, t: &dyn TableSource, view: &mut TableView) {
     let cache = RefCell::new(RowCache { row: None });
     ui.table("table", &mut view.state, rows, |ui, row, col| {
         let cells = cache.borrow_mut().get(row, || t.rows(row as u64..row as u64 + 1).ok().and_then(|mut r| r.pop()).unwrap_or_default());
-        ui.label(cells.get(col).map_or("", String::as_str));
+        match cells.get(col) {
+            // Null isn't empty text: shown, but quietly.
+            Some(Cell::Null) => ui.label_muted("null"),
+            Some(Cell::Error(why)) => ui.label_muted(&format!("⚠ {why}")),
+            Some(cell) => ui.label(&cell.to_string()),
+            None => {}
+        }
     });
 }
 

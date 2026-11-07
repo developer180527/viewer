@@ -6,7 +6,7 @@
 use std::sync::Arc;
 
 use libfileparser_core::{
-    Category, Content, Document, FileSource, FormatInfo, ParseContext, ParseError, Result, Role,
+    Category, NodeId, Place, Position, ValueKind, Warning, Content, Document, FileSource, FormatInfo, ParseContext, ParseError, Result, Role,
 };
 
 use crate::table::JsonLinesTable;
@@ -89,30 +89,46 @@ pub(crate) fn parse(text: &[u8], dialect: Dialect, cx: &ParseContext) -> Result<
     b.finish()
 }
 
-/// JSON Lines: one value per line, the lines as the top-level nodes.
-pub(crate) fn parse_lines(text: &[u8], cx: &ParseContext) -> Result<DataTree> {
+/// Bad lines JSON Lines may have before it stops being read as JSON Lines.
+const MAX_BAD_LINES: usize = 1000;
+
+/// JSON Lines: one value per line, the lines as the top-level nodes. A line that isn't
+/// JSON becomes an error node, and a warning, rather than failing the file, unless
+/// it is the first: then the file isn't JSON Lines.
+pub(crate) fn parse_lines(text: &[u8], cx: &ParseContext) -> Result<(DataTree, Vec<Warning>)> {
     let mut b = Builder::new(cx);
-    let mut p = Parser {
-        s: text,
-        i: 0,
-        d: Dialect::Json,
-        lines: LineCounter::new(text),
-    };
+    let mut p = Parser { s: text, i: 0, d: Dialect::Json, lines: LineCounter::new(text) };
+    let mut warnings = Vec::new();
     let mut item = 0usize;
-    for line in text.split(|&c| c == b'\n') {
+    for (n, line) in text.split(|&c| c == b'\n').enumerate() {
         let end = p.i + line.len();
         if !line.iter().all(u8::is_ascii_whitespace) {
-            p.skip()?;
-            p.value(&mut b, None, 1, item.to_string())?;
-            p.skip_spaces();
-            if p.i < end {
-                return Err(p.error("text after the line's value"));
+            // A line's value ends with its line.
+            p.s = &text[..end];
+            let mark = b.len();
+            let read = p.skip().and_then(|()| p.value(&mut b, None, 1, item.to_string())).and_then(|_| {
+                p.skip_spaces();
+                if p.i < end { Err(p.error("text after the line's value")) } else { Ok(()) }
+            });
+            if let Err(e) = read {
+                if item == 0 || !e.try_next_reader() || warnings.len() >= MAX_BAD_LINES {
+                    return Err(e);
+                }
+                b.rollback(mark);
+                let why = match &e {
+                    ParseError::Corrupt { why, .. } => why.clone(),
+                    other => other.to_string(),
+                };
+                let at = e.position().unwrap_or(Position::line(n as u64 + 1));
+                b.add(None, 1, item.to_string(), why.clone(), ValueKind::Error, n as u32..n as u32 + 1)?;
+                warnings.push(Warning::new(why).at(at));
             }
             item += 1;
         }
+        p.s = text;
         p.i = (end + 1).min(text.len());
     }
-    b.finish()
+    Ok((b.finish()?, warnings))
 }
 
 /// An object or array being read. Nesting is kept here, not on the call stack, so
@@ -144,18 +160,7 @@ impl Parser<'_> {
     }
 
     fn error(&self, what: &str) -> ParseError {
-        let before = &self.s[..self.i.min(self.s.len())];
-        let line = memchr::memchr_iter(b'\n', before).count() + 1;
-        let col = before.len()
-            - before
-                .iter()
-                .rposition(|&c| c == b'\n')
-                .map_or(0, |p| p + 1)
-            + 1;
-        ParseError::corrupt(format!(
-            "{} line {line}, column {col}: {what}",
-            self.d.name()
-        ))
+        ParseError::corrupt_at(format!("{}: {what}", self.d.name()), Position::in_text(self.s, self.i))
     }
 
     fn skip_spaces(&mut self) {
@@ -284,7 +289,8 @@ impl Parser<'_> {
                 Some(c @ (b'{' | b'[')) => {
                     let first = self.line();
                     self.i += 1;
-                    let id = b.add(parent, depth, label, "", first..first + 1)?;
+                    let kind = if c == b'{' { ValueKind::Map } else { ValueKind::List };
+                    let id = b.add(parent, depth, label, "", kind, first..first + 1)?;
                     let close = if c == b'{' { b'}' } else { b']' };
                     stack.push(Frame {
                         id: Some(id),
@@ -367,7 +373,8 @@ impl Parser<'_> {
             Some(c @ (b'{' | b'[')) => {
                 let first = self.line();
                 self.i += 1;
-                let id = b.add(parent, depth, label, "", first..first + 1)?;
+                let kind = if c == b'{' { ValueKind::Map } else { ValueKind::List };
+                let id = b.add(parent, depth, label, "", kind, first..first + 1)?;
                 let close = if c == b'{' { b'}' } else { b']' };
                 self.run(
                     b,
@@ -398,15 +405,15 @@ impl Parser<'_> {
             Some(b'{' | b'[') => Err(self.error("expected a value")),
             Some(q @ b'"') => {
                 let s = self.string(q)?;
-                self.leaf(b, parent, depth, label, format!("{s:?}"), first)
+                self.leaf(b, parent, depth, label, (s, ValueKind::Text), first)
             }
             Some(q @ b'\'') if self.d >= Dialect::Json5 => {
                 if self.d == Dialect::Hjson && self.s[self.i..].starts_with(b"'''") {
                     let s = self.multiline()?;
-                    return self.leaf(b, parent, depth, label, format!("{s:?}"), first);
+                    return self.leaf(b, parent, depth, label, (s, ValueKind::Text), first);
                 }
                 let s = self.string(q)?;
-                self.leaf(b, parent, depth, label, format!("{s:?}"), first)
+                self.leaf(b, parent, depth, label, (s, ValueKind::Text), first)
             }
             Some(_) if self.d == Dialect::Hjson => {
                 let start = self.i;
@@ -432,14 +439,14 @@ impl Parser<'_> {
                         || after.starts_with("//"));
                 if literal {
                     self.i = start + word_end;
-                    return self.leaf(b, parent, depth, label, word.to_string(), first);
+                    return self.leaf(b, parent, depth, label, (word.to_string(), literal_kind(word)), first);
                 }
                 if raw.starts_with([',', ':', ']', '}']) {
                     return Err(self.error("expected a value"));
                 }
                 self.i = end;
                 let text = raw.trim_end();
-                self.leaf(b, parent, depth, label, format!("{text:?}"), first)
+                self.leaf(b, parent, depth, label, (text.to_string(), ValueKind::Text), first)
             }
             Some(_) => {
                 let start = self.i;
@@ -462,7 +469,7 @@ impl Parser<'_> {
                     self.i = start;
                     return Err(self.error("expected a value"));
                 }
-                self.leaf(b, parent, depth, label, word.to_string(), first)
+                self.leaf(b, parent, depth, label, (word.to_string(), literal_kind(word)), first)
             }
             None => Err(self.error("expected a value, found the end")),
         }
@@ -474,11 +481,11 @@ impl Parser<'_> {
         parent: Option<u32>,
         depth: usize,
         label: String,
-        value: String,
+        (value, kind): (String, ValueKind),
         first: u32,
     ) -> Result<u32> {
         let last = self.lines.line(self.i.saturating_sub(1));
-        b.add(parent, depth, label, value, first..first.max(last) + 1)
+        b.add(parent, depth, label, value, kind, first..first.max(last) + 1)
     }
 
     /// A quoted string, its escapes decoded.
@@ -599,6 +606,15 @@ impl PartialOrd for Dialect {
     }
 }
 
+/// What a bare word is: `true`, `false`, `null`, or a number.
+fn literal_kind(word: &str) -> ValueKind {
+    match word {
+        "true" | "false" => ValueKind::Bool,
+        "null" => ValueKind::Null,
+        _ => ValueKind::Number,
+    }
+}
+
 /// RFC 8259's number: `-? (0 | [1-9][0-9]*) (. [0-9]+)? ([eE] [+-]? [0-9]+)?`.
 fn strict_number(w: &str) -> bool {
     let b = w.as_bytes();
@@ -666,7 +682,7 @@ pub(crate) fn tree_document(
 
 /// A JSON Lines document: a table of the lines when they are objects (their keys as
 /// columns), and the tree of every line.
-pub(crate) fn lines_document(tree: DataTree, src: &FileSource) -> Document {
+pub(crate) fn lines_document(tree: DataTree, warnings: Vec<Warning>, src: &FileSource) -> Document {
     let nodes = tree.len();
     let rows = tree.roots().len();
     let tree = Arc::new(tree);
@@ -690,8 +706,15 @@ pub(crate) fn lines_document(tree: DataTree, src: &FileSource) -> Document {
             None,
         )
     };
+    // Each warning is a bad line: its row, or its node.
+    let bad: Vec<usize> = (0..rows).filter(|&r| tree.kind(tree.roots()[r]) == ValueKind::Error).collect();
+    let warnings = warnings.into_iter().zip(bad).map(|(w, row)| match table_facet {
+        Some(facet) => w.on(Place::Row { facet, row: row as u64 }),
+        None => w.on(Place::Node { facet: tree_facet, node: NodeId(tree.roots()[row] as u64) }),
+    });
     doc.with_meta("Lines", rows)
         .with_meta("Nodes", nodes)
+        .with_warnings(warnings)
         .with_links(TreeLinks {
             tree,
             tree_facet,
@@ -709,7 +732,7 @@ mod tests {
         t.children(None, 0..100)
             .unwrap()
             .into_iter()
-            .map(|n| (n.label, n.value))
+            .map(|n| (n.label.clone(), crate::tree::shown(&n)))
             .collect()
     }
 
@@ -718,7 +741,7 @@ mod tests {
         t.children(Some(id), 0..100)
             .unwrap()
             .into_iter()
-            .map(|n| (n.label, n.value))
+            .map(|n| (n.label.clone(), crate::tree::shown(&n)))
             .collect()
     }
 
@@ -827,18 +850,21 @@ mod tests {
     #[test]
     fn json_lines_and_limits() {
         let cx = ParseContext::new();
-        let t = parse_lines(b"{\"a\":1}\n\n[2]\n\"x\"\n", &cx).unwrap();
+        let t = parse_lines(b"{\"a\":1}\n\n[2]\n\"x\"\n", &cx).unwrap().0;
         assert_eq!(
             top(&t),
             pairs(&[("0", "{1}"), ("1", "[1]"), ("2", "\"x\"")])
         );
-        assert!(
-            parse_lines(b"{}\n{bad\n", &cx)
-                .err()
-                .unwrap()
-                .to_string()
-                .contains("line 2")
-        );
+        // A bad first line: not JSON Lines. A bad later line: an error node and a warning.
+        assert!(parse_lines(b"{bad\n{}\n", &cx).is_err());
+        let (t, warnings) = parse_lines(b"{}\n{bad\n[3]\n", &cx).unwrap();
+        assert_eq!(t.roots().len(), 3);
+        assert_eq!(t.kind(t.roots()[1]), ValueKind::Error);
+        assert_eq!(t.children(t.find("/2").unwrap(), 0..1).unwrap()[0].value, "3");
+        assert_eq!(warnings.len(), 1);
+        assert_eq!(warnings[0].at.and_then(|p| p.line), Some(2));
+        let err = parse(b"{\n  \"a\": nope\n}", Dialect::Json, &cx).err().unwrap();
+        assert_eq!(err.position().map(|p| (p.line, p.column)), Some((Some(2), Some(8))));
         let mut limits = libfileparser_core::Limits::desktop();
         limits.depth = 3;
         let tiny = ParseContext::new().with_limits(limits);
