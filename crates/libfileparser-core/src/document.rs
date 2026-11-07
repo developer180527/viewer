@@ -108,6 +108,13 @@ impl Document {
         self
     }
 
+    /// Adds a Dependencies facet: [`Self::dependencies`] as a table that stays current.
+    /// Call it after [`Self::with_dependencies`].
+    pub fn with_dependencies_facet(self) -> Self {
+        let table = std::sync::Arc::new(self.dependencies.table());
+        self.with_facet(Role::Dependencies, "Dependencies", Content::Table(table))
+    }
+
     pub fn format(&self) -> &FormatInfo {
         &self.format
     }

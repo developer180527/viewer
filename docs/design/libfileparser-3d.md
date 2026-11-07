@@ -1,6 +1,6 @@
 # libfileparser-3d: any 3D file, every facet of it
 
-Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` on `-core`, every reader with its Scene (or Preview) facet, files, threads and progress through the hooks, every reader passing conformance on committed samples (the suite walks `readers()`, so a reader without samples fails); one module per reader in `readers/`, the shared helpers public in `build` (§4); Viewer opens 3D through it (§9 step 2). The other facets are §9 steps 3–7. Built on [document-model.md](document-model.md), and applies [libfileparser.md](libfileparser.md): the four requirements of its §1, its flat API (§4) and its rules (§5–7). This document holds only what is particular to 3D.
+Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` on `-core`, every reader with its Scene (or Preview) facet, files, threads and progress through the hooks, every reader passing conformance on committed samples (the suite walks `readers()`, so a reader without samples fails); one module per reader in `readers/`, the shared helpers public in `build` (§4); Viewer opens 3D through it (§9 step 2). Dependencies and Textures facets for every reader (§9 step 3, 2026-11-06). The other facets are §9 steps 4–7. Built on [document-model.md](document-model.md), and applies [libfileparser.md](libfileparser.md): the four requirements of its §1, its flat API (§4) and its rules (§5–7). This document holds only what is particular to 3D.
 
 **Goal:** read any 3D file into everything it is: a scene to draw, its own structure (USD prims, glTF nodes, FBX records), the text it's written in, the files packed inside it, the files it depends on, and its materials and textures, so an engine editor, an IDE or a viewer can each take what it needs.
 
@@ -10,14 +10,14 @@ Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` 
 
 | Format | Primary | Structure | Source | Package | Dependencies | Inspector |
 |---|---|---|---|---|---|---|
-| **USDA** | Scene ✅ | **Stage**: prims, types, attributes, metadata ⬜ · **Layers**: the layer stack and composition arcs ⬜ | USD text, language `usd` (front door) | — | Sublayers, references, payloads, textures 🟡 | **Variants** (sets and selections) ⬜ · Materials ⬜ · Textures ⬜ |
-| **USDC** | Scene ✅ | Stage ⬜ · Layers ⬜ · **Crate**: tokens, paths, specs, sections ⬜ | — | — | As USDA 🟡 | As USDA ⬜ |
-| **USDZ** | Scene ✅ | Stage ⬜ · Layers ⬜ | — | **Package**: layers and textures inside (front door's zip listing) | Outside references, if any 🟡 | As USDA ⬜ |
-| **glTF** (`.gltf`) | Scene ✅ | **glTF**: scenes, nodes, meshes, primitives, accessors, materials, animations ⬜ | JSON, language `json` (front door) | — | Buffers, images 🟡 | Materials · Textures · Extensions used ⬜ |
-| **GLB / VRM** | Scene ✅ | glTF ⬜ · VRM: humanoid, expressions ⬜ | **JSON chunk** (the reader provides it: no generic reader can find it) ⬜ | **Chunks**: JSON, BIN, embedded images ⬜ | External buffers or images, if any 🟡 | As glTF ⬜ |
-| **FBX** (binary) | Scene ✅ | **Records**: the FBX node tree, properties ⬜ | — | **Embedded media** (textures in the file) ⬜ | Textures 🟡 | Materials · Textures · Takes ⬜ |
-| **FBX** (ASCII) | Scene ✅ | Records ⬜ | FBX text, language `fbx` (front door) | — | Textures 🟡 | As binary ⬜ |
-| **OBJ** | Scene ✅ | **Objects**: objects, groups, materials used ⬜ | OBJ text, language `obj` (front door) | — | `.mtl` files, textures ✅ | Materials ⬜ |
+| **USDA** | Scene ✅ | **Stage**: prims, types, attributes, metadata ⬜ · **Layers**: the layer stack and composition arcs ⬜ | USD text, language `usd` (front door) | — | Sublayers, references, payloads (as layers), textures ✅ | **Variants** (sets and selections) ⬜ · Materials ⬜ · Textures ✅ |
+| **USDC** | Scene ✅ | Stage ⬜ · Layers ⬜ · **Crate**: tokens, paths, specs, sections ⬜ | — | — | As USDA ✅ | As USDA |
+| **USDZ** | Scene ✅ | Stage ⬜ · Layers ⬜ | — | **Package**: layers and textures inside (front door's zip listing) | Outside references, if any ✅ | As USDA |
+| **glTF** (`.gltf`) | Scene ✅ | **glTF**: scenes, nodes, meshes, primitives, accessors, materials, animations ⬜ | JSON, language `json` (front door) | — | Buffers, images ✅ | Textures ✅ · Materials · Extensions used ⬜ |
+| **GLB / VRM** | Scene ✅ | glTF ⬜ · VRM: humanoid, expressions ⬜ | **JSON chunk** (the reader provides it: no generic reader can find it) ⬜ | **Chunks**: JSON, BIN, embedded images ⬜ | External buffers or images, if any ✅ | As glTF |
+| **FBX** (binary) | Scene ✅ | **Records**: the FBX node tree, properties ⬜ | — | **Embedded media** (textures in the file) ⬜ | Textures ✅ | Textures ✅ · Materials · Takes ⬜ |
+| **FBX** (ASCII) | Scene ✅ | Records ⬜ | FBX text, language `fbx` (front door) | — | Textures ✅ | As binary |
+| **OBJ** | Scene ✅ | **Objects**: objects, groups, materials used ⬜ | OBJ text, language `obj` (front door) | — | `.mtl` files, textures ✅ | Textures ✅ · Materials ⬜ |
 | **STL** | Scene ✅ | — | ASCII STL as text (front door) | — | — | Solids, facet count ⬜ |
 | **PLY** | Scene ✅ | **Header**: elements and properties ⬜ | ASCII PLY as text (front door) | — | — | Splat attributes, if any ⬜ |
 | **`.blend`** | Preview image ✅ (later Scene) | **Blocks**: datablocks by type ⬜ | — | **Packed files** ⬜ | Linked libraries, external images ⬜ | — |
@@ -34,8 +34,8 @@ Every file also gets **Raw** (hex) from the front door. A **MTL** opened on its 
 | Layers | `Tree` | Layer → its sublayers and arcs, each with its file and status |
 | Variants | `Tree` | Variant set → variants, with the current selection marked |
 | Materials | `Table` | One row per material: name, shading model, each map with its texture, the main factors |
-| Textures | `Table` | One row per texture: name, file or embedded, size, colour space, status (decoded, pending, blocked, missing) |
-| Dependencies | `Table` | Every referenced file: what refers to it, resolved path, status |
+| Textures | `Table` | ✅ One row per texture: name, where it came from (file, embedded, packed), size as decoded, colour space, status (decoding, decoded, couldn't be decoded, missing, not allowed). Live: asked again, it shows the textures as they are now. Only when the scene has textures or names some |
+| Dependencies | `Table` | ✅ Every referenced file: what it's used as (texture, buffer, layer, material library), where it was found when that differs, status. Made by `-core` from the document's `Dependencies` (`Document::with_dependencies_facet`), so every category has the same one. Only when the file names other files |
 | Package, Chunks, Embedded media, Packed files | `Container` | Entries open as files through the front door |
 | JSON chunk | `Text` (language `json`) | |
 
@@ -64,10 +64,9 @@ libfileparser-3d
              scene_error, detect_by, decode_textures, find_texture, ImageJob/ImageSource
   textures   ✅ texture jobs: find (files hook), decode, reduce, mips; via spawn and notify (later through -images)
   facets/    ⬜ tree, table and container builders shared by the readers
-  deps/      ⬜ the Dependencies and Textures facets, from each reader's Dependencies
 ```
 
-`build` holds the shared pieces that keep a reader short (libfileparser.md §6), and is public, so a reader outside the crate uses the same ones (`tests/extend.rs` adds an OFF reader that way and passes conformance). Adding 3MF is a `readers/threemf.rs` that unzips its model XML, fills a scene from `new_scene` and returns a `SceneDocument`; one line in `readers()`; a corpus file listed in `tests/conformance.rs`. Textures, dependencies, limits and the counts every scene shows come with it, and the Dependencies and Textures facets will too.
+`SceneDocument` adds the Dependencies and Textures facets for every reader, from the `Dependencies` it resolved files through and the `Textures` that `decode_textures` returned. `build` holds the shared pieces that keep a reader short (libfileparser.md §6), and is public, so a reader outside the crate uses the same ones (`tests/extend.rs` adds an OFF reader that way and passes conformance). Adding 3MF is a `readers/threemf.rs` that unzips its model XML, fills a scene from `new_scene` and returns a `SceneDocument`; one line in `readers()`; a corpus file listed in `tests/conformance.rs`. Textures, dependencies, limits, the counts every scene shows and the Dependencies and Textures facets come with it.
 
 Under the readers, format libraries that know nothing of libfileparser and stay usable on their own (libfileparser.md §6). Each keeps its own extension points (glTF extensions, USD schemas, PLY properties, FBX custom properties) and keeps data no extension understands.
 
@@ -119,7 +118,7 @@ The corpus passes after every step; each step adds corpus files for what it adds
 
 1. **Separate and audit:** 🟡 `gltf-lite` and `scene-data` renamed apart from RendererX (2026-11-06); still to do: `usd-lite`, the glTF reader and the ufbx binding checked against libfileparser.md §5 and given spec tests, a fuzz target and a public-API snapshot. STL and PLY stay small parsers inside their readers.
 2. ✅ **Move as is:** the readers into `libfileparser-3d` on `-core`, each producing a document whose only facet is the Scene. Hooks replace `std::fs`, threads and `WAKE`. Viewer opens 3D through it. Then (2026-11-06) one module per reader, the helpers public in `build`, conformance over every entry of `readers()`, and FBX (ASCII) and `.blend` samples in the corpus.
-3. **Dependencies** for every reader, and the Dependencies and Textures facets.
+3. ✅ **Dependencies** for every reader, and the Dependencies and Textures facets (2026-11-06). Viewer shows them with the front door's View-as list (libfileparser.md §12 step 3).
 4. **USD:** Stage, Layers and Variants facets; the Materials facet.
 5. **glTF/GLB:** the glTF tree, GLB chunks and JSON chunk.
 6. **FBX, OBJ, PLY, `.blend`:** Records, Objects, Header, Blocks, embedded and packed files.

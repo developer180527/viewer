@@ -16,16 +16,16 @@
 //! }
 //! ```
 
+use std::ops::Range;
 use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 use libfileparser_core::{
-    Category, Confidence, Content, Dependencies, DependencyStatus, Detection, Document, FormatInfo, Limit, ParseContext, ParseError, ReaderInfo,
-    Result, Role, SceneDoc, Unreadable,
+    Category, Confidence, Content, Count, Dependencies, DependencyStatus, Detection, Document, FacetInfo, FormatInfo, Limit, Model, ParseContext,
+    ParseError, ReaderInfo, Result, Role, SceneDoc, TableInfo, TableSource, Unreadable,
 };
-use scene_data::{CpuScene, SceneBuilder, SceneLimits, SceneRead, Topology};
+use scene_data::{ColorSpace, CpuScene, SceneBuilder, SceneLimits, SceneRead, Topology};
 
-pub use crate::textures::{ImageJob, ImageSource, MAX_SIDE as MAX_TEXTURE_SIDE, find as find_texture, spawn as decode_textures};
+pub use crate::textures::{ImageJob, ImageSource, MAX_SIDE as MAX_TEXTURE_SIDE, Textures, find as find_texture, spawn as decode_textures};
 
 /// A scene builder that enforces the context's limits as it goes, so a file can't
 /// make it allocate past them.
@@ -68,8 +68,9 @@ pub fn detect_by(info: &ReaderInfo, magic: bool, name: &str) -> Detection {
 }
 
 /// The document a loaded scene becomes, the same for every format: its Scene facet,
-/// the counts an app shows (meshes, triangles, lines, points, vertices, materials),
-/// the reader's warnings, its textures and the files it depended on.
+/// a Dependencies facet when it read or looked for other files, a Textures facet when
+/// it has textures (or names some it couldn't find), the counts an app shows (meshes,
+/// triangles, lines, points, vertices, materials) and the reader's warnings.
 ///
 /// A scene with nothing to draw is an error, so a file that only looks like a model (a
 /// compiler's `.obj`) falls through to the next reader; when that's because a file it
@@ -79,7 +80,7 @@ pub struct SceneDocument {
     format: String,
     scene: CpuScene,
     warnings: Vec<String>,
-    textures: Option<(Arc<AtomicUsize>, usize)>,
+    textures: Option<Textures>,
     deps: Dependencies,
 }
 
@@ -95,10 +96,9 @@ impl SceneDocument {
         self
     }
 
-    /// The textures being decoded: the count [`decode_textures`] returned and how many
-    /// were queued.
-    pub fn textures(mut self, pending: Arc<AtomicUsize>, queued: usize) -> Self {
-        self.textures = Some((pending, queued));
+    /// The textures being decoded, as [`decode_textures`] returned them.
+    pub fn textures(mut self, textures: Textures) -> Self {
+        self.textures = Some(textures);
         self
     }
 
@@ -122,13 +122,20 @@ impl SceneDocument {
             return Err(ParseError::corrupt(format!("no geometry{}", warnings.first().map(|w| format!(" ({w})")).unwrap_or_default())));
         }
         drop(read);
-        let (pending, queued) = match textures {
-            Some((pending, queued)) => (pending, Some(queued)),
-            None => (Arc::default(), None),
-        };
+        let queued = textures.as_ref().map(Textures::len);
+        let textures = textures.unwrap_or_default();
         let mut doc = Document::new(FormatInfo::new(reader, format, Category::ThreeD))
-            .with_facet(Role::Primary, "Scene", Content::Scene(SceneDoc::new(scene, pending)))
-            .with_dependencies(deps)
+            .with_facet(Role::Primary, "Scene", Content::Scene(SceneDoc::new(scene.clone(), textures.counter())))
+            .with_dependencies(deps.clone());
+        if !deps.is_empty() {
+            doc = doc.with_dependencies_facet();
+        }
+        let table = TextureTable { scene, textures, deps };
+        if !table.all().is_empty() {
+            let table = Arc::new(table);
+            doc = doc.with_lazy_facet(FacetInfo::new(Role::Inspector, "Textures", Model::Table), move |_| Ok(Content::Table(table.clone())));
+        }
+        doc = doc
             .with_meta("Meshes", stats.meshes)
             .with_meta("Placed meshes", stats.placed);
         // Points and lines are counted as what they are, not as triangles.
@@ -177,5 +184,50 @@ impl Stats {
             vertices: read.meshes().iter().map(|m| m.info.vertices as u64).sum(),
             materials: read.materials().len(),
         }
+    }
+}
+
+/// The Textures facet: one row per texture the scene uses, as it is now (decoding,
+/// decoded at its size, failed), then each texture file it names but couldn't read.
+struct TextureTable {
+    scene: CpuScene,
+    textures: Textures,
+    deps: Dependencies,
+}
+
+impl TextureTable {
+    const COLUMNS: [&str; 5] = ["Texture", "From", "Size", "Colour space", "Status"];
+
+    fn all(&self) -> Vec<Vec<String>> {
+        let read = self.scene.read();
+        let mut rows: Vec<Vec<String>> = self
+            .textures
+            .rows()
+            .into_iter()
+            .map(|(id, name, origin, space, state)| {
+                let size = read.texture(id).and_then(|t| t.info).map(|i| format!("{}×{}", i.width, i.height)).unwrap_or_default();
+                let space = if space == ColorSpace::Srgb { "sRGB" } else { "linear" };
+                vec![name, origin, size, space.into(), state.into()]
+            })
+            .collect();
+        for d in self.deps.list() {
+            if d.kind == "texture" && d.status != DependencyStatus::Read {
+                rows.push(vec![d.reference, "file".into(), String::new(), String::new(), d.status.label().into()]);
+            }
+        }
+        rows
+    }
+}
+
+impl TableSource for TextureTable {
+    fn info(&self) -> TableInfo {
+        TableInfo::new(Self::COLUMNS.map(String::from).to_vec(), Count::Exact(self.all().len() as u64))
+    }
+
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<String>>> {
+        let all = self.all();
+        let end = (range.end.min(all.len() as u64)) as usize;
+        let start = (range.start as usize).min(end);
+        Ok(all[start..end].to_vec())
     }
 }

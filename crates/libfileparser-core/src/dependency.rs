@@ -4,7 +4,7 @@
 use std::fmt;
 use std::sync::{Arc, Mutex};
 
-use crate::{FileSource, Limit, ParseContext};
+use crate::{Count, FileSource, Limit, MemoryUse, ParseContext, TableInfo, TableSource};
 
 /// Why a referenced file couldn't be read.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -61,12 +61,31 @@ impl From<Unreadable> for DependencyStatus {
     }
 }
 
-/// One referenced file: its name as the document gives it, and its status.
+impl DependencyStatus {
+    /// For people, as a Dependencies table shows it.
+    pub fn label(self) -> &'static str {
+        match self {
+            DependencyStatus::Read => "read",
+            DependencyStatus::Blocked => "not allowed to read",
+            DependencyStatus::Missing => "missing",
+            DependencyStatus::Outside => "outside the allowed folder",
+        }
+    }
+}
+
+/// One referenced file: its name as the document gives it, what it's for, where it
+/// was found, and its status.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub struct Dependency {
     pub reference: String,
     pub status: DependencyStatus,
+    /// What the document uses it for, in the format's words ("texture", "buffer",
+    /// "layer", "material library"); empty when the reader didn't say.
+    pub kind: String,
+    /// Where it was read from, relative to the document, when that differs from
+    /// `reference` or the reader looked in several places; `None` unless read.
+    pub found: Option<String>,
 }
 
 /// Every file a document refers to. Cheap to clone; every clone is the same list,
@@ -89,7 +108,7 @@ impl Dependencies {
         }
         match cx.files.resolve(from, reference) {
             Ok(file) => {
-                self.record(reference, DependencyStatus::Read);
+                self.record_found(reference, reference);
                 Some(file)
             }
             Err(why) => {
@@ -113,7 +132,7 @@ impl Dependencies {
         for c in candidates {
             match cx.files.resolve(from, c.as_ref()) {
                 Ok(file) => {
-                    self.record(reference, DependencyStatus::Read);
+                    self.record_found(reference, c.as_ref());
                     return Some(file);
                 }
                 Err(Unreadable::Blocked) => blocked = true,
@@ -126,11 +145,38 @@ impl Dependencies {
 
     /// Records `reference` with `status`, replacing an earlier status for it.
     pub fn record(&self, reference: impl Into<String>, status: DependencyStatus) {
-        let reference = reference.into();
+        self.update(reference.into(), status, None);
+    }
+
+    /// Says what the document uses `reference` for ("texture", "layer"), once it has
+    /// been resolved or recorded. A reference not in the list is ignored.
+    pub fn set_kind(&self, reference: &str, kind: &str) {
+        if let Some(d) = self.lock().iter_mut().find(|d| d.reference == reference) {
+            d.kind = kind.to_string();
+        }
+    }
+
+    /// The list as a table (file, used as, found at, status) that always shows the
+    /// list as it is now: background work that adds to it shows up.
+    pub fn table(&self) -> DependencyTable {
+        DependencyTable(self.clone())
+    }
+
+    fn record_found(&self, reference: &str, found: &str) {
+        self.update(reference.to_string(), DependencyStatus::Read, Some(found.to_string()));
+    }
+
+    fn update(&self, reference: String, status: DependencyStatus, found: Option<String>) {
+        let found = if status == DependencyStatus::Read { found } else { None };
         let mut list = self.lock();
         match list.iter_mut().find(|d| d.reference == reference) {
-            Some(d) => d.status = status,
-            None => list.push(Dependency { reference, status }),
+            Some(d) => {
+                d.status = status;
+                if found.is_some() || status != DependencyStatus::Read {
+                    d.found = found;
+                }
+            }
+            None => list.push(Dependency { reference, status, kind: String::new(), found }),
         }
     }
 
@@ -161,5 +207,34 @@ impl Dependencies {
 
     fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Dependency>> {
         self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// A document's dependencies as a table, from [`Dependencies::table`].
+pub struct DependencyTable(Dependencies);
+
+impl DependencyTable {
+    const COLUMNS: [&str; 4] = ["File", "Used as", "Found at", "Status"];
+}
+
+impl TableSource for DependencyTable {
+    fn info(&self) -> TableInfo {
+        TableInfo::new(Self::COLUMNS.map(String::from).to_vec(), Count::Exact(self.0.len() as u64))
+    }
+
+    fn rows(&self, range: std::ops::Range<u64>) -> crate::Result<Vec<Vec<String>>> {
+        let list = self.0.lock();
+        let (start, end) = (range.start.min(list.len() as u64) as usize, range.end.min(list.len() as u64) as usize);
+        Ok(list[start..end.max(start)]
+            .iter()
+            .map(|d| {
+                let found = d.found.clone().filter(|f| *f != d.reference).unwrap_or_default();
+                vec![d.reference.clone(), d.kind.clone(), found, d.status.label().to_string()]
+            })
+            .collect())
+    }
+
+    fn memory(&self) -> MemoryUse {
+        MemoryUse::default()
     }
 }

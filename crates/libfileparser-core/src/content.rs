@@ -265,7 +265,7 @@ pub struct NodeId(pub u64);
 #[non_exhaustive]
 pub struct TreeNode {
     pub id: NodeId,
-    /// The key or name: "Cube", "materials", "[3]".
+    /// The key or name: "Cube", "materials", `[3]`.
     pub label: String,
     /// A value for leaves, or a summary for branches ("{3}", "Mesh").
     pub value: String,

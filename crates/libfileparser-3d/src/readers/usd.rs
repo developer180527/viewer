@@ -8,8 +8,6 @@
 
 use std::collections::HashMap;
 use std::path::Path;
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 use anyhow::{Result, anyhow};
 use libfileparser_core::{Dependencies, DependencyStatus, FileSource, ParseContext};
@@ -21,7 +19,7 @@ use scene_data::{
 use usd_lite::geom::{self, Channel, Input, TextureInput};
 use usd_lite::{Format, Layer, Limits, Value};
 
-use crate::textures::{self, ImageJob, ImageSource};
+use crate::textures::{self, ImageJob, ImageSource, Textures};
 
 /// A texture channel as a map source: (asset, channel index).
 type ChannelSource = (String, usize);
@@ -29,8 +27,7 @@ type ChannelSource = (String, usize);
 pub struct Loaded {
     pub scene: CpuScene,
     pub warnings: Vec<String>,
-    pub textures: usize,
-    pub pending: Arc<AtomicUsize>,
+    pub textures: Textures,
     pub format: &'static str,
     /// Layers composed in besides the root.
     pub layers: usize,
@@ -59,7 +56,9 @@ impl usd_lite::Resolver for HookResolver<'_> {
             return None;
         }
         let id = usd_lite::anchored(anchor, asset);
-        self.deps.resolve(self.cx, self.from, &id).map(|f| (id, f.bytes().to_vec()))
+        let found = self.deps.resolve(self.cx, self.from, &id);
+        self.deps.set_kind(&id, "layer");
+        found.map(|f| (id, f.bytes().to_vec()))
     }
 }
 
@@ -76,7 +75,9 @@ impl Files<'_> {
                 // file name, at the package root or in `textures/`.
                 let name = asset.rsplit(['/', '\\']).next().unwrap_or(asset);
                 let Some(bytes) = [asset.to_string(), name.to_string(), format!("textures/{name}")].iter().find_map(|a| package.file(a)) else {
-                    deps.record(textures::report_name(asset, ""), DependencyStatus::Missing);
+                    let name = textures::report_name(asset, "");
+                    deps.record(&name, DependencyStatus::Missing);
+                    deps.set_kind(&name, "texture");
                     return None;
                 };
                 // A slice of the mapped file: shared, not copied.
@@ -159,9 +160,8 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
     }
     let jobs = std::mem::take(&mut c.jobs);
     builder.finish();
-    let textures = jobs.len();
-    let pending = textures::spawn(builder.texture_sink(), jobs, cx);
-    Ok(Loaded { scene, warnings, textures, pending, format: label, layers: extra_layers })
+    let textures = textures::spawn(builder.texture_sink(), jobs, cx);
+    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers })
 }
 
 struct Converter<'a, 'f> {
@@ -486,7 +486,8 @@ impl Converter<'_, '_> {
         }
         let id = match self.files.source(&t.file) {
             Some(source) => self.b.reserve_texture().ok().inspect(|&texture| {
-                self.jobs.push(ImageJob::new(texture, source, if srgb { ColorSpace::Srgb } else { ColorSpace::Linear }));
+                let job = ImageJob::new(texture, source, if srgb { ColorSpace::Srgb } else { ColorSpace::Linear });
+                self.jobs.push(job.named(textures::report_name(&t.file, "")));
             }),
             None => {
                 self.missing_textures += 1;
@@ -566,7 +567,7 @@ impl Reader for UsdReader {
         let loaded = load(src, cx, &deps).map_err(super::parse_error)?;
         let doc = SceneDocument::new("usd", loaded.format, loaded.scene)
             .warnings(loaded.warnings)
-            .textures(loaded.pending, loaded.textures)
+            .textures(loaded.textures)
             .dependencies(deps)
             .build()?;
         Ok(if loaded.layers > 0 { doc.with_meta("Layers composed", loaded.layers + 1) } else { doc })

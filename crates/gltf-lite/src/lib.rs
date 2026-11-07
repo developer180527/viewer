@@ -164,6 +164,10 @@ pub fn relative_path(uri: &str) -> Result<String, ResolveError> {
 /// `mime_type`) and set it on `texture`.
 pub struct PendingImage {
     pub texture: TextureId,
+    /// For people: the image's name in the file, else its file name, else `image N`.
+    pub name: String,
+    /// Inside the file (a buffer view or a `data:` URI), not a file of its own.
+    pub embedded: bool,
     pub data: Stream<u8>,
     pub mime_type: Option<String>,
     pub color_space: ColorSpace,
@@ -569,7 +573,10 @@ impl<'a> Loader<'a> {
             (None, None) => return Err("has no data".into()),
         };
         let texture = self.builder.reserve_texture().map_err(|e| e.to_string())?;
-        self.images.push(PendingImage { texture, data, mime_type: img.mime_type.clone(), color_space });
+        let embedded = img.uri.as_deref().is_none_or(|u| u.starts_with("data:"));
+        let file_name = img.uri.as_deref().filter(|_| !embedded).map(|u| u.rsplit('/').next().unwrap_or(u).to_string());
+        let name = img.name.clone().filter(|n| !n.is_empty()).or(file_name).unwrap_or_else(|| format!("image {index}"));
+        self.images.push(PendingImage { texture, name, embedded, data, mime_type: img.mime_type.clone(), color_space });
         Ok(texture)
     }
 }

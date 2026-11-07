@@ -29,10 +29,16 @@ impl Reader for GltfReader {
         let files = GltfFiles { from: src, cx, deps: &deps };
         let loaded = gltf_lite::load(src.shared_bytes(), &files, &mut builder).map_err(|e| super::parse_error(e.into()))?;
         let format = if src.header().starts_with(b"glTF") { "glTF binary (GLB)" } else { "glTF 2.0" };
-        let jobs: Vec<_> = loaded.images.into_iter().map(|i| ImageJob::new(i.texture, ImageSource::Bytes(i.data), i.color_space)).collect();
-        let maps = jobs.len();
-        let pending = decode_textures(builder.texture_sink(), jobs, cx);
-        SceneDocument::new("gltf", format, scene).warnings(loaded.warnings).textures(pending, maps).dependencies(deps).build()
+        let jobs: Vec<_> = loaded
+            .images
+            .into_iter()
+            .map(|i| {
+                let job = ImageJob::new(i.texture, ImageSource::Bytes(i.data), i.color_space).named(i.name);
+                if i.embedded { job } else { job.origin("file") }
+            })
+            .collect();
+        let textures = decode_textures(builder.texture_sink(), jobs, cx);
+        SceneDocument::new("gltf", format, scene).warnings(loaded.warnings).textures(textures).dependencies(deps).build()
     }
 }
 
@@ -49,7 +55,9 @@ impl gltf_lite::Resolver for GltfFiles<'_> {
         use gltf_lite::{ResolveError, ResolveErrorKind};
         let path = gltf_lite::relative_path(uri)?;
         let name = textures::report_name(&path, "");
-        match self.deps.resolve_any(self.cx, self.from, &name, &[path.as_str()]) {
+        let found = self.deps.resolve_any(self.cx, self.from, &name, &[path.as_str()]);
+        self.deps.set_kind(&name, if is_image(&path) { "texture" } else { "buffer" });
+        match found {
             Some(file) if file.len() > self.cx.limits.allocation => {
                 Err(ResolveError::new(ResolveErrorKind::Refused, format!("{uri:?}: {} bytes is over the limit", file.len())))
             }
@@ -61,4 +69,10 @@ impl gltf_lite::Resolver for GltfFiles<'_> {
             }
         }
     }
+}
+
+/// Whether a glTF URI names an image rather than a buffer; the resolver isn't told.
+fn is_image(path: &str) -> bool {
+    let ext = path.rsplit_once('.').map(|(_, e)| e.to_ascii_lowercase()).unwrap_or_default();
+    matches!(ext.as_str(), "png" | "jpg" | "jpeg" | "webp" | "ktx2" | "avif" | "bmp" | "tga" | "gif")
 }

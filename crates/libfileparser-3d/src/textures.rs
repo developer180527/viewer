@@ -6,8 +6,8 @@
 //! renderer only copies bytes. Mips of colour textures are averaged in linear light.
 
 use std::path::{Component, Path};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use libfileparser_core::{Dependencies, FileSource, ParseContext};
 use scene_data::{ColorSpace, Stream, TextureData, TextureId, TextureSink};
@@ -36,36 +36,160 @@ pub struct ImageJob {
     texture: TextureId,
     source: ImageSource,
     color_space: ColorSpace,
+    name: Option<String>,
+    origin: Option<String>,
 }
 
 impl ImageJob {
     pub fn new(texture: TextureId, source: ImageSource, color_space: ColorSpace) -> Self {
-        Self { texture, source, color_space }
+        Self { texture, source, color_space, name: None, origin: None }
+    }
+
+    /// The name the Textures facet shows; by default the file's name, or "embedded image".
+    pub fn named(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into()).filter(|n| !n.is_empty());
+        self
+    }
+
+    /// Where it came from, as the Textures facet says it ("file", "embedded", "in the
+    /// package"); by default from its [`ImageSource`].
+    pub fn origin(mut self, origin: impl Into<String>) -> Self {
+        self.origin = Some(origin.into());
+        self
+    }
+}
+
+impl ImageSource {
+    fn name(&self) -> String {
+        match self {
+            ImageSource::Bytes(_) => "embedded image".into(),
+            ImageSource::File(f) => f.name().to_string(),
+            ImageSource::MetalRough { roughness, metalness } => {
+                let part = |p: &Option<(Box<ImageSource>, usize)>| p.as_ref().map(|(s, _)| s.name());
+                [part(roughness), part(metalness)].into_iter().flatten().collect::<Vec<_>>().join(" + ")
+            }
+        }
+    }
+
+    fn origin(&self) -> &'static str {
+        match self {
+            ImageSource::Bytes(_) => "embedded",
+            ImageSource::File(_) => "file",
+            ImageSource::MetalRough { .. } => "roughness and metalness, packed",
+        }
+    }
+}
+
+/// What became of one queued image.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    Decoding,
+    Decoded,
+    Failed,
+    /// Its document was closed (or the work cancelled) first.
+    Skipped,
+}
+
+struct Row {
+    texture: TextureId,
+    name: String,
+    origin: String,
+    color_space: ColorSpace,
+    state: State,
+}
+
+/// The images a reader queued with [`spawn`]: how many are still decoding, and what
+/// became of each, for the Textures facet.
+#[derive(Clone, Default)]
+pub struct Textures {
+    pending: Arc<AtomicUsize>,
+    rows: Arc<Mutex<Vec<Row>>>,
+}
+
+impl Textures {
+    /// Images still decoding.
+    pub fn pending(&self) -> usize {
+        self.pending.load(Ordering::Acquire)
+    }
+
+    /// Images queued.
+    pub fn len(&self) -> usize {
+        self.lock().len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    pub(crate) fn counter(&self) -> Arc<AtomicUsize> {
+        self.pending.clone()
+    }
+
+    /// Each image: (texture, name, origin, colour space, state label).
+    pub(crate) fn rows(&self) -> Vec<(TextureId, String, String, ColorSpace, &'static str)> {
+        self.lock()
+            .iter()
+            .map(|r| {
+                let state = match r.state {
+                    State::Decoding => "decoding",
+                    State::Decoded => "decoded",
+                    State::Failed => "couldn't be decoded",
+                    State::Skipped => "not decoded (closed)",
+                };
+                (r.texture, r.name.clone(), r.origin.clone(), r.color_space, state)
+            })
+            .collect()
+    }
+
+    fn set(&self, i: usize, state: State) {
+        if let Some(r) = self.lock().get_mut(i) {
+            r.state = state;
+        }
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<Row>> {
+        self.rows.lock().unwrap_or_else(|e| e.into_inner())
     }
 }
 
 /// Queues one background job per image (`cx.spawn`), each setting its result on the
-/// scene and announcing it (`cx.notify`). Returns the count of images still pending,
-/// which reaches zero when all are done (or failed).
+/// scene and announcing it (`cx.notify`). Returns the queued images: the count still
+/// pending reaches zero when all are done (or failed).
 ///
 /// Jobs hold only a weak reference to the count: once the document that owns it is
 /// dropped (its page closed), or `cx.cancel` is set, the rest skip their image instead
 /// of decoding a model's textures nobody will see, and nothing more is announced.
-pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, cx: &ParseContext) -> Arc<AtomicUsize> {
-    let pending = Arc::new(AtomicUsize::new(jobs.len()));
+pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, cx: &ParseContext) -> Textures {
+    let rows = jobs
+        .iter()
+        .map(|j| Row {
+            texture: j.texture,
+            name: j.name.clone().unwrap_or_else(|| j.source.name()),
+            origin: j.origin.clone().unwrap_or_else(|| j.source.origin().to_string()),
+            color_space: j.color_space,
+            state: State::Decoding,
+        })
+        .collect();
+    let textures = Textures { pending: Arc::new(AtomicUsize::new(jobs.len())), rows: Arc::new(Mutex::new(rows)) };
+    let pending = &textures.pending;
     let sink = Arc::new(sink);
     let max_alloc = cx.limits.allocation;
-    for job in jobs {
-        let (left, sink, cancel, notify) = (Arc::downgrade(&pending), sink.clone(), cx.cancel.clone(), cx.notify.clone());
+    for (i, job) in jobs.into_iter().enumerate() {
+        let (left, sink, cancel, notify) = (Arc::downgrade(pending), sink.clone(), cx.cancel.clone(), cx.notify.clone());
+        let list = Textures { pending: Arc::default(), rows: textures.rows.clone() };
         cx.spawn_job(move || {
             let wanted = || left.strong_count() > 0 && !cancel.is_cancelled();
             // A failed image leaves its material untextured; so does a decoder that
             // panics, and the count below still goes down.
-            if wanted()
-                && let Some(data) = ParseContext::catching(|| decode(&job.source, job.color_space, max_alloc))
-            {
-                let _ = sink.set_texture(job.texture, data);
-            }
+            let state = if !wanted() {
+                State::Skipped
+            } else {
+                match ParseContext::catching(|| decode(&job.source, job.color_space, max_alloc)) {
+                    Some(data) => if sink.set_texture(job.texture, data).is_ok() { State::Decoded } else { State::Failed },
+                    None => State::Failed,
+                }
+            };
+            list.set(i, state);
             if let Some(left) = left.upgrade() {
                 left.fetch_sub(1, Ordering::Release);
             }
@@ -74,7 +198,7 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, cx: &ParseContext) -> Arc<A
             }
         });
     }
-    pending
+    textures
 }
 
 fn decode(source: &ImageSource, color_space: ColorSpace, max_alloc: u64) -> Option<TextureData> {
@@ -458,7 +582,9 @@ pub fn find(cx: &ParseContext, deps: &Dependencies, from: &FileSource, relative:
     if report.is_empty() {
         return None;
     }
-    deps.resolve_any(cx, from, &report, &candidates(relative, absolute, dirs))
+    let found = deps.resolve_any(cx, from, &report, &candidates(relative, absolute, dirs));
+    deps.set_kind(&report, "texture");
+    found
 }
 
 /// The name to report a texture under: the file name it was stored with.
@@ -539,7 +665,7 @@ mod tests {
         for close in ["drop", "cancel"] {
             let (scene, mut b) = scene_data::CpuScene::new();
             let jobs: Vec<ImageJob> = (0..20)
-                .map(|i| ImageJob { texture: b.reserve_texture().unwrap(), source: ImageSource::Bytes(png(i as u8).into()), color_space: ColorSpace::Srgb })
+                .map(|i| ImageJob::new(b.reserve_texture().unwrap(), ImageSource::Bytes(png(i as u8).into()), ColorSpace::Srgb))
                 .collect();
             let (spawn_q, notify) = (QueueSpawn::default(), CountingNotify::default());
             let cx = ParseContext::new().with_spawn(spawn_q.clone()).with_notify(notify.clone());

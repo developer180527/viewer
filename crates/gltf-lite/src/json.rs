@@ -163,6 +163,7 @@ pub struct Texture {
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "camelCase", default)]
 pub struct Image {
+    pub name: Option<String>,
     pub uri: Option<String>,
     pub buffer_view: Option<usize>,
     pub mime_type: Option<String>,

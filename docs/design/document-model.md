@@ -28,7 +28,7 @@ Today a loader returns one `Content`, and "View as" can only re-open the whole f
 | **Document** | What one reading produces: a format, **facets**, metadata, dependencies | The USD document |
 | **Facet** | One way to look at a document, in one content model, made on demand | Scene, Stage, Layers, Package, Raw |
 | **Content model** | The shape of a facet's data, which a renderer or widget knows how to show | Scene, Tree, Table, Text, Container, Hex… |
-| **Dependency** | Another file the document uses, and whether it could be read | `textures/wood.png` (read), `base.usda` (blocked) |
+| **Dependency** | Another file the document uses, what for, where it was found, and whether it could be read | `wood.png` (texture, found at `textures/wood.png`, read), `base.usda` (layer, blocked) |
 
 ## 3. Facets
 

@@ -118,7 +118,7 @@ Why: a hostile model could otherwise name `/home/me/private.png` as a texture an
 
 **Background work** goes through `cx.spawn_job`, which catches a panic, and the format code inside a job (a decoder) runs in `ParseContext::catching`, so its bookkeeping (counting pending textures) still happens when it panics.
 
-**One place reads other files:** `Dependencies::resolve(cx, src, reference)` asks `cx.files` and records the outcome as read, blocked or missing, so a document's dependency list is complete by construction. A file that may be in several places (a texture stored with the exporter's path, found by name beside the model or in `textures/`) uses `Dependencies::resolve_any`, which tries the candidates in order and records one outcome under the name the document gives.
+**One place reads other files:** `Dependencies::resolve(cx, src, reference)` asks `cx.files` and records the outcome as read, blocked or missing, so a document's dependency list is complete by construction. A file that may be in several places (a texture stored with the exporter's path, found by name beside the model or in `textures/`) uses `Dependencies::resolve_any`, which tries the candidates in order and records one outcome under the name the document gives. Each entry also says what it is used as (`set_kind`: "texture", "layer") and where it was found, and `Document::with_dependencies_facet` shows the list as a Dependencies facet, the same table in every category, kept current as background work adds to it.
 
 | Hook | The app decides | Viewer's choice |
 |---|---|---|

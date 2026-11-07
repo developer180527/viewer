@@ -96,3 +96,56 @@ fn ascii_fbx_and_blend_previews_open() {
     let Ok(Content::Raster(r)) = blend.facet(0, &ParseContext::new()) else { panic!("expected the preview") };
     assert_eq!((r.width(), r.height()), (4, 4));
 }
+
+/// A corpus model opened as a viewer opens one: its neighbours readable.
+fn open_in_corpus(path: &str, spawn: impl libfileparser_core::Spawn + 'static) -> (Document, ParseContext) {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files");
+    let cx = ParseContext::new().with_files(libfileparser_core::FolderFiles::within(&root)).with_spawn(spawn);
+    (libfileparser_3d::open(&corpus(path), &cx).unwrap(), cx)
+}
+
+/// The rows of the facet named `name`, or `None` when the document has no such facet.
+fn table(doc: &Document, cx: &ParseContext, name: &str) -> Option<Vec<Vec<String>>> {
+    let i = doc.facets().position(|f| f.name == name)?;
+    let Ok(Content::Table(t)) = doc.facet(i, cx) else { panic!("{name} isn't a table") };
+    Some(t.rows(0..100).unwrap())
+}
+
+fn row(cells: &[&str]) -> Vec<String> {
+    cells.iter().map(|c| c.to_string()).collect()
+}
+
+#[test]
+fn dependencies_say_what_each_file_is_for_and_where_it_was_found() {
+    let (doc, cx) = open_in_corpus("3d/cube-gltf/cube.gltf", libfileparser_core::InlineSpawn);
+    let facets: Vec<_> = doc.facets().map(|f| (f.role, f.name.as_str())).collect();
+    use libfileparser_core::Role::*;
+    assert_eq!(facets, [(Primary, "Scene"), (Dependencies, "Dependencies"), (Inspector, "Textures")]);
+    assert_eq!(
+        table(&doc, &cx, "Dependencies").unwrap(),
+        [row(&["cube.bin", "buffer", "", "read"]), row(&["checker.png", "texture", "textures/checker.png", "read"])]
+    );
+
+    let (doc, cx) = open_in_corpus("3d/tri-obj/tri.obj", libfileparser_core::InlineSpawn);
+    assert_eq!(
+        table(&doc, &cx, "Dependencies").unwrap(),
+        [row(&["tri.mtl", "material library", "", "read"]), row(&["paint.png", "texture", "", "missing"])]
+    );
+
+    // A file that names no other file has no Dependencies facet.
+    let (doc, cx) = open_in_corpus("3d/cube.stl", libfileparser_core::InlineSpawn);
+    assert!(table(&doc, &cx, "Dependencies").is_none() && table(&doc, &cx, "Textures").is_none());
+}
+
+#[test]
+fn textures_show_decoding_then_decoded_and_list_the_missing_ones() {
+    let spawn = libfileparser_testkit::QueueSpawn::default();
+    let (doc, cx) = open_in_corpus("3d/cube.glb", spawn.clone());
+    assert_eq!(table(&doc, &cx, "Textures").unwrap(), [row(&["image 0", "embedded", "", "sRGB", "decoding"])]);
+    spawn.run_all();
+    // The same facet, asked again: it shows the textures as they are now.
+    assert_eq!(table(&doc, &cx, "Textures").unwrap(), [row(&["image 0", "embedded", "64×64", "sRGB", "decoded"])]);
+
+    let (doc, cx) = open_in_corpus("3d/missing-texture/cube.gltf", libfileparser_core::InlineSpawn);
+    assert_eq!(table(&doc, &cx, "Textures").unwrap(), [row(&["not-here.png", "file", "", "", "missing"])]);
+}

@@ -5,8 +5,6 @@
 //! node that uses it, with the node's world transform.
 
 use std::collections::HashMap;
-use std::sync::Arc;
-use std::sync::atomic::AtomicUsize;
 
 use anyhow::{Context, Result, anyhow};
 use libfileparser_core::{Dependencies, DependencyStatus, FileSource, ParseContext};
@@ -16,14 +14,13 @@ use scene_data::{
     Stream, TextureId,
 };
 
-use crate::textures::{self, ImageJob, ImageSource};
+use crate::textures::{self, ImageJob, ImageSource, Textures};
 
 pub struct Loaded {
     pub scene: CpuScene,
     pub warnings: Vec<String>,
     /// Base colour maps queued for decoding.
-    pub textures: usize,
-    pub pending: Arc<AtomicUsize>,
+    pub textures: Textures,
 }
 
 /// Reads `src`; other files (an OBJ's `.mtl`, textures) only through `cx.files`, each
@@ -52,9 +49,8 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps:
     let mut images = Images { from: src.clone(), cx: cx.clone(), deps: deps.clone(), seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new() };
     convert(&root, &mut builder, &mut images, &mut warnings).context("building the scene")?;
     builder.finish();
-    let textures = images.jobs.len();
-    let pending = textures::spawn(builder.texture_sink(), images.jobs, cx);
-    Ok(Loaded { scene, warnings, textures, pending })
+    let textures = textures::spawn(builder.texture_sink(), images.jobs, cx);
+    Ok(Loaded { scene, warnings, textures })
 }
 
 /// The `.mtl` files an OBJ names (`mtllib`), read through the files hook and joined:
@@ -86,6 +82,7 @@ fn mtl_libraries(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Ve
             if let Some(file) = deps.resolve(cx, src, &whole) {
                 add(file);
             }
+            deps.set_kind(&whole, MATERIAL_LIBRARY);
             continue;
         }
         match cx.files.resolve(src, &whole) {
@@ -113,9 +110,14 @@ fn mtl_libraries(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Ve
                 }
             }
         }
+        for name in std::iter::once(whole.as_str()).chain(parts.iter().copied()) {
+            deps.set_kind(name, MATERIAL_LIBRARY);
+        }
     }
     data
 }
+
+const MATERIAL_LIBRARY: &str = "material library";
 
 /// Texture images found while converting materials, each queued once.
 struct Images {
@@ -142,9 +144,9 @@ impl Images {
         textures::find(&self.cx, &self.deps, &self.from, &file.relative_filename, &file.absolute_filename, &[""]).map(ImageSource::File)
     }
 
-    fn queue(&mut self, source: ImageSource, color_space: ColorSpace, b: &mut SceneBuilder) -> Option<TextureId> {
+    fn queue(&mut self, job: impl FnOnce(TextureId) -> ImageJob, b: &mut SceneBuilder) -> Option<TextureId> {
         let texture = b.reserve_texture().ok()?;
-        self.jobs.push(ImageJob::new(texture, source, color_space));
+        self.jobs.push(job(texture));
         Some(texture)
     }
 
@@ -153,7 +155,10 @@ impl Images {
         if let Some(id) = self.seen.get(&key) {
             return *id;
         }
-        let id = self.source(tex).and_then(|source| self.queue(source, color_space, b));
+        let file = tex.file_textures.first().map(|t| &**t).unwrap_or(tex);
+        let name = textures::report_name(&file.relative_filename, &file.absolute_filename);
+        let name = if name.is_empty() { tex.element.name.to_string() } else { name };
+        let id = self.source(tex).and_then(|source| self.queue(|t| ImageJob::new(t, source, color_space).named(name), b));
         self.seen.insert(key, id);
         id
     }
@@ -169,7 +174,8 @@ impl Images {
         } else {
             // FBX maps are greyscale: any channel will do.
             let pick = |s: Option<ImageSource>| s.map(|s| (Box::new(s), 0));
-            self.queue(ImageSource::MetalRough { roughness: pick(r), metalness: pick(m) }, ColorSpace::Linear, b)
+            let source = ImageSource::MetalRough { roughness: pick(r), metalness: pick(m) };
+            self.queue(|t| ImageJob::new(t, source, ColorSpace::Linear), b)
         };
         self.packed.insert(key, id);
         id
@@ -391,7 +397,7 @@ fn open_with_ufbx(reader: &'static str, format: ufbx::FileFormat, name: &str, sr
     cx.cancel.check()?;
     let deps = Dependencies::new();
     let loaded = load(src, format, cx, &deps).map_err(super::parse_error)?;
-    SceneDocument::new(reader, name, loaded.scene).warnings(loaded.warnings).textures(loaded.pending, loaded.textures).dependencies(deps).build()
+    SceneDocument::new(reader, name, loaded.scene).warnings(loaded.warnings).textures(loaded.textures).dependencies(deps).build()
 }
 
 pub struct FbxReader;

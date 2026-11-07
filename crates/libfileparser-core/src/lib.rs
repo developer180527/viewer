@@ -26,7 +26,7 @@ pub use content::{
     Container, Content, Count, Entry, EntryKind, LineText, MemoryUse, Model, NodeId, OwnedTable, OwnedTree, Raster, SceneDoc, TableInfo,
     TableSource, TextInfo, TextSource, TreeNode, TreeSource,
 };
-pub use dependency::{Dependencies, Dependency, DependencyStatus, Unreadable};
+pub use dependency::{Dependencies, Dependency, DependencyStatus, DependencyTable, Unreadable};
 pub use document::{Document, FacetInfo, FormatInfo, Role};
 pub use error::{LimitExceeded, ParseError, Result};
 pub use hooks::{AnyFiles, Cancel, FileResolver, FolderFiles, InlineSpawn, NoFiles, NoNotify, Notify, ParseContext, Spawn};
