@@ -37,7 +37,12 @@ pub struct BinaryRecords {
     src: FileSource,
     wide: bool,
     seen: Mutex<Seen>,
+    /// The records under `Objects` by path (`Objects/Model/Tri`), made when first asked.
+    objects: Mutex<Option<Arc<Objects>>>,
 }
+
+/// Each record under `Objects`: (its path, its offset).
+type Objects = Vec<(String, u64)>;
 
 /// Children by parent offset, and every offset handed out.
 type Seen = (HashMap<u64, Arc<Vec<u64>>>, HashSet<u64>);
@@ -49,7 +54,7 @@ impl BinaryRecords {
             return Err(ParseError::corrupt("not a binary FBX"));
         }
         let version = b.get(23..27).map(|v| u32::from_le_bytes(v.try_into().unwrap())).ok_or_else(|| ParseError::corrupt("FBX header truncated"))?;
-        Ok(Self { src: src.clone(), wide: version >= 7500, seen: Mutex::new((HashMap::new(), HashSet::new())) })
+        Ok(Self { src: src.clone(), wide: version >= 7500, seen: Mutex::new((HashMap::new(), HashSet::new())), objects: Mutex::new(None) })
     }
 
     fn bytes(&self) -> &[u8] {
@@ -190,6 +195,27 @@ impl BinaryRecords {
         (out, raw)
     }
 
+    /// Each record under the top-level `Objects`, with its path.
+    fn objects(&self) -> Result<Arc<Objects>> {
+        if let Some(o) = &*self.objects.lock().unwrap_or_else(|e| e.into_inner()) {
+            return Ok(o.clone());
+        }
+        let top = self.children_of(None)?;
+        let name_of = |at: u64| self.rec(at as usize).map(|r| self.bytes()[r.name].to_vec()).unwrap_or_default();
+        let mut keys = super::Keys::default();
+        let mut out = Vec::new();
+        for &objects in top.iter().filter(|&&o| name_of(o) == b"Objects") {
+            for &child in self.children_of(Some(NodeId(objects)))?.iter() {
+                let Some(r) = self.rec(child as usize) else { continue };
+                let class = String::from_utf8_lossy(&self.bytes()[r.name.clone()]).into_owned();
+                out.push((keys.next(object_path(&class, &self.properties(&r).0)), child));
+            }
+        }
+        let out = Arc::new(out);
+        *self.objects.lock().unwrap_or_else(|e| e.into_inner()) = Some(out.clone());
+        Ok(out)
+    }
+
     /// The textures stored in the file: each `Objects/Video` with `Content`, named
     /// after its `RelativeFilename` (else `Filename`, else the video's name).
     pub fn media(&self) -> Vec<(String, Range<usize>)> {
@@ -245,6 +271,23 @@ impl TreeSource for BinaryRecords {
         let seen = self.seen.lock().unwrap_or_else(|e| e.into_inner());
         MemoryUse::heap(seen.0.values().map(|l| l.len() as u64 * 8 + 48).sum::<u64>() + seen.1.len() as u64 * 16)
     }
+
+    /// `Objects/<record>/<object name>`, `#n` for the n-th repeat of a name.
+    fn find(&self, path: &str) -> Result<Option<NodeId>> {
+        Ok(self.objects()?.iter().find(|(p, _)| p == path).map(|&(_, at)| NodeId(at)))
+    }
+
+    fn path(&self, node: NodeId) -> Result<Option<String>> {
+        Ok(self.objects()?.iter().find(|&&(_, at)| at == node.0).map(|(p, _)| p.clone()))
+    }
+}
+
+/// An object record's path: its class and the name in its first string property
+/// (`"Model::Tri"`, or `"Tri"` when the class isn't repeated there).
+fn object_path(class: &str, props: &[String]) -> String {
+    let name = props.iter().find_map(|p| p.strip_prefix('"')?.strip_suffix('"')).unwrap_or("");
+    let name = name.split_once("::").map_or(name, |(_, n)| n);
+    format!("Objects/{class}/{name}")
 }
 
 /// `Cube\0\x01Model` is written `Model::Cube` in ASCII FBX, and shown that way.
@@ -271,6 +314,9 @@ pub fn ascii_records(text: &[u8], max_nodes: u64, max_depth: u64) -> Result<Owne
     // The record being read: its key, its first values and how many there are.
     let mut pending: Option<(String, Vec<String>, usize)> = None;
     let mut nodes = 0u64;
+    // The top-level `Objects` record: its children get paths, as binary records do.
+    let mut objects: Option<NodeId> = None;
+    let mut keys = super::Keys::default();
     let mut flush = |pending: &mut Option<(String, Vec<String>, usize)>, parents: &[NodeId], tree: &mut OwnedTree| -> Result<Option<NodeId>> {
         let Some((key, values, n)) = pending.take() else { return Ok(None) };
         nodes += 1;
@@ -281,7 +327,19 @@ pub fn ascii_records(text: &[u8], max_nodes: u64, max_depth: u64) -> Result<Owne
         if n > values.len() {
             value = format!("{value}, … ({n} values)");
         }
-        Ok(Some(tree.add(parents.last().copied(), key, value)))
+        let parent = parents.last().copied();
+        let id = if parent.is_some() && parent == objects {
+            let path = keys.next(object_path(&key, &values));
+            tree.add_at(parent, key, value, path)
+        } else {
+            let top = parent.is_none() && key == "Objects";
+            let id = tree.add(parent, key, value);
+            if top && objects.is_none() {
+                objects = Some(id);
+            }
+            id
+        };
+        Ok(Some(id))
     };
     let mut i = 0usize;
     let b = text;

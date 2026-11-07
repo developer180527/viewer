@@ -511,3 +511,49 @@ fn gltf_nodes_materials_and_textures_link_across_facets() {
     assert!(doc.links(&Place::Row { facet: materials, row: 99 }, &cx).unwrap().is_empty());
     assert!(doc.links(&Place::Bytes(0..4), &cx).unwrap().is_empty());
 }
+
+#[test]
+fn fbx_records_link_to_their_scene_nodes_and_meshes() {
+    use libfileparser_core::{Place, SceneItem};
+    // Binary records are read in place; ASCII ones parsed: both have the same paths.
+    for path in ["3d/tri-binary.fbx", "3d/tri.fbx"] {
+        let (doc, cx) = open_in_corpus(path, libfileparser_core::InlineSpawn);
+        let scene = doc.facet_index("Scene").unwrap();
+        let model = node_at(&doc, &cx, "Records", "Objects/Model/Tri");
+        assert_eq!(doc.links(&model, &cx).unwrap(), [Place::Scene { facet: scene, item: SceneItem::Node(0) }], "{path}");
+        let geometry = node_at(&doc, &cx, "Records", "Objects/Geometry/Tri");
+        assert_eq!(doc.links(&geometry, &cx).unwrap(), [Place::Scene { facet: scene, item: SceneItem::Mesh(0) }], "{path}");
+        // And back, to the same record.
+        let back = doc.links(&Place::Scene { facet: scene, item: SceneItem::Node(0) }, &cx).unwrap();
+        assert!(back.contains(&model), "{path}: {back:?}");
+        assert_eq!(path_of(&doc, &cx, &model).as_deref(), Some("Objects/Model/Tri"));
+        // A record outside Objects has no path, and no links.
+        let records = doc.facet_index("Records").unwrap();
+        let Ok(Content::Tree(t)) = doc.facet(records, &cx) else { panic!() };
+        let header = t.children(None, 0..1).unwrap()[0].id;
+        assert!(t.path(header).unwrap().is_none());
+        assert!(doc.links(&Place::Node { facet: records, node: header }, &cx).unwrap().is_empty());
+    }
+}
+
+#[test]
+fn obj_objects_link_to_scene_nodes_lines_and_materials() {
+    use libfileparser_core::{Place, SceneItem};
+    let (doc, cx) = open_in_corpus("3d/tri-obj/tri.obj", libfileparser_core::InlineSpawn);
+    let (scene, materials) = (doc.facet_index("Scene").unwrap(), doc.facet_index("Materials").unwrap());
+    let tri = node_at(&doc, &cx, "Objects", "Tri");
+    let links = doc.links(&tri, &cx).unwrap();
+    // `o Tri` is line 2 (1 from 0).
+    assert!(links.contains(&Place::Scene { facet: scene, item: SceneItem::Node(0) }) && links.contains(&Place::Lines(1..2)), "{links:?}");
+    // A face line belongs to the object above it; the mtllib line is its own node.
+    assert_eq!(doc.links(&Place::Lines(9..10), &cx).unwrap(), std::slice::from_ref(&tri));
+    let mtllib = doc.links(&Place::Lines(0..1), &cx).unwrap();
+    assert_eq!(mtllib.len(), 1);
+    assert_ne!(mtllib[0], tri);
+    // `usemtl Paint` and its scene material, whose row is in Materials.
+    let paint = node_at(&doc, &cx, "Objects", "usemtl Paint");
+    let links = doc.links(&paint, &cx).unwrap();
+    let Some(Place::Scene { item: SceneItem::Material(m), .. }) = links.first().cloned() else { panic!("{links:?}") };
+    let row = doc.links(&Place::Scene { facet: scene, item: SceneItem::Material(m) }, &cx).unwrap();
+    assert!(row.contains(&Place::Row { facet: materials, row: 0 }) && row.contains(&paint), "{row:?}");
+}

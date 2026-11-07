@@ -4,7 +4,9 @@
 //! before any `o` belong to an unnamed object; an object's faces outside any group have
 //! their materials directly under it.
 
-use libfileparser_core::{OwnedTree, ParseError, Result};
+use std::sync::{Arc, Mutex};
+
+use libfileparser_core::{Content, Document, FileSource, Links, NodeId, OwnedTree, ParseContext, ParseError, Place, Result, TreeSource};
 
 #[derive(Default)]
 struct Group {
@@ -27,7 +29,20 @@ impl Object {
     }
 }
 
-pub fn objects_tree(text: &[u8], max_nodes: u64) -> Result<OwnedTree> {
+/// The Objects tree, and the line (from 0) each object, group and `mtllib` starts on.
+pub struct ObjIndex {
+    pub tree: Arc<OwnedTree>,
+    starts: Vec<(u64, NodeId)>,
+}
+
+#[cfg(test)]
+fn objects_tree(text: &[u8], max_nodes: u64) -> Result<Arc<OwnedTree>> {
+    Ok(index(text, max_nodes)?.tree)
+}
+
+/// Objects get paths by name (`Car`, `Car#1` for a second `o Car`), as the scene's
+/// origins key their nodes; a material's first use is `usemtl Paint`.
+pub fn index(text: &[u8], max_nodes: u64) -> Result<ObjIndex> {
     let mut libraries: Vec<(String, usize)> = Vec::new();
     let mut objects: Vec<Object> = Vec::new();
     let mut material: Option<String> = None;
@@ -83,25 +98,87 @@ pub fn objects_tree(text: &[u8], max_nodes: u64) -> Result<OwnedTree> {
         }
     }
     let mut tree = OwnedTree::new();
+    let mut starts = Vec::new();
     for (lib, line) in libraries {
-        tree.add(None, "mtllib", format!("{lib} · line {line}"));
+        let id = tree.add(None, "mtllib", format!("{lib} · line {line}"));
+        starts.push((line as u64 - 1, id));
     }
     let faces = |n: u64| if n == 1 { "1 face".to_string() } else { format!("{n} faces") };
+    let mut keys = super::Keys::default();
     for o in objects {
         let label = if o.name.is_empty() { "(unnamed object)".to_string() } else { o.name.clone() };
-        let node = tree.add(None, label, format!("{} · line {}", faces(o.faces()), o.line));
+        let node = tree.add_at(None, label, format!("{} · line {}", faces(o.faces()), o.line), keys.next(o.name.clone()));
+        starts.push((o.line as u64 - 1, node));
         for g in o.groups {
             let parent = match &g.name {
-                Some(name) => tree.add(Some(node), format!("g {name}"), format!("{} · line {}", faces(g.faces), g.line)),
+                Some(name) => {
+                    let id = tree.add(Some(node), format!("g {name}"), format!("{} · line {}", faces(g.faces), g.line));
+                    starts.push((g.line as u64 - 1, id));
+                    id
+                }
                 None => node,
             };
             for (m, n) in g.materials {
-                let label = if m.is_empty() { "(no material)".to_string() } else { format!("usemtl {m}") };
-                tree.add(Some(parent), label, faces(n));
+                if m.is_empty() {
+                    tree.add(Some(parent), "(no material)", faces(n));
+                } else {
+                    tree.add_at(Some(parent), format!("usemtl {m}"), faces(n), format!("usemtl {m}"));
+                }
             }
         }
     }
-    Ok(tree)
+    starts.sort();
+    Ok(ObjIndex { tree: Arc::new(tree), starts })
+}
+
+/// The index, made the first time the Objects facet or a link asks, then shared.
+pub struct Shared {
+    src: FileSource,
+    index: Mutex<Option<Arc<ObjIndex>>>,
+}
+
+impl Shared {
+    pub fn new(src: &FileSource) -> Self {
+        Self { src: src.clone(), index: Mutex::new(None) }
+    }
+
+    pub fn get(&self, cx: &ParseContext) -> Result<Arc<ObjIndex>> {
+        let mut index = self.index.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(i) = &*index {
+            return Ok(i.clone());
+        }
+        let i = Arc::new(self::index(self.src.bytes(), cx.limits.items)?);
+        *index = Some(i.clone());
+        Ok(i)
+    }
+}
+
+/// OBJ's own links: an object, group or `mtllib` and the line it starts on, and a line
+/// and the one starting nearest above it. (Objects and their Scene nodes are linked
+/// through the scene's origins.)
+pub struct ObjLinks(pub Arc<Shared>);
+
+impl Links for ObjLinks {
+    fn links(&self, doc: &Document, from: &Place, cx: &ParseContext) -> Result<Vec<Place>> {
+        let Some(facet) = doc.facet_index("Objects") else { return Ok(Vec::new()) };
+        let index = self.0.get(cx)?;
+        Ok(match from {
+            Place::Node { facet: f, node } if *f == facet => {
+                index.starts.iter().filter(|(_, n)| n == node).map(|&(line, _)| Place::Lines(line..line + 1)).collect()
+            }
+            Place::Lines(lines) => {
+                let above = index.starts.iter().filter(|(l, _)| *l <= lines.start).max_by_key(|(l, n)| (*l, std::cmp::Reverse(n.0)));
+                above.map(|&(_, node)| Place::Node { facet, node }).into_iter().collect()
+            }
+            _ => Vec::new(),
+        })
+    }
+}
+
+impl ObjIndex {
+    pub fn content(&self) -> Content {
+        Content::Tree(self.tree.clone() as Arc<dyn TreeSource>)
+    }
 }
 
 #[cfg(test)]

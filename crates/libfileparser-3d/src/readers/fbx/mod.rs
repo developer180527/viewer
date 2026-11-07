@@ -22,6 +22,8 @@ mod records;
 pub struct Loaded {
     pub scene: CpuScene,
     pub warnings: Vec<String>,
+    /// Scene items by the path of the record (FBX) or object (OBJ) they came from.
+    pub origins: crate::build::SceneOrigins,
     /// Base colour maps queued for decoding.
     pub textures: Textures,
 }
@@ -50,10 +52,11 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps:
         .map(|w| if w.count > 1 { format!("{} (×{})", w.description, w.count) } else { w.description.to_string() })
         .collect();
     let mut images = Images { from: src.clone(), cx: cx.clone(), deps: deps.clone(), seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new() };
-    convert(&root, &mut builder, &mut images, &mut warnings).context("building the scene")?;
+    let mut origins = crate::build::SceneOrigins::new();
+    convert(&root, format, &mut builder, &mut images, &mut warnings, &mut origins).context("building the scene")?;
     builder.finish();
     let textures = textures::spawn(builder.texture_sink(), images.jobs, cx);
-    Ok(Loaded { scene, warnings, textures })
+    Ok(Loaded { scene, warnings, textures, origins })
 }
 
 /// The `.mtl` files an OBJ names (`mtllib`), read through the files hook and joined:
@@ -222,10 +225,35 @@ fn attach_maps(m: &ufbx::Material, out: &mut Material, images: &mut Images, b: &
 /// material slot.
 type Parts = Vec<(MeshId, usize)>;
 
-fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, images: &mut Images, warnings: &mut Vec<String>) -> Result<()> {
+/// Paths that name an object the way the Records and Objects trees do, so the scene's
+/// origins match their nodes: FBX `Objects/Model/Tri` (record class, then the object's
+/// name), OBJ `Tri`; a name met again gets `#1`, `#2`…, in file order.
+#[derive(Default)]
+pub(crate) struct Keys(HashMap<String, usize>);
+
+impl Keys {
+    pub(crate) fn next(&mut self, base: String) -> String {
+        let n = self.0.entry(base.clone()).or_insert(0);
+        let key = if *n == 0 { base } else { format!("{base}#{n}") };
+        *n += 1;
+        key
+    }
+}
+
+fn convert(root: &ufbx::Scene, format: ufbx::FileFormat, b: &mut SceneBuilder, images: &mut Images, warnings: &mut Vec<String>, origins: &mut crate::build::SceneOrigins) -> Result<()> {
+    let obj = format == ufbx::FileFormat::Obj;
+    let (mut node_keys, mut mesh_keys, mut material_keys) = (Keys::default(), Keys::default(), Keys::default());
+    // Keyed in file order, every one counted, so the n-th of a name is the n-th record.
+    let mesh_key: HashMap<u32, String> = root.meshes.iter().map(|m| (m.element.typed_id, mesh_keys.next(if obj { m.element.name.to_string() } else { format!("Objects/Geometry/{}", m.element.name) }))).collect();
+    let material_key: HashMap<u32, String> =
+        root.materials.iter().map(|m| (m.element.typed_id, material_keys.next(if obj { format!("usemtl {}", m.element.name) } else { format!("Objects/Material/{}", m.element.name) }))).collect();
     let mut meshes: HashMap<u32, Parts> = HashMap::new();
     let mut materials: HashMap<u32, Option<MaterialId>> = HashMap::new();
     for node in root.nodes.iter() {
+        if node.is_root || node.is_geometry_transform_helper || node.is_scale_helper {
+            continue;
+        }
+        let key = node_keys.next(if obj { node.element.name.to_string() } else { format!("Objects/Model/{}", node.element.name) });
         let Some(mesh) = node.mesh.as_ref() else { continue };
         if !node.visible {
             continue;
@@ -234,6 +262,11 @@ fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, images: &mut Images, warnin
             Some(parts) => parts.clone(),
             None => {
                 let parts = mesh_parts(mesh, b, warnings);
+                if let Some(k) = mesh_key.get(&mesh.element.typed_id) {
+                    for (id, _) in &parts {
+                        origins.mesh(k.clone(), *id);
+                    }
+                }
                 meshes.insert(mesh.element.typed_id, parts.clone());
                 parts
             }
@@ -245,10 +278,18 @@ fn convert(root: &ufbx::Scene, b: &mut SceneBuilder, images: &mut Images, warnin
                 *materials.entry(m.element.typed_id).or_insert_with(|| {
                     let mut out = material(m);
                     attach_maps(m, &mut out, images, b);
-                    b.add_material(out).map_err(|e| warnings.push(format!("material {}: {e}", m.element.name))).ok()
+                    let id = b.add_material(out).map_err(|e| warnings.push(format!("material {}: {e}", m.element.name))).ok();
+                    if let (Some(id), Some(k)) = (id, material_key.get(&m.element.typed_id)) {
+                        origins.material(k.clone(), id);
+                    }
+                    id
                 })
             });
-            if let Err(e) = b.add_node(Node::mesh(id, material, world, None)) {
+            let added = b.add_node(Node::mesh(id, material, world, None));
+            if let Ok(n) = &added {
+                origins.node(key.clone(), *n);
+            }
+            if let Err(e) = added {
                 warnings.push(format!("node {}: {e}", node.element.name));
                 // Every later node would hit the same limit.
                 if matches!(e, scene_data::Error::LimitExceeded { .. }) {
@@ -403,10 +444,10 @@ fn open_with_ufbx(reader: &'static str, format: ufbx::FileFormat, name: &str, sr
     let deps = Dependencies::new();
     let loaded = load(src, format, cx, &deps).map_err(super::parse_error)?;
     let from = src.clone();
+    let obj = Arc::new(objects::Shared::new(src));
+    let for_facet = obj.clone();
     let facets = move |doc: Document| match format {
-        ufbx::FileFormat::Obj => doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Objects", Model::Tree), move |cx| {
-            Ok(Content::Tree(Arc::new(objects::objects_tree(from.bytes(), cx.limits.items)?)))
-        }),
+        ufbx::FileFormat::Obj => doc.with_lazy_facet(FacetInfo::new(Role::Structure, "Objects", Model::Tree), move |cx| Ok(for_facet.get(cx)?.content())),
         _ if records::is_binary(from.bytes()) => {
             let Ok(binary) = records::BinaryRecords::new(&from) else { return doc };
             let media = binary.media();
@@ -417,7 +458,15 @@ fn open_with_ufbx(reader: &'static str, format: ufbx::FileFormat, name: &str, sr
             Ok(Content::Tree(Arc::new(records::ascii_records(from.bytes(), cx.limits.items, cx.limits.depth)?)))
         }),
     };
-    SceneDocument::new(reader, name, loaded.scene).warnings(loaded.warnings).textures(loaded.textures).dependencies(deps).facets(facets).build()
+    let structure = if format == ufbx::FileFormat::Obj { "Objects" } else { "Records" };
+    let doc = SceneDocument::new(reader, name, loaded.scene)
+        .origins(loaded.origins, structure)
+        .warnings(loaded.warnings)
+        .textures(loaded.textures)
+        .dependencies(deps)
+        .facets(facets)
+        .build()?;
+    Ok(if format == ufbx::FileFormat::Obj { doc.with_links(objects::ObjLinks(obj)) } else { doc })
 }
 
 pub struct FbxReader;
