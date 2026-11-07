@@ -1329,6 +1329,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
 
 [[package]]
+name = "libfileparser"
+version = "0.1.0"
+dependencies = [
+ "libfileparser-3d",
+ "libfileparser-archives",
+ "libfileparser-core",
+ "libfileparser-testkit",
+ "libfileparser-text",
+ "zip",
+]
+
+[[package]]
 name = "libfileparser-3d"
 version = "0.1.0"
 dependencies = [
@@ -1347,6 +1359,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "libfileparser-archives"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "libfileparser-core",
+ "libfileparser-testkit",
+ "tar",
+ "zip",
+]
+
+[[package]]
 name = "libfileparser-core"
 version = "0.1.0"
 dependencies = [
@@ -1360,6 +1383,15 @@ version = "0.1.0"
 dependencies = [
  "libfileparser-core",
  "scene-data",
+]
+
+[[package]]
+name = "libfileparser-text"
+version = "0.1.0"
+dependencies = [
+ "libfileparser-core",
+ "libfileparser-testkit",
+ "memchr",
 ]
 
 [[package]]
@@ -3410,6 +3442,7 @@ dependencies = [
  "anyhow",
  "image",
  "libc",
+ "libfileparser-core",
  "libfilepicker",
  "libgui",
  "libgui_keymap",
@@ -3423,7 +3456,6 @@ dependencies = [
  "raw-window-handle",
  "rendererx",
  "viewer-core",
- "viewer-fmt-archive",
  "viewer-fmt-data",
  "viewer-fmt-doc",
  "viewer-fmt-image",
@@ -3453,19 +3485,7 @@ dependencies = [
  "scene-data",
  "toml",
  "viewer-core",
- "viewer-fmt-archive",
  "viewer-formats",
-]
-
-[[package]]
-name = "viewer-fmt-archive"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "flate2",
- "tar",
- "viewer-core",
- "zip",
 ]
 
 [[package]]
@@ -3515,10 +3535,9 @@ name = "viewer-formats"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "libfileparser-3d",
+ "libfileparser",
  "libfileparser-core",
  "viewer-core",
- "viewer-fmt-archive",
  "viewer-fmt-data",
  "viewer-fmt-doc",
  "viewer-fmt-image",

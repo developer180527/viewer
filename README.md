@@ -63,10 +63,12 @@ crates/core          traits, content models, registry, hex fallback
 crates/fmt-image     image + SVG loaders
 crates/fmt-doc       text / code / Markdown loaders
 crates/fmt-data      JSON / TOML / CSV loaders
-crates/fmt-archive   zip / tar / gzip containers, folders
-crates/libfileparser-core     libfileparser's contracts: documents, facets, Reader, hooks, limits
+crates/libfileparser          the front door: every category together, plus the Source, Package and Raw facets
+crates/libfileparser-core     libfileparser's contracts: documents, facets, links, Reader, hooks, limits
 crates/libfileparser-testkit  hook fakes and the conformance suite every reader passes
-crates/libfileparser-3d       glTF, FBX/OBJ (ufbx), STL, PLY, USD, .blend previews; texture decoding
+crates/libfileparser-3d       glTF, FBX/OBJ (ufbx), STL, PLY, USD, .blend; their structure facets; texture decoding
+crates/libfileparser-text     text by lines and its language; the Source facet
+crates/libfileparser-archives zip / tar / gzip containers, folders; the Package facet
 crates/fmt-pdf       PDF loader; picks the backend by target
 crates/pdf-mupdf     MuPDF backend (AGPL; not in iOS builds)
 crates/pdf-pdfkit    PDFKit backend (Apple)

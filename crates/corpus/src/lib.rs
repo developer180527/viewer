@@ -96,7 +96,7 @@ fn open_here(path: &Path, golden: bool, deadline: Instant) -> Result<Opened, Str
     let mut summary = Table::new();
     let mut doc = if path.is_dir() {
         summary.insert("loader".into(), "folder".into());
-        viewer_fmt_archive::open_folder(path).map_err(|e| format!("{e:#}"))?
+        viewer_formats::open_folder(path).map_err(|e| format!("{e:#}"))?
     } else {
         let src = FileSource::open(path).map_err(|e| e.to_string())?;
         let (doc, loader, attempts) = viewer_formats::registry().open(&src);

@@ -13,6 +13,16 @@ pub struct Document {
     /// Files this one refers to (textures, layers, buffers) that couldn't be read.
     /// Shared with the loader's background work, so it can grow after loading.
     pub unreadable: Unreadables,
+    /// For a file read through libfileparser: its document, whose facets the page can
+    /// switch between without reading the file again, and the one shown.
+    pub facets: Option<Facets>,
+}
+
+/// A libfileparser document behind a Viewer document, and which of its facets is shown.
+#[derive(Clone)]
+pub struct Facets {
+    pub doc: std::sync::Arc<libfileparser_core::Document>,
+    pub shown: usize,
 }
 
 impl Document {
@@ -22,6 +32,7 @@ impl Document {
             content,
             metadata: Vec::new(),
             unreadable: Unreadables::default(),
+            facets: None,
         }
     }
 

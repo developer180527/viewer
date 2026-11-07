@@ -15,8 +15,10 @@ libfileparser-testkit = { path = "crates/libfileparser-testkit" }
 viewer-fmt-image = { path = "crates/fmt-image" }
 viewer-fmt-doc = { path = "crates/fmt-doc" }
 viewer-fmt-data = { path = "crates/fmt-data" }
-viewer-fmt-archive = { path = "crates/fmt-archive" }
 libfileparser-3d = { path = "crates/libfileparser-3d" }
+libfileparser-text = { path = "crates/libfileparser-text" }
+libfileparser-archives = { path = "crates/libfileparser-archives" }
+libfileparser = { path = "crates/libfileparser" }
 viewer-formats = { path = "crates/formats" }
 # Pre-1.0, pinned to a commit like libgui.
 libfilepicker = { git = "https://github.com/developer180527/libfilepicker.git", rev = "b99e3cd990e50fdeb3e96a3a703dacf77f7c8c66" }

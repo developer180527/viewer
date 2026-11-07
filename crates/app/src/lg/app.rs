@@ -19,6 +19,13 @@ use crate::loading::{Job, Loaded, Target};
 use crate::util::human_bytes;
 
 /// One level of navigation: a file, or an entry opened from a container.
+/// One way to show a page: a facet of its document, or the file read by a loader.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ViewChoice {
+    Facet(usize),
+    Loader(&'static str),
+}
+
 pub struct Page {
     pub id: u64,
     pub src: FileSource,
@@ -181,6 +188,20 @@ impl ViewerApp {
         let name = container.entries()[index].path.clone();
         self.job = Some(Job::spawn(name, Target::Push, None, move || container.open_entry(index)));
         self.pending_access = None;
+    }
+
+    /// Shows `choice` for the current page: another of its document's facets, or the
+    /// file read by another loader.
+    fn view(&mut self, choice: ViewChoice) {
+        match choice {
+            ViewChoice::Loader(id) => self.view_as(id),
+            ViewChoice::Facet(index) => {
+                let Some(page) = self.stack.last() else { return };
+                let Some(facets) = page.doc.facets.clone() else { return };
+                self.job = Some(Job::facet(page.src.clone(), facets, index, page.loader));
+                self.pending_access = None;
+            }
+        }
     }
 
     fn view_as(&mut self, loader: &'static str) {
@@ -355,33 +376,42 @@ impl ViewerApp {
                     if ui.menu_item(if self.show_info { "Hide info" } else { "Show info" }).clicked {
                         self.show_info = !self.show_info;
                     }
-                    let (ids, current) = self.view_as_choices();
-                    if !ids.is_empty() {
+                    let (choices, current) = self.view_as_choices();
+                    if !choices.is_empty() {
                         ui.menu_separator();
                     }
-                    for id in ids {
-                        let name = registry().get(id).map_or(id, |l| l.name());
+                    for (i, (choice, name)) in choices.into_iter().enumerate() {
                         let label = format!("View as {name}");
-                        if ui.menu_item_ex(&label, None, id != current).clicked {
-                            pick = Some(id);
+                        if ui.menu_item_ex(&label, None, i != current).clicked {
+                            pick = Some(choice);
                         }
                     }
                 }
             });
-            if let Some(id) = pick {
-                self.view_as(id);
+            if let Some(choice) = pick {
+                self.view(choice);
             }
         });
     }
 
-    /// The loaders the current page can be shown with, and the one it is shown with.
-    fn view_as_choices(&self) -> (Vec<&'static str>, &'static str) {
-        let Some(page) = self.stack.last() else { return (Vec::new(), "") };
-        let current = page.loader;
+    /// What the current page can be shown as, with names, and which it is shown as:
+    /// first its document's facets when libfileparser read it (Scene, Stage, Layers…,
+    /// Source, Raw), then the other loaders that claim the file.
+    fn view_as_choices(&self) -> (Vec<(ViewChoice, String)>, usize) {
+        let Some(page) = self.stack.last() else { return (Vec::new(), 0) };
         // A folder is a list of files, not bytes: there is nothing else to view it as.
         if page.src.is_folder() {
-            return (Vec::new(), current);
+            return (Vec::new(), 0);
         }
+        let mut choices: Vec<(ViewChoice, String)> = Vec::new();
+        let mut current = None;
+        if let Some(facets) = &page.doc.facets {
+            for (i, f) in facets.doc.facets().enumerate() {
+                choices.push((ViewChoice::Facet(i), f.name.clone()));
+            }
+            current = Some(facets.shown);
+        }
+        let has = |role: libfileparser_core::Role| page.doc.facets.as_ref().is_some_and(|f| f.doc.facets().any(|x| x.role == role));
         let mut ids: Vec<&'static str> = registry().candidates(&page.src).iter().map(|(_, l)| l.id()).collect();
         // Text is always worth offering, even for files that don't sniff as text.
         if !ids.contains(&"text") {
@@ -389,10 +419,23 @@ impl ViewerApp {
         }
         // A loader forced with --view-as may not claim the file; list it anyway,
         // or the combo would fall back to entry 0 and re-open the file every frame.
-        if !ids.contains(&current) {
-            ids.push(current);
+        if !ids.contains(&page.loader) {
+            ids.push(page.loader);
         }
-        (ids, current)
+        for id in ids {
+            // The document's own facets stand for the loader that read it, its Source
+            // for plain text and its Raw for hex.
+            let shown_by_facets = page.doc.facets.is_some()
+                && (id == page.loader || (id == "text" && has(libfileparser_core::Role::Source)) || (id == "hex" && has(libfileparser_core::Role::Raw)));
+            if shown_by_facets {
+                continue;
+            }
+            if current.is_none() && id == page.loader {
+                current = Some(choices.len());
+            }
+            choices.push((ViewChoice::Loader(id), registry().get(id).map_or(id, |l| l.name()).to_string()));
+        }
+        (choices, current.unwrap_or(0))
     }
 
     fn toolbar(&mut self, ui: &mut Ui, class: WidthClass) {
@@ -422,10 +465,10 @@ impl ViewerApp {
             ui.label(&crumbs.join("  ›  "));
             ui.flex();
 
-            let (ids, current) = self.view_as_choices();
-            if !ids.is_empty() {
-                let names: Vec<&str> = ids.iter().map(|id| registry().get(id).map_or(*id, |l| l.name())).collect();
-                let mut selected = ids.iter().position(|id| *id == current).expect("current loader is listed");
+            let (choices, current) = self.view_as_choices();
+            if !choices.is_empty() {
+                let names: Vec<&str> = choices.iter().map(|(_, n)| n.as_str()).collect();
+                let mut selected = current;
                 if class == WidthClass::Expanded {
                     ui.label_muted("View as");
                 }
@@ -433,8 +476,8 @@ impl ViewerApp {
                 ui.container(Layout::row().width(Size::Fixed(combo)), Frame::none(), |ui| {
                     ui.combo("view_as", &mut selected, &names);
                 });
-                if ids[selected] != current {
-                    self.view_as(ids[selected]);
+                if selected != current {
+                    self.view(choices[selected].0);
                 }
             }
             ui.container(Layout::row().width(Size::Fit), Frame::none(), |ui| {

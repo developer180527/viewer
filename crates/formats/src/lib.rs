@@ -6,23 +6,31 @@ mod libfileparser;
 
 use std::sync::OnceLock;
 
-pub use libfileparser::{ReaderLoader, set_notify};
+pub use libfileparser::{ReaderLoader, open_folder, set_notify, show_facet};
 use viewer_core::{FormatLoader, Registry};
 
 /// Every loader compiled into this build. Order breaks ties between equal confidences.
 pub fn registry() -> &'static Registry {
     static REGISTRY: OnceLock<Registry> = OnceLock::new();
     REGISTRY.get_or_init(|| {
-        // libfileparser categories, adapted once for the life of the process.
-        let three_d: &'static [&'static dyn FormatLoader] = Box::leak(
-            libfileparser_3d::readers().iter().map(|r| &*Box::leak(Box::new(ReaderLoader(*r))) as &dyn FormatLoader).collect::<Vec<_>>().into_boxed_slice(),
-        );
+        // libfileparser categories, adapted once for the life of the process. Its plain
+        // text reader isn't listed: Viewer's own (which highlights) reads text.
+        let adapt = |category: ::libfileparser::Category| -> &'static [&'static dyn FormatLoader] {
+            Box::leak(
+                ::libfileparser::readers()
+                    .iter()
+                    .filter(|r| r.info().category == category)
+                    .map(|r| &*Box::leak(Box::new(ReaderLoader(*r))) as &dyn FormatLoader)
+                    .collect::<Vec<_>>()
+                    .into_boxed_slice(),
+            )
+        };
         Registry::new(&[
             viewer_fmt_image::LOADERS,
-            viewer_fmt_archive::LOADERS,
+            adapt(::libfileparser::Category::Archives),
             viewer_fmt_data::LOADERS,
             viewer_fmt_doc::LOADERS,
-            three_d,
+            adapt(::libfileparser::Category::ThreeD),
             viewer_fmt_pdf::LOADERS,
         ])
     })

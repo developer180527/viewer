@@ -130,7 +130,7 @@ The corpus passes after every step; each step adds corpus files for what it adds
 
 1. **Separate and audit:** 🟡 `gltf-lite` and `scene-data` renamed apart from RendererX (2026-11-06); still to do: `usd-lite`, the glTF reader and the ufbx binding checked against libfileparser.md §5 and given spec tests, a fuzz target and a public-API snapshot. STL and PLY stay small parsers inside their readers.
 2. ✅ **Move as is:** the readers into `libfileparser-3d` on `-core`, each producing a document whose only facet is the Scene. Hooks replace `std::fs`, threads and `WAKE`. Viewer opens 3D through it. Then (2026-11-06) one module per reader, the helpers public in `build`, conformance over every entry of `readers()`, and FBX (ASCII) and `.blend` samples in the corpus.
-3. ✅ **Dependencies** for every reader, and the Dependencies and Textures facets (2026-11-06). Viewer shows them with the front door's View-as list (libfileparser.md §12 step 3).
+3. ✅ **Dependencies** for every reader, and the Dependencies and Textures facets (2026-11-06). Viewer shows them, and every other facet here, in its View as list through the front door (libfileparser.md §12 step 3, 2026-11-07).
 4. ✅ **USD:** Stage, Layers and Variants facets; the Materials facet for every reader (2026-11-07).
 5. ✅ **glTF/GLB:** the glTF tree, GLB chunks and JSON chunk, and the Extensions used (2026-11-07). Still to do: VRM's humanoid and expressions.
 6. ✅ **FBX, OBJ, PLY, `.blend`:** Records, Objects, Header, Blocks, embedded and packed files (2026-11-07), with binary FBX and a `.blend` with an SDNA and a packed image in the corpus. Still to do: FBX takes, STL solids, PLY splat attributes, `.blend` linked libraries and external images as dependencies, and compressed `.blend` files.

@@ -1,0 +1,14 @@
+[package]
+name = "libfileparser-text"
+description = "Any text file into a document: text by lines with its language, and the Source facet the front door gives every text file (docs/design/libfileparser.md §2)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Highlighting is the app's: this crate says what language a text is in, nothing more.
+[dependencies]
+libfileparser-core.workspace = true
+memchr.workspace = true
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true

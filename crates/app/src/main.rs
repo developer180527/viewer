@@ -26,7 +26,8 @@ USAGE:
     viewer [OPTIONS] [FILE]
 
 OPTIONS:
-    --view-as <ID>          Force a loader (e.g. hex, text, json, image)
+    --view-as <ID>          Force a loader (e.g. hex, text, json, image), or show a
+                            facet of the file by name (e.g. Stage, Source, Raw)
     --trace-startup         Print startup timings to stderr
     --benchmark             Trace startup and exit after the first frame showing the file
     --screenshot <PNG>      Save a screenshot once the file is shown, then exit
@@ -100,11 +101,7 @@ fn parse_args() -> Result<Args, String> {
     if args.view_as.is_some() && args.path.is_none() {
         return Err("--view-as needs a file to open".into());
     }
-    if let Some(id) = &args.view_as
-        && formats::registry().get(id).is_none()
-    {
-        return Err(format!("no loader called '{id}' (see --list-loaders)"));
-    }
+    // Not a loader: a facet name, checked once the file is open.
     startup::set_tracing(trace);
     Ok(args)
 }

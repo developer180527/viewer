@@ -44,7 +44,7 @@ impl Job {
         let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into());
         if path.is_dir() {
             return Self::run(name, Target::Root, move |started| {
-                let doc = viewer_fmt_archive::open_folder(&path).map_err(|e| format!("{}: {e:#}", path.display()))?;
+                let doc = viewer_formats::open_folder(&path).map_err(|e| format!("{}: {e:#}", path.display()))?;
                 Ok(Loaded { src: FileSource::folder(&path), doc, loader: "folder", attempts: Vec::new(), load_time: started.elapsed() })
             });
         }
@@ -63,6 +63,16 @@ impl Job {
     ) -> Self {
         Self::run(name, target, move |started| {
             source().map_err(|e| format!("{e:#}")).and_then(|src| load(src, view_as.as_deref(), started))
+        })
+    }
+
+    /// Shows another facet of the page's libfileparser document: the file isn't read
+    /// again, but the facet may be made now (a USD Stage is composed), so off the UI
+    /// thread like any load.
+    pub fn facet(src: FileSource, facets: viewer_core::Facets, index: usize, loader: &'static str) -> Self {
+        Self::run(src.name().into(), Target::ReplaceTop, move |started| {
+            let doc = viewer_formats::show_facet(&facets, index, &src).map_err(|e| format!("{e:#}"))?;
+            Ok(Loaded { src, doc, loader, attempts: Vec::new(), load_time: started.elapsed() })
         })
     }
 
@@ -100,11 +110,24 @@ impl Job {
 
 fn load(src: FileSource, view_as: Option<&str>, started: Instant) -> Result<Loaded, String> {
     let (doc, loader, attempts) = match view_as {
-        Some(id) => {
-            let loader = registry().get(id).ok_or_else(|| format!("no loader called '{id}'"))?;
-            let doc = viewer_core::open_guarded(loader, &src).map_err(|e| format!("{} could not open this file: {e:#}", loader.name()))?;
-            (doc, loader.id(), Vec::new())
-        }
+        Some(id) => match registry().get(id) {
+            Some(loader) => {
+                let doc = viewer_core::open_guarded(loader, &src).map_err(|e| format!("{} could not open this file: {e:#}", loader.name()))?;
+                (doc, loader.id(), Vec::new())
+            }
+            // A facet of the document, by name ("Stage", "Raw").
+            None => {
+                let (doc, loader, attempts) = registry().open(&src);
+                let facets = doc.facets.clone().ok_or_else(|| format!("no loader called '{id}' (see --list-loaders)"))?;
+                let index = facets
+                    .doc
+                    .facets()
+                    .position(|f| f.name.eq_ignore_ascii_case(id))
+                    .ok_or_else(|| format!("no loader or facet called '{id}' for {}", src.name()))?;
+                let doc = viewer_formats::show_facet(&facets, index, &src).map_err(|e| format!("{e:#}"))?;
+                (doc, loader, attempts)
+            }
+        },
         None => registry().open(&src),
     };
     Ok(Loaded { src, doc, loader, attempts, load_time: started.elapsed() })

@@ -1,6 +1,6 @@
 # libfileparser: open any file, in any app
 
-Status: design agreed 2026-11-06. `libfileparser-core` and `libfileparser-testkit` are built (`crates/libfileparser-core`, `crates/libfileparser-testkit`; 2026-11-06); no category is on them yet. Pre-1.0: every API here may change until §5's checks are in place. Crate names are settled; type names are a first draft. Builds on [document-model.md](document-model.md). [libfileparser-3d.md](libfileparser-3d.md) applies this design to 3D.
+Status: design agreed 2026-11-06. Built: `-core` and `-testkit` (2026-11-06); `-3d` (2026-11-06–07, [libfileparser-3d.md](libfileparser-3d.md)); `-text`, `-archives` and the `libfileparser` front door, which Viewer opens 3D files, archives and folders through, its View as listing every facet (§12 step 3, 2026-11-07). Images, data and docs are still Viewer's own loaders (§12 step 4). Pre-1.0: every API here may change until §5's checks are in place. Crate names are settled; type names are a first draft. Builds on [document-model.md](document-model.md). [libfileparser-3d.md](libfileparser-3d.md) applies this design to 3D.
 
 **Goal:** any app (an IDE, a game engine editor, a chat app, a file manager) can open and show any kind of file, taking only the parts it needs, cheaply. Viewer is the first user, not the owner: nothing here knows about Viewer, libgui or a GPU.
 
@@ -269,9 +269,11 @@ Every category library, alone or through the front door, can live inside another
 ```rust
 let cx = ParseContext::new().with_files(FolderFiles::new());     // the app's policy, as for any category
 let doc = libfileparser::open(&src, &cx)?;                       // the same shape as a category
-for view in doc.views() { /* role, name, content model */ }       // every facet of every reading
-let stage = doc.view(1, &cx)?;                                    // made now, on first use
+for facet in doc.facets() { /* role, name, content model */ }    // the reading's facets, then Source, Package, Raw
+let stage = doc.facet(1, &cx)?;                                   // made now, on first use
 ```
+
+✅ Built (2026-11-07), `crates/libfileparser`. It returns `-core`'s `Document`, so an app learns one type; `libfileparser` re-exports `-core`, so it needs one dependency. Beside `readers`, `detect`, `open` and `open_with`: `open_reporting` (the readers tried and why each said no, for an info panel), `open_raw` (the generic facets alone, for a file nothing reads), `open_entry` (a container entry, through detection again) and `reader(id)`. Generic facets are made only when asked for. Plain text detects at extension strength at most and comes last, so a `.gltf` opens as a model with its JSON as Source, not as text. Not yet: other readings' facets (item 3's last part), child documents keeping their parent, and the `minimal`/`full` presets.
 
 What it adds is only what no single category can do:
 
@@ -349,7 +351,7 @@ The corpus passes after every step.
 
 1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse`, `FacetProvider`; the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ⬜ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI: planned, not running yet.
 2. 🟡 **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md) (moved and on the hooks 2026-11-06; its other facets to come): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
-3. **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it.
+3. ✅ **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it (2026-11-07). `-archives` is Viewer's former `fmt-archive`, moved: limits come from the context, tar entries are views of the archive. Viewer keeps the front door's document with the page, so View as lists its facets (Scene, Stage, Layers…, Source, Raw) and switches between them without reading the file again; `--view-as` takes a facet name too. Viewer still converts a facet to its own content to show it (trees and tables built up front, at most 50,000 nodes and 100,000 rows), until its views read libfileparser's content models directly.
 4. **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1.
 5. **`-thumb`** and a thumbnail CLI, as the first user outside Viewer.
 6. **`-remote`** (MuPDF in a helper on desktop), then **`-c`**.

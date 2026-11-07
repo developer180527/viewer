@@ -1,18 +1,22 @@
-//! libfileparser categories inside Viewer's registry, while the app still has its own
-//! document type: each libfileparser reader appears as a Viewer loader, opened with
-//! Viewer's hooks (docs/design/libfileparser.md §3), and its document converted.
+//! libfileparser inside Viewer's registry, while the app still has its own document
+//! type: each libfileparser reader appears as a Viewer loader and opens through the
+//! front door (`libfileparser::open_with`), so its document has the generic Source,
+//! Package and Raw facets too. The document is kept with the page, so View as can show
+//! any of its facets ([`show_facet`]) without reading the file again; each facet is
+//! converted to Viewer's content when shown.
 //!
 //! Viewer's policy, as hooks: other files from the model's folder and below, never
 //! elsewhere (one folder up from a model in `~/Downloads` would be the whole home
 //! folder), with the OS's own refusals reported as blocked; texture decoding on a two-thread pool, every
 //! texture that arrives waking the window, and the platform's limits.
 
+use std::path::Path;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Result, anyhow, bail};
-use libfileparser_core::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Reader, Spawn};
-use viewer_core::{Document, FileSource, FormatLoader, Raster, SceneDoc, Unreadables};
+use libfileparser::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Reader, Role, Spawn, TreeSource};
+use viewer_core::{Document, Facets, FileSource, FormatLoader, Raster, SceneDoc, Unreadables};
 
 /// A libfileparser reader as a Viewer loader.
 pub struct ReaderLoader(pub &'static dyn Reader);
@@ -39,18 +43,138 @@ impl FormatLoader for ReaderLoader {
 
     fn open(&self, src: &FileSource) -> Result<Document> {
         let cx = context();
-        let doc = self.0.open(src, &cx).map_err(|e| anyhow!("{e}"))?;
-        let content = match doc.facet(0, &cx).map_err(|e| anyhow!("{e}"))? {
-            Content::Scene(s) => viewer_core::Content::Scene(SceneDoc { scene: s.scene().clone(), textures_pending: s.pending_counter() }),
-            Content::Raster(r) => viewer_core::Content::Raster(Raster::full(r.width(), r.height(), r.rgba().to_vec())),
-            _ => bail!("{} made content Viewer can't show yet", self.0.info().id),
-        };
-        let mut out = Document::new(doc.format().name.clone(), content);
-        for (k, v) in doc.metadata() {
-            out = out.with_meta(k.clone(), v);
+        let doc = libfileparser::open_with(self.0.info().id, src, &cx).map_err(|e| anyhow!("{e}"))?;
+        viewer_document(Arc::new(doc), 0, src, &cx)
+    }
+}
+
+/// Facet `index` of the page's libfileparser document, as a Viewer document.
+pub fn show_facet(facets: &Facets, index: usize, src: &FileSource) -> Result<Document> {
+    viewer_document(facets.doc.clone(), index, src, &context())
+}
+
+/// A folder, listed by libfileparser's archives.
+pub fn open_folder(path: &Path) -> Result<Document> {
+    let cx = context();
+    let src = FileSource::folder(path);
+    let doc = libfileparser::open(&src, &cx).map_err(|e| anyhow!("{e}"))?;
+    viewer_document(Arc::new(doc), 0, &src, &cx)
+}
+
+fn viewer_document(doc: Arc<libfileparser::Document>, index: usize, src: &FileSource, cx: &ParseContext) -> Result<Document> {
+    let content = convert(&doc, index, src, cx)?;
+    let mut out = Document::new(doc.format().name.clone(), content);
+    for (k, v) in doc.metadata() {
+        out = out.with_meta(k.clone(), v);
+    }
+    out.unreadable = Unreadables::from_dependencies(doc.dependencies().clone());
+    out.facets = Some(Facets { doc, shown: index });
+    Ok(out)
+}
+
+/// Most tree nodes and table rows a facet shows: Viewer's own tree and table are
+/// built up front, where libfileparser's are read a range at a time.
+const MAX_NODES: usize = 50_000;
+const MAX_ROWS: u64 = 100_000;
+/// Most bytes of a text facet that isn't the file itself (a GLB's JSON chunk).
+const MAX_TEXT: usize = 64 << 20;
+
+/// A facet's content as Viewer's.
+fn convert(doc: &libfileparser::Document, index: usize, src: &FileSource, cx: &ParseContext) -> Result<viewer_core::Content> {
+    let info = doc.facets().nth(index).ok_or_else(|| anyhow!("no facet {index}"))?.clone();
+    Ok(match doc.facet(index, cx).map_err(|e| anyhow!("{}: {e}", info.name))? {
+        Content::Scene(s) => viewer_core::Content::Scene(SceneDoc { scene: s.scene().clone(), textures_pending: s.pending_counter() }),
+        Content::Raster(r) => viewer_core::Content::Raster(Raster::full(r.width(), r.height(), r.rgba().to_vec())),
+        Content::Hex(src) => viewer_core::Content::Hex(src),
+        Content::Text(t) => {
+            // Viewer's text loader highlights; give it the file itself when the facet is
+            // the file's own text, else the facet's lines named for their language.
+            let text = if info.role == Role::Source {
+                src.clone()
+            } else {
+                let lines = t.lines(0..t.info().lines.known()).map_err(|e| anyhow!("{e}"))?;
+                let mut bytes = Vec::new();
+                for l in lines {
+                    if bytes.len() + l.as_slice().len() > MAX_TEXT {
+                        bail!("{} is too long to show ({MAX_TEXT} bytes at most)", info.name);
+                    }
+                    bytes.extend_from_slice(l.as_slice());
+                    bytes.push(b'\n');
+                }
+                let ext = match t.info().language.as_deref() {
+                    Some("json") => "json",
+                    Some("usd") => "usda",
+                    Some("xml") => "xml",
+                    _ => "txt",
+                };
+                FileSource::from_bytes(format!("{}.{ext}", info.name), bytes)
+            };
+            let loader = crate::registry().get("text").ok_or_else(|| anyhow!("no text loader"))?;
+            loader.open(&text)?.content
         }
-        out.unreadable = Unreadables::from_dependencies(doc.dependencies().clone());
+        Content::Tree(t) => viewer_core::Content::Tree(tree(&*t, &info.name)?),
+        Content::Table(t) => {
+            let table = t.info();
+            let rows = t.rows(0..table.rows.known().min(MAX_ROWS)).map_err(|e| anyhow!("{e}"))?;
+            viewer_core::Content::Table(viewer_core::Table::new(table.columns, rows))
+        }
+        Content::Container(c) => viewer_core::Content::Container(Arc::new(EntriesOf::new(c)?)),
+        _ => bail!("{} is content Viewer can't show yet", info.name),
+    })
+}
+
+/// A libfileparser tree as Viewer's, built up front: at most [`MAX_NODES`] nodes, the
+/// rest of a branch summarised.
+fn tree(t: &dyn TreeSource, name: &str) -> Result<viewer_core::TreeNode> {
+    let mut budget = MAX_NODES;
+    fn level(t: &dyn TreeSource, parent: Option<libfileparser::NodeId>, depth: usize, budget: &mut usize) -> Result<Vec<viewer_core::TreeNode>> {
+        let count = t.child_count(parent).map_err(|e| anyhow!("{e}"))?.known();
+        let take = count.min(*budget as u64);
+        let mut out = Vec::new();
+        for n in t.children(parent, 0..take).map_err(|e| anyhow!("{e}"))? {
+            *budget = budget.saturating_sub(1);
+            let children = if n.has_children && depth < 64 && *budget > 0 { level(t, Some(n.id), depth + 1, budget)? } else { Vec::new() };
+            let children = if n.has_children && children.is_empty() {
+                vec![viewer_core::TreeNode { key: "…".into(), value: "not shown".into(), children: Vec::new() }]
+            } else {
+                children
+            };
+            out.push(viewer_core::TreeNode { key: n.label, value: n.value, children });
+        }
+        if take < count {
+            out.push(viewer_core::TreeNode { key: "…".into(), value: format!("{} more not shown", count - take), children: Vec::new() });
+        }
         Ok(out)
+    }
+    let children = level(t, None, 0, &mut budget)?;
+    Ok(viewer_core::TreeNode { key: name.into(), value: String::new(), children })
+}
+
+/// A libfileparser container as Viewer's: its entries listed once.
+struct EntriesOf {
+    inner: Arc<dyn libfileparser::Container>,
+    entries: Vec<viewer_core::Entry>,
+}
+
+impl EntriesOf {
+    fn new(inner: Arc<dyn libfileparser::Container>) -> Result<Self> {
+        let entries = inner
+            .entries(0..inner.entry_count().known())
+            .map_err(|e| anyhow!("{e}"))?
+            .into_iter()
+            .map(|e| viewer_core::Entry { path: e.path, size: e.size, compressed_size: e.packed, is_dir: e.kind == libfileparser::EntryKind::Folder })
+            .collect();
+        Ok(Self { inner, entries })
+    }
+}
+
+impl viewer_core::Container for EntriesOf {
+    fn entries(&self) -> &[viewer_core::Entry] {
+        &self.entries
+    }
+
+    fn open_entry(&self, index: usize) -> Result<FileSource> {
+        self.inner.open(index as u64).map_err(|e| anyhow!("{e}"))
     }
 }
 
