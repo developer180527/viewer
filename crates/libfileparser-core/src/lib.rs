@@ -18,6 +18,7 @@ mod document;
 mod error;
 mod hooks;
 mod limits;
+mod link;
 mod reader;
 mod source;
 
@@ -31,5 +32,6 @@ pub use document::{Document, FacetInfo, FormatInfo, Role};
 pub use error::{LimitExceeded, ParseError, Result};
 pub use hooks::{AnyFiles, Cancel, FileResolver, FolderFiles, InlineSpawn, NoFiles, NoNotify, Notify, ParseContext, Spawn};
 pub use limits::{Limit, Limits};
+pub use link::{Links, Place, SceneItem};
 pub use reader::{Category, Confidence, Detection, Reader, ReaderInfo, detect, open, open_guarded, open_with};
 pub use source::FileSource;

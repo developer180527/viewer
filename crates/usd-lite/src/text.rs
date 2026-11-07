@@ -285,6 +285,8 @@ impl Parser<'_> {
     }
 
     fn prim(&mut self, parent: &str, specifier: &str) -> Result<()> {
+        // The keyword was just read: this is its line.
+        let line = self.lex.line as u32;
         self.deeper()?;
         let type_name = match self.lex.peek()? {
             Tok::Ident(_) => Some(self.ident()?),
@@ -295,6 +297,7 @@ impl Parser<'_> {
             t => return Err(self.lex.err(format!("expected a prim name, found {t:?}"))),
         };
         let path = child_path(parent, &name);
+        self.layer.lines.entry(path.clone()).or_insert(line);
         self.push_name(parent, "primChildren", &name);
         let spec = match specifier {
             "over" => Specifier::Over,

@@ -37,6 +37,8 @@ pub struct Loaded {
     pub root: String,
     pub arcs: Vec<usd_lite::LayerArc>,
     pub variant_sets: Vec<usd_lite::VariantSet>,
+    /// Scene items by the prim they came from.
+    pub origins: crate::build::SceneOrigins,
 }
 
 /// Where texture files come from: inside the package, or next to the layers.
@@ -166,7 +168,7 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
             (stage, Files::Dir { from: src.clone(), cx: cx.clone(), deps: deps.clone(), layer_dirs }, label)
         }
     };
-    let usd_lite::Stage { layer, warnings, layers, arcs, variant_sets } = stage;
+    let usd_lite::Stage { layer, warnings, layers, arcs, variant_sets, .. } = stage;
     let mut warnings = warnings;
     let extra_layers = layers.len() - 1;
     let root = layers.into_iter().next().unwrap_or_default();
@@ -183,6 +185,7 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
         jobs: Vec::new(),
         warnings: &mut warnings,
         missing_textures: 0,
+        origins: crate::build::SceneOrigins::new(),
     };
     c.convert();
     if c.missing_textures > 0 {
@@ -190,9 +193,10 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
         c.warnings.push(format!("{n} texture file(s) couldn't be read"));
     }
     let jobs = std::mem::take(&mut c.jobs);
+    let origins = std::mem::take(&mut c.origins);
     builder.finish();
     let textures = textures::spawn(builder.texture_sink(), jobs, cx);
-    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers, root, arcs, variant_sets })
+    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers, root, arcs, variant_sets, origins })
 }
 
 struct Converter<'a, 'f> {
@@ -214,6 +218,7 @@ struct Converter<'a, 'f> {
     jobs: Vec<ImageJob>,
     warnings: &'a mut Vec<String>,
     missing_textures: usize,
+    origins: crate::build::SceneOrigins,
 }
 
 /// Prim types whose subtrees hold no geometry to draw.
@@ -286,8 +291,9 @@ impl Converter<'_, '_> {
         let shared = key[0] != 0;
         if shared && let Some(parts) = self.instances.get(&key).cloned() {
             for (id, material) in parts {
-                if let Err(e) = self.b.add_node(Node::mesh(id, material, transform, None)) {
-                    self.warnings.push(format!("{prim}: {e}"));
+                match self.b.add_node(Node::mesh(id, material, transform, None)) {
+                    Ok(node) => self.origins.node(prim, node),
+                    Err(e) => self.warnings.push(format!("{prim}: {e}")),
                 }
             }
             return;
@@ -338,8 +344,10 @@ impl Converter<'_, '_> {
             match self.b.add_mesh(data) {
                 Ok(id) => {
                     parts.push((id, material));
-                    if let Err(e) = self.b.add_node(Node::mesh(id, material, transform, None)) {
-                        self.warnings.push(format!("{prim}: {e}"));
+                    self.origins.mesh(prim, id);
+                    match self.b.add_node(Node::mesh(id, material, transform, None)) {
+                        Ok(node) => self.origins.node(prim, node),
+                        Err(e) => self.warnings.push(format!("{prim}: {e}")),
                     }
                 }
                 Err(e) => self.warnings.push(format!("{prim}: {e}")),
@@ -439,6 +447,9 @@ impl Converter<'_, '_> {
             }
         };
         self.materials.insert(path.to_string(), id);
+        if let Some(id) = id {
+            self.origins.material(path, id);
+        }
         id
     }
 
@@ -601,17 +612,17 @@ impl Reader for UsdReader {
         let Loaded { root, arcs, variant_sets, .. } = &loaded;
         let layers = (!arcs.is_empty()).then(|| facets::layers_tree(root, arcs, Some(&deps)));
         let variants = (!variant_sets.is_empty()).then(|| facets::variants_tree(variant_sets));
-        let (from, stage_deps) = (src.clone(), deps.clone());
+        let composed = Arc::new(facets::Composed::new(src, &deps));
+        let for_stage = composed.clone();
+        let text = usd_lite::detect(src.bytes()) == Some(Format::Usda);
         let doc = SceneDocument::new("usd", loaded.format, loaded.scene)
+            .origins(loaded.origins, "Stage")
             .warnings(loaded.warnings)
             .textures(loaded.textures)
             .dependencies(deps)
             .facets(move |doc| {
                 let stage = FacetInfo::new(Role::Structure, "Stage", Model::Tree);
-                let mut doc = doc.with_lazy_facet(stage, move |cx| {
-                    let stage = compose_stage(&from, cx, &stage_deps).map_err(super::parse_error)?;
-                    Ok(Content::Tree(Arc::new(facets::StageTree::new(stage.layer))))
-                });
+                let mut doc = doc.with_lazy_facet(stage, move |cx| Ok(Content::Tree(Arc::new(facets::StageTree::new(for_stage.get(cx)?)))));
                 if let Some(layers) = layers {
                     doc = doc.with_facet(Role::Structure, "Layers", Content::Tree(Arc::new(layers)));
                 }
@@ -620,7 +631,8 @@ impl Reader for UsdReader {
                 }
                 doc
             })
-            .build()?;
+            .build()?
+            .with_links(facets::UsdLinks { composed, text });
         Ok(if loaded.layers > 0 { doc.with_meta("Layers composed", loaded.layers + 1) } else { doc })
     }
 }

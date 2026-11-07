@@ -64,6 +64,8 @@ A format offers only the roles it has: an STL has Primary, Source (if ASCII) and
 
 Facets of one document describe the same thing, so they can point into each other: a prim in the Stage tree knows its line in the USDA source and its node in the Scene; a mesh in the Scene knows its glTF accessor. Links are optional, cheap (indices, not copies) and let an app select in one view and highlight in another. They are added per format when useful, not required.
 
+✅ Built (2026-11-07) in `-core`: a **`Place`** is something in a document: a tree node, a table row, a container entry or a scene item (node, mesh, material, texture) of one of its facets, or lines or bytes of the file itself (where an app's Source and Raw views show it). `Document::links(place)` says where else it is. Links are worked out when asked for, by the **`Links`** sources a reader adds (`Document::with_links`), not stored; a source that fails or panics is left out, so one broken link hides no others. Trees can also find a node by path in their own syntax (`TreeSource::find` and `path`: a USD prim path, a JSON pointer), so an app can go straight to `/World/Car`.
+
 ## 4. Readings and facets together
 
 Two different questions:

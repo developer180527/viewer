@@ -289,13 +289,27 @@ pub trait TreeSource: Send + Sync {
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }
+    /// The node a path names, in the tree's own path syntax (a USD prim path, a JSON
+    /// pointer), so an app or a link can go straight to it. `None` when no node has that
+    /// path, or the tree has no paths.
+    fn find(&self, path: &str) -> Result<Option<NodeId>> {
+        let _ = path;
+        Ok(None)
+    }
+    /// A node's path, the inverse of [`Self::find`].
+    fn path(&self, node: NodeId) -> Result<Option<String>> {
+        let _ = node;
+        Ok(None)
+    }
 }
 
-/// A tree built up front.
+/// A tree built up front. Nodes added with [`OwnedTree::add_at`] have a path.
 #[derive(Default)]
 pub struct OwnedTree {
     nodes: Vec<(TreeNode, Vec<NodeId>)>,
     roots: Vec<NodeId>,
+    paths: std::collections::HashMap<String, NodeId>,
+    path_of: std::collections::HashMap<NodeId, String>,
 }
 
 impl OwnedTree {
@@ -314,6 +328,18 @@ impl OwnedTree {
                 children.push(id);
             }
             None => self.roots.push(id),
+        }
+        id
+    }
+
+    /// Adds a node with a path that [`TreeSource::find`] finds it by. A path already
+    /// taken keeps its first node.
+    pub fn add_at(&mut self, parent: Option<NodeId>, label: impl Into<String>, value: impl Into<String>, path: impl Into<String>) -> NodeId {
+        let id = self.add(parent, label, value);
+        let path = path.into();
+        if !self.paths.contains_key(&path) {
+            self.paths.insert(path.clone(), id);
+            self.path_of.insert(id, path);
         }
         id
     }
@@ -346,7 +372,16 @@ impl TreeSource for OwnedTree {
 
     fn memory(&self) -> MemoryUse {
         let text: usize = self.nodes.iter().map(|(n, c)| n.label.len() + n.value.len() + c.len() * 8).sum();
-        MemoryUse::heap((text + self.nodes.len() * size_of::<(TreeNode, Vec<NodeId>)>()) as u64)
+        let paths: usize = self.paths.keys().map(|p| 2 * p.len() + 48).sum();
+        MemoryUse::heap((text + paths + self.nodes.len() * size_of::<(TreeNode, Vec<NodeId>)>()) as u64)
+    }
+
+    fn find(&self, path: &str) -> Result<Option<NodeId>> {
+        Ok(self.paths.get(path).copied())
+    }
+
+    fn path(&self, node: NodeId) -> Result<Option<String>> {
+        Ok(self.path_of.get(&node).cloned())
     }
 }
 

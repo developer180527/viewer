@@ -59,6 +59,9 @@ impl Spec {
 #[derive(Debug, Clone, Default)]
 pub struct Layer {
     pub specs: HashMap<String, Spec>,
+    /// For a text layer, the line (from 1) each prim spec starts on, by path; empty for
+    /// a binary one.
+    pub lines: HashMap<String, u32>,
 }
 
 impl Layer {

@@ -1,6 +1,6 @@
 # libfileparser-3d: any 3D file, every facet of it
 
-Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` on `-core`, every reader with its Scene (or Preview) facet, files, threads and progress through the hooks, every reader passing conformance on committed samples (the suite walks `readers()`, so a reader without samples fails); one module per reader in `readers/`, the shared helpers public in `build` (§4); Viewer opens 3D through it (§9 step 2). Dependencies and Textures facets for every reader (§9 step 3, 2026-11-06). USD's Stage, Layers and Variants, and Materials for every reader (§9 step 4, 2026-11-07). glTF's tree, GLB's JSON chunk and Chunks, and the Extensions used (§9 step 5, 2026-11-07). FBX's Records and Embedded media, OBJ's Objects, PLY's Header, and `.blend`'s Blocks and Packed files (§9 step 6, 2026-11-07). Links between facets are §9 step 7. Built on [document-model.md](document-model.md), and applies [libfileparser.md](libfileparser.md): the four requirements of its §1, its flat API (§4) and its rules (§5–7). This document holds only what is particular to 3D.
+Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` on `-core`, every reader with its Scene (or Preview) facet, files, threads and progress through the hooks, every reader passing conformance on committed samples (the suite walks `readers()`, so a reader without samples fails); one module per reader in `readers/`, the shared helpers public in `build` (§4); Viewer opens 3D through it (§9 step 2). Dependencies and Textures facets for every reader (§9 step 3, 2026-11-06). USD's Stage, Layers and Variants, and Materials for every reader (§9 step 4, 2026-11-07). glTF's tree, GLB's JSON chunk and Chunks, and the Extensions used (§9 step 5, 2026-11-07). FBX's Records and Embedded media, OBJ's Objects, PLY's Header, and `.blend`'s Blocks and Packed files (§9 step 6, 2026-11-07). Links between facets for USD, glTF, Materials and Textures (§9 step 7, 2026-11-07); FBX and OBJ links are still to do. Built on [document-model.md](document-model.md), and applies [libfileparser.md](libfileparser.md): the four requirements of its §1, its flat API (§4) and its rules (§5–7). This document holds only what is particular to 3D.
 
 **Goal:** read any 3D file into everything it is: a scene to draw, its own structure (USD prims, glTF nodes, FBX records), the text it's written in, the files packed inside it, the files it depends on, and its materials and textures, so an engine editor, an IDE or a viewer can each take what it needs.
 
@@ -52,13 +52,16 @@ Each reader records cheap cross-references (indices, not copies) where they exis
 
 | From | To |
 |---|---|
-| Stage prim | Its Scene node; its line in the USDA source; the layer that defines it |
-| glTF node / primitive | Scene node and mesh; its byte range in the JSON |
-| FBX record | Scene node, for models and geometry |
-| OBJ object | Scene node; its first line in the source |
-| Material row | Scene material; its texture rows |
+| Stage prim (or property) | ✅ Its Scene nodes and meshes, and back; the line its spec starts on in the USDA text when the root layer defines it (and a line gives the prim that starts nearest above it); the layer that defines it, in Layers (a referenced prim's is the asset's layer) |
+| glTF node / primitive / material | ✅ Scene node (a node's second and later primitives are child nodes), mesh, material, and back. ⬜ Its byte range in the JSON |
+| FBX record | ⬜ Scene node, for models and geometry |
+| OBJ object | ⬜ Scene node; its first line in the source |
+| Material row | ✅ Scene material and its texture rows, and back; a scene node gives its material's row |
+| Texture row | ✅ Scene texture, and the material rows that use it |
 
-Links are optional per format and come after the facets themselves.
+How (`-core`, document-model.md "Linked facets"): `Document::links(place)`. `SceneDocument` links Materials, Textures and the Scene for every reader; a reader that passes `SceneOrigins` (each scene item by the path of what describes it in its structure facet: `/World/Car`, `/nodes/3`) to `SceneDocument::origins` gets its structure facet ↔ Scene links too; anything else a format links (USD's lines and layers) is its own `Links`. usd-lite records each text prim's line (`Layer::lines`) and where each composed prim is defined (`Stage::sources`); gltf-lite reports which node, primitive and material each scene item came from. The Stage is composed again the first time its facet or a link asks, then shared by both.
+
+FBX and OBJ links need ufbx's nodes matched to records by class and name, as ufbx keeps an FBX object's id only when it retains the whole parsed file.
 
 ## 4. Inside the crate, and adding a format
 
@@ -131,5 +134,5 @@ The corpus passes after every step; each step adds corpus files for what it adds
 4. ✅ **USD:** Stage, Layers and Variants facets; the Materials facet for every reader (2026-11-07).
 5. ✅ **glTF/GLB:** the glTF tree, GLB chunks and JSON chunk, and the Extensions used (2026-11-07). Still to do: VRM's humanoid and expressions.
 6. ✅ **FBX, OBJ, PLY, `.blend`:** Records, Objects, Header, Blocks, embedded and packed files (2026-11-07), with binary FBX and a `.blend` with an SDNA and a packed image in the corpus. Still to do: FBX takes, STL solids, PLY splat attributes, `.blend` linked libraries and external images as dependencies, and compressed `.blend` files.
-7. **Links between facets** (§3), starting with USD prim ↔ Scene node ↔ source line.
+7. 🟡 **Links between facets** (§3): ✅ the link API in `-core`, USD (prim ↔ Scene, source line, layer), glTF (node, primitive, material ↔ Scene), Materials and Textures for every reader (2026-11-07). Still to do: FBX records and OBJ objects, glTF byte ranges.
 8. **New formats** in their own readers: 3MF, STEP, LAS, splats.

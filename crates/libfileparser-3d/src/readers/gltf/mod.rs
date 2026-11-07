@@ -44,10 +44,22 @@ impl Reader for GltfReader {
             })
             .collect();
         let textures = decode_textures(builder.texture_sink(), jobs, cx);
+        // Scene items by the JSON they came from, for links with the glTF tree.
+        let mut origins = crate::build::SceneOrigins::new();
+        for &(node, id) in &loaded.nodes {
+            origins.node(format!("/nodes/{node}"), id);
+        }
+        for &(mesh, primitive, id) in &loaded.meshes {
+            origins.mesh(format!("/meshes/{mesh}/primitives/{primitive}"), id);
+        }
+        for &(material, id) in &loaded.materials {
+            origins.material(format!("/materials/{material}"), id);
+        }
         let glb = src.header().starts_with(b"glTF");
         let extensions = facets::extensions_table(&loaded.extensions_used, &loaded.extensions_required);
         let from = src.clone();
         SceneDocument::new("gltf", format, scene)
+            .origins(origins, "glTF")
             .warnings(loaded.warnings)
             .textures(textures)
             .dependencies(deps)

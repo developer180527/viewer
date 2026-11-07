@@ -23,7 +23,7 @@ mod text;
 mod usdz;
 mod value;
 
-pub use compose::{ArcKind, FsResolver, LayerArc, Resolver, Stage, VariantSet, anchored, compose};
+pub use compose::{ArcKind, FsResolver, LayerArc, PrimSource, Resolver, Stage, VariantSet, anchored, compose};
 pub use layer::{Layer, Spec, SpecType, child_path, property_path, split_property};
 #[cfg(feature = "usdz")]
 pub use usdz::Package;

@@ -184,6 +184,13 @@ pub struct Loaded {
     /// The extensions the file says it uses, and those it says a reader must know.
     pub extensions_used: Vec<String>,
     pub extensions_required: Vec<String>,
+    /// Where each scene item came from, for links back to the JSON: (glTF node, scene
+    /// node), a node's second and later primitives being child scene nodes of its own;
+    pub nodes: Vec<(usize, NodeId)>,
+    /// (glTF mesh, primitive, scene mesh);
+    pub meshes: Vec<(usize, usize, MeshId)>,
+    /// (glTF material, scene material).
+    pub materials: Vec<(usize, MaterialId)>,
 }
 
 /// Extensions that change what the data means and can't be skipped.
@@ -236,6 +243,8 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
         warnings,
         unreadable,
         over_limit: None,
+        node_origins: Vec::new(),
+        mesh_origins: Vec::new(),
     };
     let placed = loader.placements();
     loader.set_bounds(&placed);
@@ -250,6 +259,9 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
         unreadable: loader.unreadable,
         extensions_used: root.extensions_used.clone(),
         extensions_required: root.extensions_required.clone(),
+        materials: loader.materials.iter().enumerate().filter_map(|(i, m)| Some((i, (*m)??))).collect(),
+        nodes: loader.node_origins,
+        meshes: loader.mesh_origins,
     })
 }
 
@@ -391,6 +403,8 @@ struct Loader<'a> {
     /// The first scene limit a mesh went past: the whole load fails with it, rather
     /// than showing a model with parts silently missing.
     over_limit: Option<scene_data::Error>,
+    node_origins: Vec<(usize, NodeId)>,
+    mesh_origins: Vec<(usize, usize, MeshId)>,
 }
 
 impl<'a> Loader<'a> {
@@ -469,9 +483,11 @@ impl<'a> Loader<'a> {
             };
             let id = self.builder.add_node(node).map_err(|e| self.warnings.push(format!("node {}: {e}", p.node))).ok();
             if let Some(id) = id {
+                self.node_origins.push((p.node, id));
                 for &(mesh, material) in prims.iter().skip(1) {
-                    if let Err(e) = self.builder.add_node(Node::mesh(mesh, material, Mat4::IDENTITY, Some(id))) {
-                        self.warnings.push(format!("node {}: {e}", p.node));
+                    match self.builder.add_node(Node::mesh(mesh, material, Mat4::IDENTITY, Some(id))) {
+                        Ok(child) => self.node_origins.push((p.node, child)),
+                        Err(e) => self.warnings.push(format!("node {}: {e}", p.node)),
                     }
                 }
             }
@@ -490,7 +506,10 @@ impl<'a> Loader<'a> {
         let mut prims = Vec::new();
         for (i, prim) in mesh.primitives.iter().enumerate() {
             match self.primitive(prim) {
-                Ok(p) => prims.push(p),
+                Ok(p) => {
+                    self.mesh_origins.push((index, i, p.0));
+                    prims.push(p);
+                }
                 Err(Error::Scene(e @ scene_data::Error::LimitExceeded { .. })) => {
                     self.over_limit.get_or_insert(e);
                 }

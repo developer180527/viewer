@@ -20,7 +20,7 @@ use libfileparser_core::ParseError;
 
 /// A reader's internal error as a [`ParseError`]: a scene limit becomes `TooLarge`,
 /// cancellation stays cancellation, anything else is damage.
-fn parse_error(e: anyhow::Error) -> ParseError {
+pub(crate) fn parse_error(e: anyhow::Error) -> ParseError {
     for cause in e.chain() {
         let scene = cause.downcast_ref::<scene_data::Error>().or(match cause.downcast_ref::<gltf_lite::Error>() {
             Some(gltf_lite::Error::Scene(e)) => Some(e),

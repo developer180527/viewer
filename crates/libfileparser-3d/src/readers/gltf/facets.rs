@@ -81,7 +81,7 @@ impl GltfTree {
         NodeId(id)
     }
 
-    fn path(&self, id: Option<NodeId>) -> Result<Vec<Seg>> {
+    fn segments(&self, id: Option<NodeId>) -> Result<Vec<Seg>> {
         let Some(id) = id else { return Ok(Vec::new()) };
         let ids = self.ids.lock().unwrap_or_else(|e| e.into_inner());
         ids.0.get(id.0 as usize).cloned().ok_or_else(|| ParseError::invalid(format!("no node {}", id.0)))
@@ -135,7 +135,7 @@ impl GltfTree {
 
 impl TreeSource for GltfTree {
     fn child_count(&self, parent: Option<NodeId>) -> Result<Count> {
-        let path = self.path(parent)?;
+        let path = self.segments(parent)?;
         let n = match self.at(&path) {
             Some(Value::Object(o)) => o.len(),
             Some(Value::Array(a)) => a.len(),
@@ -145,7 +145,7 @@ impl TreeSource for GltfTree {
     }
 
     fn children(&self, parent: Option<NodeId>, range: Range<u64>) -> Result<Vec<TreeNode>> {
-        let path = self.path(parent)?;
+        let path = self.segments(parent)?;
         let child = |seg: Seg| {
             let mut p = path.clone();
             p.push(seg);
@@ -171,6 +171,45 @@ impl TreeSource for GltfTree {
         }
         MemoryUse::heap(size(&self.root))
     }
+
+    /// A JSON pointer (RFC 6901): `/nodes/3`, `/meshes/0/primitives/1`.
+    fn find(&self, path: &str) -> Result<Option<NodeId>> {
+        let Some(rest) = path.strip_prefix('/') else { return Ok(None) };
+        let mut segs = Vec::new();
+        let mut at = &self.root;
+        for raw in rest.split('/') {
+            let key = raw.replace("~1", "/").replace("~0", "~");
+            let (seg, next) = match at {
+                Value::Object(o) => match o.get(&key) {
+                    Some(v) => (Seg::Key(key), v),
+                    None => return Ok(None),
+                },
+                Value::Array(a) => match key.parse::<usize>().ok().and_then(|i| a.get(i).map(|v| (i, v))) {
+                    Some((i, v)) => (Seg::Index(i), v),
+                    None => return Ok(None),
+                },
+                _ => return Ok(None),
+            };
+            segs.push(seg);
+            at = next;
+        }
+        Ok(Some(self.id(segs)))
+    }
+
+    fn path(&self, node: NodeId) -> Result<Option<String>> {
+        let segs = self.segments(Some(node))?;
+        Ok(Some(pointer(&segs)))
+    }
+}
+
+/// A path as a JSON pointer.
+fn pointer(segs: &[Seg]) -> String {
+    segs.iter()
+        .map(|s| match s {
+            Seg::Key(k) => format!("/{}", k.replace('~', "~0").replace('/', "~1")),
+            Seg::Index(i) => format!("/{i}"),
+        })
+        .collect()
 }
 
 /// A value as one short line: a branch by its name, or its size; long strings (a

@@ -428,3 +428,86 @@ fn damaged_structure_never_panics() {
         }
     }
 }
+
+/// The node `path` names in the tree facet `facet`.
+fn node_at(doc: &Document, cx: &ParseContext, facet: &str, path: &str) -> libfileparser_core::Place {
+    let i = doc.facet_index(facet).unwrap();
+    let Ok(Content::Tree(t)) = doc.facet(i, cx) else { panic!("{facet} isn't a tree") };
+    let node = t.find(path).unwrap().unwrap_or_else(|| panic!("no {path} in {facet}"));
+    libfileparser_core::Place::Node { facet: i, node }
+}
+
+/// A node place's path in its tree.
+fn path_of(doc: &Document, cx: &ParseContext, place: &libfileparser_core::Place) -> Option<String> {
+    let libfileparser_core::Place::Node { facet, node } = place else { return None };
+    let Ok(Content::Tree(t)) = doc.facet(*facet, cx) else { return None };
+    t.path(*node).unwrap()
+}
+
+#[test]
+fn usd_prims_link_to_their_scene_nodes_source_lines_and_layers() {
+    use libfileparser_core::{Place, SceneItem};
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../usd-lite/tests/fixtures/compose").canonicalize().unwrap();
+    let cx = ParseContext::new().with_files(libfileparser_core::FolderFiles::within(&dir)).with_spawn(libfileparser_core::InlineSpawn);
+    let doc = UsdReader.open(&FileSource::open(dir.join("root.usda")).unwrap(), &cx).unwrap();
+    let scene = doc.facet_index("Scene").unwrap();
+    let layers = doc.facet_index("Layers").unwrap();
+
+    // A prim brought in by a reference: its scene nodes, and the layer that defines it.
+    let tire = node_at(&doc, &cx, "Stage", "/World/Car/Tire");
+    let links = doc.links(&tire, &cx).unwrap();
+    let nodes: Vec<_> = links.iter().filter_map(|p| match p {
+        Place::Scene { facet, item: SceneItem::Node(n) } if *facet == scene => Some(*n),
+        _ => None,
+    }).collect();
+    assert_eq!(nodes.len(), 1, "{links:?}");
+    let layer = links.iter().find(|p| matches!(p, Place::Node { facet, .. } if *facet == layers)).expect("its layer");
+    assert_eq!(path_of(&doc, &cx, layer).as_deref(), Some("parts/wheel.usda"));
+    // Not in the root layer, so no line of the file's text.
+    assert!(!links.iter().any(|p| matches!(p, Place::Lines(_))));
+
+    // And back: the scene node links to its prim.
+    let back = doc.links(&Place::Scene { facet: scene, item: SceneItem::Node(nodes[0]) }, &cx).unwrap();
+    assert!(back.contains(&tire), "{back:?}");
+
+    // A prim of the root layer: its line (from 0), and a line inside it gives the prim.
+    let car = node_at(&doc, &cx, "Stage", "/World/Car");
+    assert!(doc.links(&car, &cx).unwrap().contains(&Place::Lines(10..11)));
+    assert_eq!(doc.links(&Place::Lines(12..13), &cx).unwrap(), [car]);
+    // In a variant: the line in the variant's body.
+    let tri = node_at(&doc, &cx, "Stage", "/World/Switch/Tri");
+    assert!(doc.links(&tri, &cx).unwrap().contains(&Place::Lines(68..69)));
+
+    // A property links like its prim.
+    let points = node_at(&doc, &cx, "Stage", "/World/Car/Tire.points");
+    assert!(doc.links(&points, &cx).unwrap().iter().any(|p| matches!(p, Place::Node { facet, .. } if *facet == layers)));
+}
+
+#[test]
+fn gltf_nodes_materials_and_textures_link_across_facets() {
+    use libfileparser_core::{Place, SceneItem};
+    let (doc, cx) = open_in_corpus("3d/cube-gltf/cube.gltf", libfileparser_core::InlineSpawn);
+    let (scene, materials, textures) = (doc.facet_index("Scene").unwrap(), doc.facet_index("Materials").unwrap(), doc.facet_index("Textures").unwrap());
+
+    let node = node_at(&doc, &cx, "glTF", "/nodes/0");
+    assert_eq!(doc.links(&node, &cx).unwrap(), [Place::Scene { facet: scene, item: SceneItem::Node(0) }]);
+    // A scene node: its glTF node and its material's row.
+    let links = doc.links(&Place::Scene { facet: scene, item: SceneItem::Node(0) }, &cx).unwrap();
+    assert!(links.contains(&node) && links.contains(&Place::Row { facet: materials, row: 0 }), "{links:?}");
+    // The primitive and its scene mesh.
+    let primitive = node_at(&doc, &cx, "glTF", "/meshes/0/primitives/0");
+    assert_eq!(doc.links(&primitive, &cx).unwrap(), [Place::Scene { facet: scene, item: SceneItem::Mesh(0) }]);
+
+    // A Materials row: its scene material, the Textures row of its map; and back.
+    let row = Place::Row { facet: materials, row: 0 };
+    let links = doc.links(&row, &cx).unwrap();
+    assert!(links.contains(&Place::Scene { facet: scene, item: SceneItem::Material(0) }) && links.contains(&Place::Row { facet: textures, row: 0 }), "{links:?}");
+    let links = doc.links(&Place::Row { facet: textures, row: 0 }, &cx).unwrap();
+    assert!(links.contains(&row) && links.iter().any(|p| matches!(p, Place::Scene { item: SceneItem::Texture(_), .. })), "{links:?}");
+    let material = doc.links(&Place::Scene { facet: scene, item: SceneItem::Material(0) }, &cx).unwrap();
+    assert!(material.contains(&node_at(&doc, &cx, "glTF", "/materials/0")) && material.contains(&row), "{material:?}");
+
+    // A place nothing links to, or that doesn't exist, has no links.
+    assert!(doc.links(&Place::Row { facet: materials, row: 99 }, &cx).unwrap().is_empty());
+    assert!(doc.links(&Place::Bytes(0..4), &cx).unwrap().is_empty());
+}

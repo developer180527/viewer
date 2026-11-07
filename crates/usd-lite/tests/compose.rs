@@ -152,3 +152,17 @@ fn stage_records_its_arcs_and_variant_sets() {
     assert_eq!(selection("/World/Car").as_deref(), Some("small"));
     assert_eq!(selection("/World/Car2").as_deref(), Some("big"));
 }
+
+#[test]
+fn stage_says_where_each_prim_is_defined() {
+    let stage = composed();
+    let source = |prim: &str| {
+        let s = stage.sources.get(prim).unwrap_or_else(|| panic!("no source for {prim}"));
+        (stage.layers[s.layer].rsplit('/').next().unwrap().to_string(), s.path.clone(), s.line)
+    };
+    assert_eq!(source("/World/Car"), ("root.usda".into(), "/World/Car".into(), Some(11)));
+    // Brought in by a reference: defined in the wheel, at its own path there.
+    assert_eq!(source("/World/Car/Tire"), ("wheel.usda".into(), "/Wheel/Tire".into(), Some(13)));
+    // Inside the selected variant.
+    assert_eq!(source("/World/Switch/Tri"), ("root.usda".into(), "/World/Switch{shape=tri}/Tri".into(), Some(69)));
+}

@@ -64,6 +64,21 @@ pub struct Stage {
     pub arcs: Vec<LayerArc>,
     /// Every variant set on a composed prim, in the order composition met them.
     pub variant_sets: Vec<VariantSet>,
+    /// Where each composed prim is defined, by its path.
+    pub sources: HashMap<String, PrimSource>,
+}
+
+/// The spec that defines a composed prim: the strongest `def` (else the strongest
+/// opinion) among its sites.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrimSource {
+    /// Index into [`Stage::layers`].
+    pub layer: usize,
+    /// The spec's path in that layer (a referenced asset's `/Wheel`, a variant's
+    /// `/Switch{shape=tri}/Tri`).
+    pub path: String,
+    /// The line it starts on, in a text layer.
+    pub line: Option<u32>,
 }
 
 /// What kind of arc brings a layer in.
@@ -131,11 +146,12 @@ pub fn compose(root: Layer, root_id: &str, resolver: &dyn Resolver, limits: &Lim
         arc_index: HashMap::new(),
         variant_sets: Vec::new(),
         set_index: HashMap::new(),
+        sources: HashMap::new(),
     };
     c.by_id.insert(root_id.to_string(), 0);
     let stack = c.stack(0);
     c.compose_root(stack);
-    Stage { layer: c.out, warnings: c.warnings, layers: c.layers.iter().map(|(id, _)| id.clone()).collect(), arcs: c.arcs, variant_sets: c.variant_sets }
+    Stage { layer: c.out, warnings: c.warnings, layers: c.layers.iter().map(|(id, _)| id.clone()).collect(), arcs: c.arcs, variant_sets: c.variant_sets, sources: c.sources }
 }
 
 #[derive(Clone)]
@@ -174,6 +190,7 @@ struct Composer<'r> {
     variant_sets: Vec<VariantSet>,
     /// (prim, set) → index in `variant_sets`.
     set_index: HashMap<(String, String), usize>,
+    sources: HashMap<String, PrimSource>,
 }
 
 impl Composer<'_> {
@@ -489,8 +506,14 @@ impl Composer<'_> {
         let mut specifier = None;
         let mut fields: Vec<(String, Value)> = Vec::new();
         let mut properties: Vec<String> = Vec::new();
+        // (layer, path): the strongest def, else the strongest opinion.
+        let (mut def_at, mut first_at) = (None, None);
         for site in sites {
-            for (_, spec) in self.specs(site.stack, &site.path) {
+            for (layer, spec) in self.specs(site.stack, &site.path) {
+                first_at.get_or_insert((layer, site.path.clone()));
+                if def_at.is_none() && matches!(spec.field("specifier"), Some(Value::Specifier(Specifier::Def))) {
+                    def_at = Some((layer, site.path.clone()));
+                }
                 match spec.field("specifier") {
                     Some(Value::Specifier(Specifier::Def)) => specifier = Some(Specifier::Def),
                     Some(Value::Specifier(Specifier::Class)) if specifier.is_none() => specifier = Some(Specifier::Class),
@@ -511,6 +534,10 @@ impl Composer<'_> {
             }
         }
         let specifier = specifier?;
+        if let Some((layer, at)) = def_at.or(first_at) {
+            let line = self.layers[layer].1.lines.get(&at).copied();
+            self.sources.insert(path.to_string(), PrimSource { layer, path: at, line });
+        }
         let children = self.child_names(sites);
         fields.push(("specifier".into(), Value::Specifier(specifier)));
         fields.push(("primChildren".into(), Value::TokenArray(children.clone())));

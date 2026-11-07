@@ -77,7 +77,7 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 | `Text` (`TextSource`) | `info()`: line count, encoding, language | `lines(a..b)` as shared bytes |
 | `Markdown` (with `-text`) | Source text | — |
 | `Table` (`TableSource`) | `info()`: columns, row count (maybe estimated); later sheets | `rows(a..b)` |
-| `Tree` (`TreeSource`) | Nodes with an id, a label, a value and whether they have children | `child_count(node)`, then `children(node, a..b)` |
+| `Tree` (`TreeSource`) | Nodes with an id, a label, a value and whether they have children | `child_count(node)`, then `children(node, a..b)`; `find(path)` and `path(node)` where the tree has paths |
 | `Container` | `entry_count()`; entries (path, size, packed size, kind) | `entries(a..b)`; open one entry as a file |
 | `Scene` | `scene-data` data: meshes, materials, textures, nodes; no GPU | Arrives progressively |
 | `Media` (later) | Streams and metadata; decode a frame or samples into the caller's buffer | Time |

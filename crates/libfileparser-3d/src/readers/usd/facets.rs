@@ -5,10 +5,37 @@
 
 use std::collections::HashMap;
 use std::ops::Range;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
-use libfileparser_core::{Count, Dependencies, MemoryUse, NodeId, OwnedTree, ParseError, Result, TreeNode, TreeSource};
-use usd_lite::{ArcKind, Layer, LayerArc, Spec, Value, VariantSet, property_path};
+use libfileparser_core::{
+    Content, Count, Dependencies, Document, FileSource, Links, MemoryUse, NodeId, OwnedTree, ParseContext, ParseError, Place, Result, TreeNode,
+    TreeSource,
+};
+use usd_lite::{ArcKind, Layer, LayerArc, Spec, Stage, Value, VariantSet, property_path};
+
+/// The composed stage, composed again the first time the Stage facet or a link asks
+/// for it (rather than kept beside the scene from the start), then shared.
+pub struct Composed {
+    src: FileSource,
+    deps: Dependencies,
+    stage: Mutex<Option<Arc<Stage>>>,
+}
+
+impl Composed {
+    pub fn new(src: &FileSource, deps: &Dependencies) -> Self {
+        Self { src: src.clone(), deps: deps.clone(), stage: Mutex::new(None) }
+    }
+
+    pub fn get(&self, cx: &ParseContext) -> Result<Arc<Stage>> {
+        let mut stage = self.stage.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(s) = &*stage {
+            return Ok(s.clone());
+        }
+        let s = Arc::new(super::compose_stage(&self.src, cx, &self.deps).map_err(crate::readers::parse_error)?);
+        *stage = Some(s.clone());
+        Ok(s)
+    }
+}
 
 // ---------------------------------------------------------------- stage
 
@@ -26,7 +53,7 @@ enum Key {
 /// The composed stage, read a level at a time: at the top the stage's metadata, then
 /// the root prims; under a prim its metadata, its properties, then its children.
 pub struct StageTree {
-    layer: Layer,
+    stage: Arc<Stage>,
     /// Ids handed out, so asking twice gives the same ones.
     ids: Mutex<(Vec<Key>, HashMap<Key, u64>)>,
 }
@@ -35,8 +62,12 @@ pub struct StageTree {
 const STRUCTURE: &[&str] = &["primChildren", "properties", "typeName", "specifier"];
 
 impl StageTree {
-    pub fn new(layer: Layer) -> Self {
-        Self { layer, ids: Mutex::new((Vec::new(), HashMap::new())) }
+    pub fn new(stage: Arc<Stage>) -> Self {
+        Self { stage, ids: Mutex::new((Vec::new(), HashMap::new())) }
+    }
+
+    fn layer(&self) -> &Layer {
+        &self.stage.layer
     }
 
     fn id(&self, key: Key) -> NodeId {
@@ -56,11 +87,11 @@ impl StageTree {
     }
 
     fn fields<'a>(&'a self, path: &str) -> impl Iterator<Item = &'a (String, Value)> {
-        self.layer.spec(path).into_iter().flat_map(|s| s.fields.iter()).filter(|(n, _)| !STRUCTURE.contains(&n.as_str()))
+        self.layer().spec(path).into_iter().flat_map(|s| s.fields.iter()).filter(|(n, _)| !STRUCTURE.contains(&n.as_str()))
     }
 
     fn properties(&self, prim: &str) -> Vec<String> {
-        self.layer.field(prim, "properties").and_then(Value::as_tokens).unwrap_or_default().to_vec()
+        self.layer().field(prim, "properties").and_then(Value::as_tokens).unwrap_or_default().to_vec()
     }
 
     /// What `parent` holds, as keys.
@@ -71,14 +102,14 @@ impl StageTree {
                 if self.fields("/").next().is_some() {
                     keys.push(Key::StageMetadata);
                 }
-                keys.extend(self.layer.root_prims().into_iter().map(Key::Prim));
+                keys.extend(self.layer().root_prims().into_iter().map(Key::Prim));
                 keys
             }
             Some(Key::StageMetadata) => self.fields("/").map(|(n, _)| Key::Field("/".into(), n.clone())).collect(),
             Some(Key::Prim(p)) => {
                 let mut keys: Vec<Key> = self.fields(p).map(|(n, _)| Key::Field(p.clone(), n.clone())).collect();
                 keys.extend(self.properties(p).into_iter().map(|n| Key::Property(property_path(p, &n))));
-                keys.extend(self.layer.children(p).into_iter().map(Key::Prim));
+                keys.extend(self.layer().children(p).into_iter().map(Key::Prim));
                 keys
             }
             Some(Key::Field(..) | Key::Property(_)) => Vec::new(),
@@ -90,19 +121,19 @@ impl StageTree {
             Key::StageMetadata => ("Stage metadata".to_string(), format!("{} fields", self.fields("/").count()), true),
             Key::Prim(p) => {
                 let name = p.rsplit('/').next().unwrap_or(p).to_string();
-                let ty = self.layer.type_name(p).unwrap_or("");
-                let value = match self.layer.field(p, "specifier") {
+                let ty = self.layer().type_name(p).unwrap_or("");
+                let value = match self.layer().field(p, "specifier") {
                     Some(Value::Specifier(usd_lite::Specifier::Class)) => format!("class {ty}").trim_end().to_string(),
                     Some(Value::Specifier(usd_lite::Specifier::Over)) => format!("over {ty}").trim_end().to_string(),
                     _ => ty.to_string(),
                 };
-                let has = self.fields(p).next().is_some() || !self.properties(p).is_empty() || !self.layer.children(p).is_empty();
+                let has = self.fields(p).next().is_some() || !self.properties(p).is_empty() || !self.layer().children(p).is_empty();
                 (name, value, has)
             }
-            Key::Field(path, name) => (name.clone(), self.layer.field(path, name).map(summary).unwrap_or_default(), false),
+            Key::Field(path, name) => (name.clone(), self.layer().field(path, name).map(summary).unwrap_or_default(), false),
             Key::Property(path) => {
                 let name = path.rsplit_once('.').map_or(path.as_str(), |(_, n)| n).to_string();
-                (name, self.layer.spec(path).map(property_summary).unwrap_or_default(), false)
+                (name, self.layer().spec(path).map(property_summary).unwrap_or_default(), false)
             }
         };
         TreeNode::new(self.id(key), label, value, has_children)
@@ -126,7 +157,85 @@ impl TreeSource for StageTree {
     fn memory(&self) -> MemoryUse {
         // The arrays are counted where they're shared from (the scene's source); this is
         // the specs' own size, roughly.
-        MemoryUse::heap((self.layer.specs.len() * 128) as u64)
+        MemoryUse::heap((self.layer().specs.len() * 128) as u64)
+    }
+
+    /// A prim path (`/World/Car`) or a property path (`/World/Car.points`).
+    fn find(&self, path: &str) -> Result<Option<NodeId>> {
+        let key = match self.layer().spec(path) {
+            Some(spec) if spec.spec_type == usd_lite::SpecType::Prim => Key::Prim(path.to_string()),
+            Some(_) if path.contains('.') => Key::Property(path.to_string()),
+            _ => return Ok(None),
+        };
+        Ok(Some(self.id(key)))
+    }
+
+    fn path(&self, node: NodeId) -> Result<Option<String>> {
+        Ok(match self.key(node)? {
+            Key::Prim(p) | Key::Property(p) => Some(p),
+            Key::StageMetadata | Key::Field(..) => None,
+        })
+    }
+}
+
+/// USD's own links: a Stage prim (or property) and the line it starts on in the USDA
+/// text, when the root layer defines it; and the layer that defines it, in Layers.
+/// (A prim and its Scene nodes are linked through the scene's origins.)
+pub struct UsdLinks {
+    pub composed: Arc<Composed>,
+    /// Whether the file is USDA text, so its lines are the Source's lines.
+    pub text: bool,
+}
+
+impl Links for UsdLinks {
+    fn links(&self, doc: &Document, from: &Place, cx: &ParseContext) -> Result<Vec<Place>> {
+        let Some(stage_facet) = doc.facet_index("Stage") else { return Ok(Vec::new()) };
+        let tree = || -> Result<Option<Arc<dyn TreeSource>>> {
+            Ok(match doc.facet(stage_facet, cx)? {
+                Content::Tree(t) => Some(t),
+                _ => None,
+            })
+        };
+        match from {
+            Place::Node { facet, node } if *facet == stage_facet => {
+                let Some(tree) = tree()? else { return Ok(Vec::new()) };
+                let Some(path) = tree.path(*node)? else { return Ok(Vec::new()) };
+                let prim = path.split_once('.').map_or(path.as_str(), |(p, _)| p);
+                let stage = self.composed.get(cx)?;
+                let Some(source) = stage.sources.get(prim) else { return Ok(Vec::new()) };
+                let mut out = Vec::new();
+                if self.text
+                    && source.layer == 0
+                    && let Some(line) = source.line
+                {
+                    let line = u64::from(line.saturating_sub(1));
+                    out.push(Place::Lines(line..line + 1));
+                }
+                if let (Some(layers), Some(id)) = (doc.facet_index("Layers"), stage.layers.get(source.layer))
+                    && let Content::Tree(t) = doc.facet(layers, cx)?
+                    && let Some(node) = t.find(id)?
+                {
+                    out.push(Place::Node { facet: layers, node });
+                }
+                Ok(out)
+            }
+            // A line of the USDA text: the prim whose spec starts nearest above it.
+            Place::Lines(lines) if self.text => {
+                let stage = self.composed.get(cx)?;
+                let line = lines.start + 1;
+                let best = stage
+                    .sources
+                    .iter()
+                    .filter_map(|(prim, s)| Some((prim, s, u64::from(s.line?))))
+                    .filter(|(_, s, l)| s.layer == 0 && *l <= line)
+                    // The latest start; among prims sharing it, the one at its own path.
+                    .max_by_key(|(prim, s, l)| (*l, **prim == s.path, std::cmp::Reverse(prim.len())));
+                let Some((prim, ..)) = best else { return Ok(Vec::new()) };
+                let Some(tree) = tree()? else { return Ok(Vec::new()) };
+                Ok(tree.find(prim)?.map(|node| Place::Node { facet: stage_facet, node }).into_iter().collect())
+            }
+            _ => Ok(Vec::new()),
+        }
     }
 }
 
@@ -208,7 +317,7 @@ fn summary(v: &Value) -> String {
 /// expanded the first time only.
 pub fn layers_tree(root: &str, arcs: &[LayerArc], deps: Option<&Dependencies>) -> OwnedTree {
     let mut tree = OwnedTree::new();
-    let top = tree.add(None, file_name(root), "root layer");
+    let top = tree.add_at(None, file_name(root), "root layer", root);
     let mut shown = vec![root.to_string()];
     // (layer, its node), breadth first so a layer is expanded where it's met first.
     let mut queue = std::collections::VecDeque::from([(root.to_string(), top)]);
@@ -226,7 +335,13 @@ pub fn layers_tree(root: &str, arcs: &[LayerArc], deps: Option<&Dependencies>) -
                 (_, [one]) if arc.prim_count == 1 => format!(" · into {one}"),
                 (_, [first, ..]) => format!(" · into {} prims, first {first}", arc.prim_count),
             };
-            let child = tree.add(Some(node), arc.asset.clone(), format!("{} · {status}{into}", arc.kind.label()));
+            let label = arc.asset.clone();
+            let value = format!("{} · {status}{into}", arc.kind.label());
+            // A layer's node is where it's first met; its path is the layer's identifier.
+            let child = match &arc.layer {
+                Some(read) if !shown.contains(read) => tree.add_at(Some(node), label, value, read.clone()),
+                _ => tree.add(Some(node), label, value),
+            };
             if let Some(read) = &arc.layer
                 && !shown.contains(read)
             {

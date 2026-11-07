@@ -73,11 +73,12 @@ pub struct Document {
     facets: Vec<Facet>,
     metadata: Vec<(String, String)>,
     dependencies: Dependencies,
+    links: Vec<std::sync::Arc<dyn crate::Links>>,
 }
 
 impl Document {
     pub fn new(format: FormatInfo) -> Self {
-        Self { format, facets: Vec::new(), metadata: Vec::new(), dependencies: Dependencies::new() }
+        Self { format, facets: Vec::new(), metadata: Vec::new(), dependencies: Dependencies::new(), links: Vec::new() }
     }
 
     /// Adds a facet whose content is already made.
@@ -113,6 +114,45 @@ impl Document {
     pub fn with_dependencies_facet(self) -> Self {
         let table = std::sync::Arc::new(self.dependencies.table());
         self.with_facet(Role::Dependencies, "Dependencies", Content::Table(table))
+    }
+
+    /// Adds a source of links between this document's facets ([`Self::links`]).
+    pub fn with_links(mut self, links: impl crate::Links + 'static) -> Self {
+        self.links.push(std::sync::Arc::new(links));
+        self
+    }
+
+    /// Where `from` also is in this document's facets, or in the file. Each source's
+    /// answers are joined; a source that fails is left out, so one broken link doesn't
+    /// hide the others, and the error is returned only when every source failed.
+    pub fn links(&self, from: &crate::Place, cx: &ParseContext) -> Result<Vec<crate::Place>> {
+        let mut out = Vec::new();
+        let mut error = None;
+        let mut ok = false;
+        for source in &self.links {
+            match crate::reader::guard("links", || source.links(self, from, cx)) {
+                Ok(places) => {
+                    ok = true;
+                    for p in places {
+                        if p != *from && !out.contains(&p) {
+                            out.push(p);
+                        }
+                    }
+                }
+                Err(e) => {
+                    error.get_or_insert(e);
+                }
+            }
+        }
+        match error {
+            Some(e) if !ok => Err(e),
+            _ => Ok(out),
+        }
+    }
+
+    /// The index of the facet called `name`.
+    pub fn facet_index(&self, name: &str) -> Option<usize> {
+        self.facets.iter().position(|f| f.info.name == name)
     }
 
     pub fn format(&self) -> &FormatInfo {

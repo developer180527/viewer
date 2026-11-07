@@ -19,9 +19,11 @@
 use std::ops::Range;
 use std::sync::Arc;
 
+use std::collections::HashMap;
+
 use libfileparser_core::{
-    Category, Confidence, Content, Count, Dependencies, DependencyStatus, Detection, Document, FacetInfo, FormatInfo, Limit, Model, ParseContext,
-    ParseError, ReaderInfo, Result, Role, SceneDoc, TableInfo, TableSource, Unreadable,
+    Category, Confidence, Content, Count, Dependencies, DependencyStatus, Detection, Document, FacetInfo, FormatInfo, Limit, Links, Model,
+    ParseContext, ParseError, Place, ReaderInfo, Result, Role, SceneDoc, SceneItem, TableInfo, TableSource, Unreadable,
 };
 use scene_data::{AlphaMode, ColorSpace, CpuScene, ParamValue, SceneBuilder, SceneLimits, SceneRead, ShadingSource, Topology};
 
@@ -83,12 +85,13 @@ pub struct SceneDocument {
     textures: Option<Textures>,
     deps: Dependencies,
     facets: Option<Box<dyn FnOnce(Document) -> Document>>,
+    origins: Option<(SceneOrigins, &'static str)>,
 }
 
 impl SceneDocument {
     /// `reader` is the reader's id; `format` names what was read ("glTF binary (GLB)").
     pub fn new(reader: &'static str, format: impl Into<String>, scene: CpuScene) -> Self {
-        Self { reader, format: format.into(), scene, warnings: Vec::new(), textures: None, deps: Dependencies::new(), facets: None }
+        Self { reader, format: format.into(), scene, warnings: Vec::new(), textures: None, deps: Dependencies::new(), facets: None, origins: None }
     }
 
     /// Things the reader skipped or guessed; the first 20 are kept.
@@ -115,8 +118,15 @@ impl SceneDocument {
         self
     }
 
+    /// Where the scene's items came from, keyed by their path in the facet `facet`
+    /// (one of the format's own, a tree): links that facet's nodes and the Scene.
+    pub fn origins(mut self, origins: SceneOrigins, facet: &'static str) -> Self {
+        self.origins = Some((origins, facet));
+        self
+    }
+
     pub fn build(self) -> Result<Document> {
-        let Self { reader, format, scene, warnings, textures, deps, facets } = self;
+        let Self { reader, format, scene, warnings, textures, deps, facets, origins } = self;
         let read = scene.read();
         let stats = Stats::of(&read);
         if stats.placed == 0 {
@@ -139,6 +149,10 @@ impl SceneDocument {
         }
         if !deps.is_empty() {
             doc = doc.with_dependencies_facet();
+        }
+        doc = doc.with_links(SceneLinks { scene: scene.clone(), textures: textures.clone() });
+        if let Some((origins, facet)) = origins {
+            doc = doc.with_links(OriginLinks { origins, facet });
         }
         let materials = MaterialTable { scene: scene.clone(), textures: textures.clone() };
         if materials.scene.read().materials().iter().any(|m| m.material.source != ShadingSource::Default) {
@@ -174,6 +188,173 @@ impl SceneDocument {
             doc = doc.with_meta("Textures", note);
         }
         Ok(doc)
+    }
+}
+
+/// Whether a material is one of the file's own, and so a row of Materials.
+fn shown(m: &scene_data::MaterialEntry) -> bool {
+    m.material.source != ShadingSource::Default
+}
+
+/// Where a scene's items came from in the file, keyed by the path of what describes
+/// them in the format's structure facet: a USD prim path, a glTF JSON pointer
+/// (`/nodes/3`). One key may give several items (a prim drawn as one node per
+/// material), and an item has one key.
+#[derive(Default, Clone)]
+pub struct SceneOrigins {
+    by_key: HashMap<String, Vec<SceneItem>>,
+    by_item: HashMap<SceneItem, String>,
+}
+
+impl SceneOrigins {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn add(&mut self, key: impl Into<String>, item: SceneItem) {
+        let key = key.into();
+        if self.by_item.contains_key(&item) {
+            return;
+        }
+        self.by_item.insert(item, key.clone());
+        self.by_key.entry(key).or_default().push(item);
+    }
+
+    pub fn node(&mut self, key: impl Into<String>, id: scene_data::NodeId) {
+        self.add(key, SceneItem::Node(id.index() as u32));
+    }
+
+    pub fn mesh(&mut self, key: impl Into<String>, id: scene_data::MeshId) {
+        self.add(key, SceneItem::Mesh(id.index() as u32));
+    }
+
+    pub fn material(&mut self, key: impl Into<String>, id: scene_data::MaterialId) {
+        self.add(key, SceneItem::Material(id.index() as u32));
+    }
+
+    /// The items `key` gave.
+    pub fn items(&self, key: &str) -> &[SceneItem] {
+        self.by_key.get(key).map_or(&[], Vec::as_slice)
+    }
+
+    /// The key `item` came from.
+    pub fn key(&self, item: SceneItem) -> Option<&str> {
+        self.by_item.get(&item).map(String::as_str)
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.by_item.is_empty()
+    }
+}
+
+/// Links between the Scene and the format's structure facet, through [`SceneOrigins`].
+struct OriginLinks {
+    origins: SceneOrigins,
+    facet: &'static str,
+}
+
+impl Links for OriginLinks {
+    fn links(&self, doc: &Document, from: &Place, cx: &ParseContext) -> Result<Vec<Place>> {
+        let (Some(scene), Some(tree_facet)) = (doc.facet_index("Scene"), doc.facet_index(self.facet)) else { return Ok(Vec::new()) };
+        match from {
+            Place::Scene { facet, item } if *facet == scene => {
+                let Some(key) = self.origins.key(*item) else { return Ok(Vec::new()) };
+                let Content::Tree(tree) = doc.facet(tree_facet, cx)? else { return Ok(Vec::new()) };
+                Ok(tree.find(key)?.map(|node| Place::Node { facet: tree_facet, node }).into_iter().collect())
+            }
+            Place::Node { facet, node } if *facet == tree_facet => {
+                let Content::Tree(tree) = doc.facet(tree_facet, cx)? else { return Ok(Vec::new()) };
+                let Some(key) = tree.path(*node)? else { return Ok(Vec::new()) };
+                Ok(self.origins.items(&key).iter().map(|&item| Place::Scene { facet: scene, item }).collect())
+            }
+            _ => Ok(Vec::new()),
+        }
+    }
+}
+
+/// The links every 3D document has: a row of Materials and its material in the Scene
+/// (and the Textures rows of its maps), a row of Textures and its texture, and a scene
+/// node and its material's row.
+struct SceneLinks {
+    scene: CpuScene,
+    textures: Textures,
+}
+
+impl SceneLinks {
+    /// Material indices, in Materials row order.
+    fn material_rows(&self) -> Vec<u32> {
+        self.scene.read().materials().iter().enumerate().filter(|(_, m)| shown(m)).map(|(i, _)| i as u32).collect()
+    }
+
+    /// Texture indices, in Textures row order (the queued ones come first).
+    fn texture_rows(&self) -> Vec<u32> {
+        self.textures.rows().into_iter().map(|(id, ..)| id.index() as u32).collect()
+    }
+
+    /// The Materials row of material `m`, and the Textures rows of its maps.
+    fn of_material(&self, doc: &Document, m: u32) -> Vec<Place> {
+        let mut out = Vec::new();
+        if let Some(facet) = doc.facet_index("Materials")
+            && let Some(row) = self.material_rows().iter().position(|&i| i == m)
+        {
+            out.push(Place::Row { facet, row: row as u64 });
+        }
+        if let Some(facet) = doc.facet_index("Textures") {
+            let rows = self.texture_rows();
+            let read = self.scene.read();
+            for (_, t) in read.materials().get(m as usize).map(|e| e.material.textures.as_slice()).unwrap_or_default() {
+                if let Some(row) = rows.iter().position(|&r| r == t.index() as u32) {
+                    out.push(Place::Row { facet, row: row as u64 });
+                }
+            }
+        }
+        out
+    }
+}
+
+impl Links for SceneLinks {
+    fn links(&self, doc: &Document, from: &Place, _: &ParseContext) -> Result<Vec<Place>> {
+        let scene = doc.facet_index("Scene");
+        let materials = doc.facet_index("Materials");
+        let textures = doc.facet_index("Textures");
+        let in_scene = |item| scene.map(|facet| Place::Scene { facet, item });
+        Ok(match from {
+            Place::Row { facet, row } if Some(*facet) == materials => {
+                let Some(&m) = self.material_rows().get(*row as usize) else { return Ok(Vec::new()) };
+                let mut out: Vec<Place> = in_scene(SceneItem::Material(m)).into_iter().collect();
+                out.extend(self.of_material(doc, m).into_iter().filter(|p| p != from));
+                out
+            }
+            Place::Row { facet, row } if Some(*facet) == textures => {
+                let Some(&t) = self.texture_rows().get(*row as usize) else { return Ok(Vec::new()) };
+                let mut out: Vec<Place> = in_scene(SceneItem::Texture(t)).into_iter().collect();
+                // The materials that use it.
+                let read = self.scene.read();
+                let users: Vec<u32> = read.materials().iter().enumerate().filter(|(_, m)| m.material.textures.iter().any(|(_, id)| id.index() as u32 == t)).map(|(i, _)| i as u32).collect();
+                drop(read);
+                if let Some(facet) = materials {
+                    let rows = self.material_rows();
+                    out.extend(users.iter().filter_map(|u| rows.iter().position(|r| r == u)).map(|row| Place::Row { facet, row: row as u64 }));
+                }
+                out
+            }
+            Place::Scene { facet, item } if Some(*facet) == scene => match *item {
+                SceneItem::Material(m) => self.of_material(doc, m),
+                SceneItem::Texture(t) => match (textures, self.texture_rows().iter().position(|&r| r == t)) {
+                    (Some(facet), Some(row)) => vec![Place::Row { facet, row: row as u64 }],
+                    _ => Vec::new(),
+                },
+                SceneItem::Node(n) => {
+                    let material = self.scene.read().nodes().get(n as usize).and_then(|e| e.node.material).map(|m| m.index() as u32);
+                    match (material, materials) {
+                        (Some(m), Some(facet)) => self.material_rows().iter().position(|&i| i == m).map(|row| Place::Row { facet, row: row as u64 }).into_iter().collect(),
+                        _ => Vec::new(),
+                    }
+                }
+                _ => Vec::new(),
+            },
+            _ => Vec::new(),
+        })
     }
 }
 
@@ -218,7 +399,7 @@ impl MaterialTable {
         read.materials()
             .iter()
             .enumerate()
-            .filter(|(_, m)| m.material.source != ShadingSource::Default)
+            .filter(|(_, m)| shown(m))
             .map(|(i, m)| {
                 let m = &m.material;
                 let name = if m.name.is_empty() { format!("material {i}") } else { m.name.clone() };
