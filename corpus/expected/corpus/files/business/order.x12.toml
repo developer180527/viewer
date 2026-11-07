@@ -1,0 +1,16 @@
+loader = "x12"
+format = "ANSI X12"
+model = "Table"
+
+[table]
+rows = 8
+columns = 17
+headers = ["Segment", "01", "02", "03", "04", "05", "06", "07", "08", "09", "10", "11", "12", "13", "14", "15", "16"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Segments = "8"
+Sender = "SENDER"
+Receiver = "RECEIVER"
+"Transaction sets" = "850"
+Transactions = "1"

@@ -1,0 +1,14 @@
+loader = "swift"
+format = "SWIFT MT"
+model = "Table"
+
+[table]
+rows = 5
+columns = 4
+headers = ["Message", "Tag", "Field", "Value"]
+kinds = ["Number", "Text", "Text", "Text"]
+
+[metadata]
+Messages = "1"
+"Message types" = "MT103"
+Fields = "5"

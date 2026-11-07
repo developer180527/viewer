@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<gxl><graph id="g" edgemode="directed">
+  <node id="a"><attr name="name"><string>Alpha</string></attr></node>
+  <node id="b"><attr name="name"><string>Beta</string></attr></node>
+  <edge from="a" to="b"/>
+</graph></gxl>

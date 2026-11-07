@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<tmx version="1.4"><header srclang="en" datatype="plaintext" segtype="sentence" adminlang="en" creationtool="x" creationtoolversion="1" o-tmf="x"/>
+<body>
+  <tu tuid="1"><tuv xml:lang="en"><seg>cat</seg></tuv><tuv xml:lang="es"><seg>gato</seg></tuv></tu>
+  <tu tuid="2"><tuv xml:lang="en"><seg>dog</seg></tuv><tuv xml:lang="es"><seg>perro</seg></tuv></tu>
+</body></tmx>

@@ -1,0 +1,10 @@
+loader = "kdl"
+format = "KDL"
+model = "Tree"
+
+[tree]
+nodes = 5
+top = ["package"]
+
+[metadata]
+Nodes = "5"

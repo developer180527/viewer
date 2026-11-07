@@ -1,0 +1,14 @@
+loader = "edifact"
+format = "UN/EDIFACT"
+model = "Table"
+
+[table]
+rows = 6
+columns = 6
+headers = ["Segment", "01", "02", "03", "04", "05"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Segments = "6"
+"Message types" = "ORDERS"
+Messages = "1"

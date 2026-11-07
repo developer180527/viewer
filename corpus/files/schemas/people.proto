@@ -1,0 +1,21 @@
+syntax = "proto3";
+package demo;
+
+// A person.
+message Person {
+  string name = 1;
+  repeated string emails = 2;
+  message Address {
+    string city = 1;
+  }
+  Address home = 3;
+}
+
+enum Kind {
+  HUMAN = 0;
+  ROBOT = 1;
+}
+
+service People {
+  rpc Get(GetRequest) returns (Person);
+}

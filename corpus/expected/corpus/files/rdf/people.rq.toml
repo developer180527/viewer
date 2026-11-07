@@ -1,0 +1,10 @@
+loader = "sparql"
+format = "SPARQL query"
+model = "Tree"
+
+[tree]
+nodes = 9
+top = ["PREFIX", "SELECT", "WHERE", "modifier", "modifier"]
+
+[metadata]
+Nodes = "9"

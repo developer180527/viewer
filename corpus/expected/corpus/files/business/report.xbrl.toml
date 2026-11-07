@@ -1,0 +1,13 @@
+loader = "xbrl"
+format = "XBRL"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["Concept", "Value", "Period", "Unit", "Decimals", "Context"]
+kinds = ["Text", "Mixed", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Facts = "2"
+Nodes = "22"

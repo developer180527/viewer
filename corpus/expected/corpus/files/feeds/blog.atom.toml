@@ -1,0 +1,14 @@
+loader = "atom"
+format = "Atom"
+model = "Table"
+
+[table]
+rows = 1
+columns = 5
+headers = ["Title", "Published", "Link", "Author", "Summary"]
+kinds = ["Text", "Date", "Text", "Text", "Text"]
+
+[metadata]
+Items = "1"
+Nodes = "12"
+Title = "Example Blog"

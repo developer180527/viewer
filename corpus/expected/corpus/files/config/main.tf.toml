@@ -1,0 +1,13 @@
+loader = "hcl"
+format = "Terraform"
+model = "Table"
+
+[table]
+rows = 3
+columns = 4
+headers = ["Type", "Name", "Attributes", "Blocks"]
+kinds = ["Text", "Text", "Number", "Number"]
+
+[metadata]
+Blocks = "3"
+Nodes = "10"

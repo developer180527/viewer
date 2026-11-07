@@ -1,0 +1,10 @@
+loader = "nickel"
+format = "Nickel"
+model = "Tree"
+
+[tree]
+nodes = 5
+top = ["(record)"]
+
+[metadata]
+Nodes = "5"

@@ -1,0 +1,4 @@
+/* The window title */
+"title" = "Visionneuse";
+/* Opens a file */
+"open" = "Ouvrir…";

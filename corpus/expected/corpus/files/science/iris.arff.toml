@@ -1,0 +1,13 @@
+loader = "arff"
+format = "ARFF"
+model = "Table"
+
+[table]
+rows = 3
+columns = 3
+headers = ["sepallength", "sepalwidth", "class"]
+kinds = ["Number", "Number", "Text"]
+
+[metadata]
+Instances = "3"
+Relation = "iris"

@@ -36,7 +36,9 @@ impl FormatLoader for ReaderLoader {
             // only also reads (an SVG, to `-data`), loses to a reader that owns it.
             Confidence::Extension if self.0.info().matches_extension(name) => viewer_core::Confidence::EXTENSION,
             Confidence::Extension => viewer_core::Confidence::LIKELY,
-            Confidence::Content => viewer_core::Confidence::LIKELY,
+            // What the content proves outranks an extension, as in libfileparser's own
+            // order: an OpenAPI description named `.yaml` is OpenAPI, not YAML.
+            Confidence::Content => viewer_core::Confidence(viewer_core::Confidence::EXTENSION.0 + 5),
             Confidence::Magic => viewer_core::Confidence::MAGIC,
             // A format inside a generic container (USDZ, DOCX) outranks the container.
             Confidence::Certain => viewer_core::Confidence(viewer_core::Confidence::MAGIC.0 + 1),

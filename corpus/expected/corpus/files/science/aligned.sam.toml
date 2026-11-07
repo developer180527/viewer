@@ -1,0 +1,14 @@
+loader = "sam"
+format = "SAM"
+model = "Table"
+
+[table]
+rows = 2
+columns = 12
+headers = ["Read", "Flag", "Reference", "Position", "Mapping quality", "CIGAR", "Mate reference", "Mate position", "Template length", "Sequence", "Quality", "Tags"]
+kinds = ["Text", "Number", "Text", "Number", "Number", "Text", "Text", "Number", "Number", "Text", "Text", "Text"]
+
+[metadata]
+Alignments = "2"
+References = "1"
+"Read groups" = "0"

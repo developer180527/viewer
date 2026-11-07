@@ -1,0 +1,15 @@
+loader = "pdb"
+format = "Protein Data Bank"
+model = "Table"
+
+[table]
+rows = 3
+columns = 12
+headers = ["Record", "Serial", "Atom", "Residue", "Chain", "Residue number", "X", "Y", "Z", "Occupancy", "B-factor", "Element"]
+kinds = ["Text", "Number", "Text", "Text", "Text", "Number", "Number", "Number", "Number", "Number", "Number", "Text"]
+
+[metadata]
+Atoms = "3"
+Models = "1"
+Header = "HYDROLASE                               01-JAN-00   1ABC"
+Title = "AN EXAMPLE STRUCTURE"

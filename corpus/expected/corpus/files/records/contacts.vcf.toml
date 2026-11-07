@@ -1,0 +1,13 @@
+loader = "vcard"
+format = "vCard"
+model = "Table"
+
+[table]
+rows = 2
+columns = 8
+headers = ["Name", "Email", "Phone", "Organization", "Title", "Address", "Birthday", "Note"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text", "Date", "Text"]
+
+[metadata]
+Contacts = "2"
+Nodes = "14"

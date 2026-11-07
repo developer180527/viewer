@@ -1,0 +1,15 @@
+loader = "vcf"
+format = "Variant Call Format"
+model = "Table"
+
+[table]
+rows = 2
+columns = 10
+headers = ["CHROM", "POS", "ID", "REF", "ALT", "QUAL", "FILTER", "INFO", "FORMAT", "NA00001"]
+kinds = ["Text", "Number", "Text", "Text", "Text", "Number", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Variants = "2"
+Samples = "1"
+fileformat = "VCFv4.2"
+reference = "GRCh38"

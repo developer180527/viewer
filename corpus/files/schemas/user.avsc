@@ -1,0 +1,5 @@
+{"type": "record", "name": "User", "namespace": "com.example", "fields": [
+  {"name": "id", "type": "long", "doc": "Key"},
+  {"name": "email", "type": ["null", "string"], "default": null},
+  {"name": "tags", "type": {"type": "array", "items": "string"}}
+]}

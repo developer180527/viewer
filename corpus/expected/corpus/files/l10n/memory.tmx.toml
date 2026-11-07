@@ -1,0 +1,13 @@
+loader = "tmx"
+format = "Translation memory (TMX)"
+model = "Table"
+
+[table]
+rows = 2
+columns = 4
+headers = ["ID", "en", "es", "Note"]
+kinds = ["Text", "Text", "Text", "Text"]
+
+[metadata]
+Units = "2"
+Nodes = "27"

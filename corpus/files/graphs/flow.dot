@@ -1,0 +1,8 @@
+digraph Flow {
+  rankdir=LR;
+  start [label="Start", shape=circle];
+  check [label="Valid?", shape=diamond];
+  start -> check [label="submit"];
+  check -> done [label="yes"];
+  check -> start [label="no"];
+}

@@ -1,0 +1,12 @@
+loader = "gff"
+format = "GFF3"
+model = "Table"
+
+[table]
+rows = 3
+columns = 12
+headers = ["Sequence", "Source", "Type", "Start", "End", "Score", "Strand", "Phase", "ID", "Name", "Parent", "Attributes"]
+kinds = ["Text", "Text", "Text", "Number", "Number", "Number", "Text", "Number", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Features = "3"

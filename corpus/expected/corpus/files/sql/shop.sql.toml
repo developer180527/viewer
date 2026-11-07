@@ -1,0 +1,13 @@
+loader = "sql"
+format = "SQL"
+model = "Table"
+
+[table]
+rows = 5
+columns = 4
+headers = ["Statement", "Object", "Rows", "Text"]
+kinds = ["Text", "Text", "Number", "Text"]
+
+[metadata]
+Statements = "5"
+"Schema objects" = "2"

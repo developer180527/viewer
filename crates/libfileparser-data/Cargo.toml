@@ -8,10 +8,19 @@ license.workspace = true
 # A feature per family (docs/design/libfileparser.md §2.1). Structured and delimited
 # formats are always in.
 [features]
-default = ["config", "logs", "geo"]
+default = ["config", "logs", "geo", "feeds", "l10n", "records", "sql", "schemas", "rdf", "graphs", "science", "business"]
 config = []
 logs = []
 geo = ["dep:zip"]
+feeds = []
+l10n = []
+records = []
+sql = []
+schemas = []
+rdf = ["dep:oxttl", "dep:oxrdfxml", "dep:oxrdf"]
+graphs = []
+science = []
+business = []
 
 [dependencies]
 libfileparser-core.workspace = true
@@ -23,6 +32,13 @@ quick-xml = "0.41"
 plist = { version = "1", default-features = false }
 # KMZ (feature `geo`): pure-Rust inflate only.
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
+
+# RDF (feature `rdf`): Oxigraph's parsers, pure Rust. Not on WASM: they need a source
+# of randomness (`getrandom`) the browser target doesn't have without set-up.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+oxttl = { version = "0.2", optional = true }
+oxrdfxml = { version = "0.2", optional = true }
+oxrdf = { version = "0.3", optional = true }
 
 [dev-dependencies]
 libfileparser-testkit.workspace = true

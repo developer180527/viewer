@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gexf xmlns="http://gexf.net/1.3" version="1.3">
+  <graph defaultedgetype="directed">
+    <attributes class="node"><attribute id="0" title="url" type="string"/></attributes>
+    <nodes>
+      <node id="0" label="Gephi"><attvalues><attvalue for="0" value="https://gephi.org"/></attvalues></node>
+      <node id="1" label="Web"/>
+    </nodes>
+    <edges><edge id="0" source="0" target="1" weight="2"/></edges>
+  </graph>
+</gexf>

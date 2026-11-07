@@ -1,0 +1,14 @@
+loader = "xspf"
+format = "XSPF playlist"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["Title", "Creator", "Album", "Track", "Duration (s)", "Location"]
+kinds = ["Text", "Text", "Text", "Number", "Number", "Text"]
+
+[metadata]
+Tracks = "2"
+Nodes = "17"
+Title = "Mix"

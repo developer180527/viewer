@@ -1,0 +1,8 @@
+<!DOCTYPE book PUBLIC "-//OASIS//DTD DocBook V4.1//EN">
+<book>
+<title>Guide</title>
+<chapter><title>Start</title>
+<para>First paragraph.
+<para>Second paragraph.
+</chapter>
+</book>

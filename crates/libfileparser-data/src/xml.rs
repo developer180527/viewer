@@ -132,16 +132,24 @@ pub(crate) fn parse(bytes: &[u8], cx: &ParseContext) -> Result<DataTree> {
 }
 
 /// Places pending text as a `#text` child, before the element that follows it.
+/// Text between elements, its surrounding white space kept as one space, so inline
+/// markup reads as written: `Hello <b>you</b>` is "Hello " then "you".
+pub(crate) fn spaced(text: &str, trimmed: &str) -> String {
+    let lead = if text.starts_with(char::is_whitespace) { " " } else { "" };
+    let trail = if text.ends_with(char::is_whitespace) { " " } else { "" };
+    format!("{lead}{trimmed}{trail}")
+}
+
 fn flush(b: &mut Builder, open: &mut Open, depth: usize) -> Result<()> {
     let text = std::mem::take(&mut open.text);
-    let text = text.trim();
-    if !text.is_empty() {
-        let lines = text.matches('\n').count() as u32;
+    let trimmed = text.trim();
+    if !trimmed.is_empty() {
+        let lines = trimmed.matches('\n').count() as u32;
         b.add(
             Some(open.id),
             depth,
             "#text",
-            text.to_string(),
+            spaced(&text, trimmed),
             ValueKind::Text,
             open.text_line..open.text_line + lines + 1,
         )?;

@@ -1,0 +1,12 @@
+version: 1
+
+dn: cn=Ann,ou=people,dc=example,dc=com
+objectClass: top
+objectClass: person
+cn: Ann
+mail: ann@example.com
+
+dn: cn=Bob,ou=people,dc=example,dc=com
+objectClass: person
+cn: Bob
+description:: aMOpbGxv

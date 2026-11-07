@@ -1,0 +1,15 @@
+loader = "openapi"
+format = "OpenAPI 3.1.0"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["Method", "Path", "Operation ID", "Summary", "Tags", "Responses"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Operations = "2"
+Nodes = "20"
+Title = "Pets"
+"API version" = "1.0.0"

@@ -1,0 +1,13 @@
+loader = "dimacs"
+format = "DIMACS CNF"
+model = "Table"
+
+[table]
+rows = 2
+columns = 2
+headers = ["Literals", "Size"]
+kinds = ["Text", "Number"]
+
+[metadata]
+Clauses = "2"
+Problem = "cnf 3 2"

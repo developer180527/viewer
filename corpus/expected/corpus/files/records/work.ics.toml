@@ -1,0 +1,15 @@
+loader = "icalendar"
+format = "iCalendar"
+model = "Table"
+
+[table]
+rows = 2
+columns = 9
+headers = ["Kind", "Summary", "Start", "End", "Location", "Status", "Organizer", "Repeats", "Description"]
+kinds = ["Text", "Text", "Date", "Date", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Events = "2"
+Nodes = "16"
+Calendar = "Work"
+"Made by" = "-//Example//Calendar//EN"

@@ -1,0 +1,12 @@
+loader = "cron"
+format = "Crontab"
+model = "Table"
+
+[table]
+rows = 3
+columns = 7
+headers = ["Minute", "Hour", "Day", "Month", "Weekday", "Command", "Schedule"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Jobs = "3"

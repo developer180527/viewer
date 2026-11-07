@@ -1,0 +1,6 @@
+HEADER    HYDROLASE                               01-JAN-00   1ABC
+TITLE     AN EXAMPLE STRUCTURE
+ATOM      1  N   MET A   1      11.104   6.134  -6.504  1.00 21.45           N
+ATOM      2  CA  MET A   1      11.639   6.071  -5.147  1.00 21.10           C
+HETATM    3  O   HOH A 101       1.000   2.000   3.000  0.50 10.00           O
+END

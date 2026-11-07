@@ -1,0 +1,13 @@
+loader = "turtle"
+format = "Turtle"
+model = "Table"
+
+[table]
+rows = 6
+columns = 5
+headers = ["Subject", "Predicate", "Object", "Datatype", "Language"]
+kinds = ["Text", "Text", "Mixed", "Text", "Text"]
+
+[metadata]
+Statements = "6"
+Subjects = "2"

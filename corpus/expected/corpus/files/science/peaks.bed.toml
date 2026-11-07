@@ -1,0 +1,12 @@
+loader = "bed"
+format = "BED"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["Chromosome", "Start", "End", "Name", "Score", "Strand"]
+kinds = ["Text", "Number", "Number", "Text", "Number", "Text"]
+
+[metadata]
+Regions = "2"

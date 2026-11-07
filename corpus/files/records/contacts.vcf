@@ -1,0 +1,14 @@
+BEGIN:VCARD
+VERSION:3.0
+N:Lovelace;Ada;;;
+FN:Ada Lovelace
+EMAIL;TYPE=work:ada@example.com
+TEL;TYPE=cell:+44 20 7946 0000
+ORG:Analytical Engines
+BDAY:1815-12-10
+END:VCARD
+BEGIN:VCARD
+VERSION:3.0
+FN:Alan Turing
+EMAIL:alan@example.com
+END:VCARD

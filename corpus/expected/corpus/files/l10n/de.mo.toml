@@ -1,0 +1,14 @@
+loader = "mo"
+format = "gettext compiled catalog (MO)"
+model = "Table"
+
+[table]
+rows = 3
+columns = 4
+headers = ["Context", "Source", "Plural", "Translation"]
+kinds = ["Text", "Text", "Text", "Text"]
+
+[metadata]
+Messages = "3"
+Language = "de"
+Plural-Forms = "nplurals=2; plural=(n != 1);"

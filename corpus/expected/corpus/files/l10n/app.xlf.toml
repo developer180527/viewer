@@ -1,0 +1,15 @@
+loader = "xliff"
+format = "XLIFF 1.2"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["ID", "Source", "Target", "State", "Note", "File"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Units = "2"
+Nodes = "24"
+"Source language" = "en"
+"Target language" = "fr"

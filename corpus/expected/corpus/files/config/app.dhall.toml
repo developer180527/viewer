@@ -1,0 +1,10 @@
+loader = "dhall"
+format = "Dhall"
+model = "Tree"
+
+[tree]
+nodes = 2
+top = ["let", "in"]
+
+[metadata]
+Nodes = "2"

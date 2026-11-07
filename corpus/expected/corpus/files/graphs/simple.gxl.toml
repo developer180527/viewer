@@ -1,0 +1,14 @@
+loader = "gxl"
+format = "GXL"
+model = "Table"
+
+[table]
+rows = 2
+columns = 2
+headers = ["ID", "name"]
+kinds = ["Text", "Text"]
+
+[metadata]
+Nodes = "2"
+Edges = "1"
+Directed = "yes"

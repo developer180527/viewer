@@ -1,0 +1,12 @@
+loader = "fixed-width"
+format = "Fixed-width table"
+model = "Table"
+
+[table]
+rows = 3
+columns = 3
+headers = ["NAME", "AGE", "CITY"]
+kinds = ["Text", "Number", "Text"]
+
+[metadata]
+Rows = "3"

@@ -1,0 +1,14 @@
+loader = "rss"
+format = "RSS 2.0"
+model = "Table"
+
+[table]
+rows = 2
+columns = 5
+headers = ["Title", "Published", "Link", "Author", "Summary"]
+kinds = ["Text", "Date", "Text", "Text", "Text"]
+
+[metadata]
+Items = "2"
+Nodes = "17"
+Title = "Example News"

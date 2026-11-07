@@ -1,0 +1,14 @@
+loader = "graph-gml"
+format = "Graph Modelling Language"
+model = "Table"
+
+[table]
+rows = 2
+columns = 3
+headers = ["ID", "Label", "club"]
+kinds = ["Mixed", "Text", "Text"]
+
+[metadata]
+Nodes = "2"
+Edges = "1"
+Directed = "no"

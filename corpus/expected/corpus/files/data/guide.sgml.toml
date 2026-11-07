@@ -1,0 +1,10 @@
+loader = "sgml"
+format = "SGML"
+model = "Tree"
+
+[tree]
+nodes = 7
+top = ["book"]
+
+[metadata]
+Nodes = "7"

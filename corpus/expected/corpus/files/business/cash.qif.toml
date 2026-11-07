@@ -1,0 +1,12 @@
+loader = "qif"
+format = "Quicken Interchange Format"
+model = "Table"
+
+[table]
+rows = 2
+columns = 9
+headers = ["Date", "Amount", "Payee", "Memo", "Category", "Number", "Cleared", "Splits", "Account type"]
+kinds = ["Date", "Number", "Text", "Text", "Text", "Text", "Text", "Number", "Text"]
+
+[metadata]
+Transactions = "2"

@@ -1,0 +1,12 @@
+data_1ABC
+_entry.id 1ABC
+_struct.title 'An example structure'
+loop_
+_atom_site.group_PDB
+_atom_site.id
+_atom_site.type_symbol
+_atom_site.Cartn_x
+_atom_site.Cartn_y
+_atom_site.Cartn_z
+ATOM 1 N 11.104 6.134 -6.504
+ATOM 2 C 11.639 6.071 -5.147

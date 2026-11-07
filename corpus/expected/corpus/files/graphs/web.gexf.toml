@@ -1,0 +1,14 @@
+loader = "gexf"
+format = "GEXF"
+model = "Table"
+
+[table]
+rows = 2
+columns = 3
+headers = ["ID", "Label", "url"]
+kinds = ["Text", "Text", "Text"]
+
+[metadata]
+Nodes = "2"
+Edges = "1"
+Directed = "yes"

@@ -1,0 +1,15 @@
+loader = "ofx"
+format = "OFX 1"
+model = "Table"
+
+[table]
+rows = 2
+columns = 8
+headers = ["Date", "Amount", "Name", "Memo", "Type", "Check", "ID", "Account"]
+kinds = ["Date", "Number", "Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Transactions = "2"
+Nodes = "25"
+Currency = "USD"
+Balance = "1457.50"

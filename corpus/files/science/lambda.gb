@@ -1,0 +1,11 @@
+LOCUS       NC_001416              48502 bp    DNA     linear   PHG 28-APR-2023
+DEFINITION  Escherichia phage Lambda, complete genome.
+ACCESSION   NC_001416
+  ORGANISM  Escherichia phage Lambda
+FEATURES             Location/Qualifiers
+     source          1..48502
+     gene            191..736
+                     /gene="nu1"
+ORIGIN
+        1 gggcggcgac ctcgcgggtt
+//

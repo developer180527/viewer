@@ -1,0 +1,6 @@
+{
+  "@@locale": "en",
+  "hello": "Hello {name}",
+  "@hello": {"description": "Greets the user", "placeholders": {"name": {"type": "String"}}},
+  "bye": "Goodbye"
+}

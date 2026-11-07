@@ -1,0 +1,13 @@
+loader = "strings"
+format = "Strings file"
+model = "Table"
+
+[table]
+rows = 2
+columns = 3
+headers = ["Key", "Value", "Comment"]
+kinds = ["Text", "Text", "Text"]
+
+[metadata]
+Strings = "2"
+Encoding = "UTF-8"

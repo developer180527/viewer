@@ -1,0 +1,12 @@
+loader = "m3u"
+format = "HLS playlist"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["Title", "Duration (s)", "Location", "Bandwidth", "Resolution", "Codecs"]
+kinds = ["Text", "Number", "Text", "Number", "Text", "Text"]
+
+[metadata]
+Entries = "2"

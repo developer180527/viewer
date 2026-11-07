@@ -1,0 +1,13 @@
+loader = "trix"
+format = "TriX"
+model = "Table"
+
+[table]
+rows = 1
+columns = 6
+headers = ["Subject", "Predicate", "Object", "Datatype", "Language", "Graph"]
+kinds = ["Text", "Text", "Mixed", "Text", "Text", "Text"]
+
+[metadata]
+Statements = "1"
+Subjects = "1"

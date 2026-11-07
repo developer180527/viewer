@@ -1,0 +1,13 @@
+loader = "fix"
+format = "FIX messages"
+model = "Table"
+
+[table]
+rows = 2
+columns = 9
+headers = ["Type", "Sequence", "Sent", "Sender", "Target", "Symbol", "Side", "Quantity", "Price"]
+kinds = ["Text", "Number", "Date", "Text", "Text", "Text", "Text", "Number", "Number"]
+
+[metadata]
+Messages = "2"
+Nodes = "24"

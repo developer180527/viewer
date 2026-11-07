@@ -1,0 +1,14 @@
+loader = "xsd"
+format = "XML Schema"
+model = "Table"
+
+[table]
+rows = 3
+columns = 4
+headers = ["Kind", "Name", "Type", "Documentation"]
+kinds = ["Text", "Text", "Text", "Text"]
+
+[metadata]
+Definitions = "3"
+Nodes = "18"
+"Target namespace" = "urn:orders"

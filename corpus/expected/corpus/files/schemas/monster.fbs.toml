@@ -1,0 +1,13 @@
+loader = "flatbuffers"
+format = "FlatBuffers schema"
+model = "Table"
+
+[table]
+rows = 1
+columns = 4
+headers = ["Name", "Kind", "Members", "In"]
+kinds = ["Text", "Text", "Number", "Text"]
+
+[metadata]
+Types = "1"
+Nodes = "5"

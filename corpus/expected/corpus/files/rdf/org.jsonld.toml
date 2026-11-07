@@ -1,0 +1,12 @@
+loader = "jsonld"
+format = "JSON-LD"
+model = "Table"
+
+[table]
+rows = 3
+columns = 4
+headers = ["ID", "Type", "Properties", "Name"]
+kinds = ["Text", "Text", "Number", "Text"]
+
+[metadata]
+Nodes = "12"

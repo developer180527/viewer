@@ -93,12 +93,14 @@ pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
     // Each document's top-level node.
     let mut docs: Vec<u32> = Vec::new();
     let mut anchors: HashMap<usize, String> = HashMap::new();
+    let last_line = text.lines().count().saturating_sub(1) as u32;
     for event in Parser::new_from_str(text) {
         let (event, span) = event.map_err(|e| {
             let m = e.marker();
             ParseError::corrupt_at(format!("YAML: {}", e.info()), Position::line_column(m.line() as u64, m.col() as u64 + 1))
         })?;
-        let line = span.start.line().saturating_sub(1) as u32;
+        // An end marker at the end of the file is on the line after the last.
+        let line = (span.start.line().saturating_sub(1) as u32).min(last_line);
         match event {
             Event::Scalar(value, style, anchor, tag) => {
                 let Some((parent, label)) = place(&mut stack, docs.len(), false, Some(&value))
@@ -117,7 +119,7 @@ pub(crate) fn parse(text: &str, cx: &ParseContext) -> Result<DataTree> {
                     .end
                     .line()
                     .saturating_sub(1)
-                    .max(span.start.line().saturating_sub(1)) as u32;
+                    .max(span.start.line().saturating_sub(1)).min(last_line as usize) as u32;
                 let id = b.add(
                     parent,
                     stack.len() + 1,

@@ -1,0 +1,7 @@
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {"@id": "#org", "@type": "Organization", "name": "Acme"},
+    {"@id": "#ann", "@type": "Person", "name": "Ann", "worksFor": {"@id": "#org"}}
+  ]
+}

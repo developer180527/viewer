@@ -1,0 +1,10 @@
+loader = "cue"
+format = "CUE"
+model = "Tree"
+
+[tree]
+nodes = 5
+top = ["package", "#Config", "config"]
+
+[metadata]
+Nodes = "5"

@@ -1,0 +1,10 @@
+# The API
+type Query {
+  user(id: ID!): User
+  users(first: Int, after: String): [User!]!
+}
+"""A person"""
+type User {
+  id: ID!
+  name: String
+}

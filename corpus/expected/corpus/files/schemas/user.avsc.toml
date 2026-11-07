@@ -1,0 +1,13 @@
+loader = "avro"
+format = "Avro schema"
+model = "Table"
+
+[table]
+rows = 3
+columns = 5
+headers = ["Record", "Field", "Type", "Default", "Doc"]
+kinds = ["Text", "Text", "Text", "Mixed", "Text"]
+
+[metadata]
+Fields = "3"
+Nodes = "19"

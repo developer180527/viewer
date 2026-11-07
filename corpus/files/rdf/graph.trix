@@ -1,0 +1,6 @@
+<?xml version="1.0"?>
+<TriX xmlns="http://www.w3.org/2004/03/trix/trix-1/">
+  <graph><uri>http://example.com/g</uri>
+    <triple><uri>http://example.com/ann</uri><uri>http://xmlns.com/foaf/0.1/name</uri><plainLiteral>Ann</plainLiteral></triple>
+  </graph>
+</TriX>

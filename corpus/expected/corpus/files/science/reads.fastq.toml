@@ -1,0 +1,12 @@
+loader = "fastq"
+format = "FASTQ"
+model = "Table"
+
+[table]
+rows = 2
+columns = 5
+headers = ["ID", "Description", "Length", "Mean quality", "Sequence"]
+kinds = ["Text", "Text", "Number", "Number", "Text"]
+
+[metadata]
+Reads = "2"

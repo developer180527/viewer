@@ -1,0 +1,8 @@
+@read1 lane=1
+ACGTACGTAC
++
+IIIIIIIIII
+@read2
+GGCC
++
+!!!!

@@ -1,0 +1,14 @@
+loader = "po"
+format = "gettext catalog (PO)"
+model = "Table"
+
+[table]
+rows = 4
+columns = 7
+headers = ["Context", "Source", "Plural", "Translation", "Flags", "References", "Comments"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Messages = "4"
+Language = "de"
+Plural-Forms = "nplurals=2; plural=(n != 1);"

@@ -1,0 +1,12 @@
+loader = "pls"
+format = "PLS playlist"
+model = "Table"
+
+[table]
+rows = 2
+columns = 3
+headers = ["Title", "Duration (s)", "Location"]
+kinds = ["Text", "Number", "Text"]
+
+[metadata]
+Entries = "2"

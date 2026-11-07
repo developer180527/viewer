@@ -87,6 +87,9 @@ path = "corpus/files/data/config.yaml"
 path = "corpus/files/data/feed.xml"
 
 [[file]]
+path = "corpus/files/data/settings.xml"
+
+[[file]]
 path = "corpus/files/data/Info.plist"
 
 [[file]]
@@ -130,6 +133,218 @@ path = "corpus/files/data/events.gelf"
 
 [[file]]
 path = "corpus/files/data/session.har"
+
+[[file]]
+path = "corpus/files/data/guide.sgml"
+
+[[file]]
+path = "corpus/files/data/people.fwf"
+
+# ---------------------------------------------------------------- feeds
+
+[[file]]
+path = "corpus/files/feeds/blog.atom"
+
+[[file]]
+path = "corpus/files/feeds/mix.xspf"
+
+[[file]]
+path = "corpus/files/feeds/news.rss"
+
+[[file]]
+path = "corpus/files/feeds/radio.pls"
+
+[[file]]
+path = "corpus/files/feeds/stream.m3u8"
+
+# ---------------------------------------------------------------- l10n
+
+[[file]]
+path = "corpus/files/l10n/Localizable.strings"
+
+[[file]]
+path = "corpus/files/l10n/Strings.resx"
+
+[[file]]
+path = "corpus/files/l10n/app.xlf"
+
+[[file]]
+path = "corpus/files/l10n/app_en.arb"
+
+[[file]]
+path = "corpus/files/l10n/de.mo"
+
+[[file]]
+path = "corpus/files/l10n/de.po"
+
+[[file]]
+path = "corpus/files/l10n/memory.tmx"
+
+# ---------------------------------------------------------------- records
+
+[[file]]
+path = "corpus/files/records/contacts.vcf"
+
+[[file]]
+path = "corpus/files/records/people.ldif"
+
+[[file]]
+path = "corpus/files/records/work.ics"
+
+# ---------------------------------------------------------------- sql
+
+[[file]]
+path = "corpus/files/sql/shop.sql"
+
+# ---------------------------------------------------------------- schemas
+
+[[file]]
+path = "corpus/files/schemas/monster.fbs"
+
+[[file]]
+path = "corpus/files/schemas/openapi.yaml"
+
+[[file]]
+path = "corpus/files/schemas/order.xsd"
+
+[[file]]
+path = "corpus/files/schemas/people.proto"
+
+[[file]]
+path = "corpus/files/schemas/person.capnp"
+
+[[file]]
+path = "corpus/files/schemas/schema.graphql"
+
+[[file]]
+path = "corpus/files/schemas/schema.prisma"
+
+[[file]]
+path = "corpus/files/schemas/shop.dbml"
+
+[[file]]
+path = "corpus/files/schemas/user.avsc"
+
+[[file]]
+path = "corpus/files/schemas/user.thrift"
+
+[[file]]
+path = "corpus/files/schemas/weather.smithy"
+
+# ---------------------------------------------------------------- rdf
+
+[[file]]
+path = "corpus/files/rdf/animals.owl"
+
+[[file]]
+path = "corpus/files/rdf/graph.trix"
+
+[[file]]
+path = "corpus/files/rdf/org.jsonld"
+
+[[file]]
+path = "corpus/files/rdf/people.rq"
+
+[[file]]
+path = "corpus/files/rdf/people.ttl"
+
+# ---------------------------------------------------------------- graphs
+
+[[file]]
+path = "corpus/files/graphs/flow.dot"
+
+[[file]]
+path = "corpus/files/graphs/karate.gml"
+
+[[file]]
+path = "corpus/files/graphs/network.graphml"
+
+[[file]]
+path = "corpus/files/graphs/simple.gxl"
+
+[[file]]
+path = "corpus/files/graphs/web.gexf"
+
+# ---------------------------------------------------------------- science
+
+[[file]]
+path = "corpus/files/science/1abc.cif"
+
+[[file]]
+path = "corpus/files/science/1abc.pdb"
+
+[[file]]
+path = "corpus/files/science/aligned.sam"
+
+[[file]]
+path = "corpus/files/science/calls.vcf"
+
+[[file]]
+path = "corpus/files/science/genes.gff3"
+
+[[file]]
+path = "corpus/files/science/insulin.fasta"
+
+[[file]]
+path = "corpus/files/science/iris.arff"
+
+[[file]]
+path = "corpus/files/science/lambda.gb"
+
+[[file]]
+path = "corpus/files/science/peaks.bed"
+
+[[file]]
+path = "corpus/files/science/problem.cnf"
+
+[[file]]
+path = "corpus/files/science/reads.fastq"
+
+# ---------------------------------------------------------------- business
+
+[[file]]
+path = "corpus/files/business/admit.hl7"
+
+[[file]]
+path = "corpus/files/business/cash.qif"
+
+[[file]]
+path = "corpus/files/business/order.edi"
+
+[[file]]
+path = "corpus/files/business/order.x12"
+
+[[file]]
+path = "corpus/files/business/payment.fin"
+
+[[file]]
+path = "corpus/files/business/report.xbrl"
+
+[[file]]
+path = "corpus/files/business/session.fix"
+
+[[file]]
+path = "corpus/files/business/statement.ofx"
+
+# ---------------------------------------------------------------- config
+
+[[file]]
+path = "corpus/files/config/app.cue"
+
+[[file]]
+path = "corpus/files/config/app.dhall"
+
+[[file]]
+path = "corpus/files/config/app.ncl"
+
+[[file]]
+path = "corpus/files/config/jobs.cron"
+
+[[file]]
+path = "corpus/files/config/main.tf"
+
+[[file]]
+path = "corpus/files/config/package.kdl"
 
 # ---------------------------------------------------------------- geo
 

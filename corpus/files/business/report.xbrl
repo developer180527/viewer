@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance" xmlns:us-gaap="http://fasb.org/us-gaap/2024">
+  <xbrli:context id="FY24"><xbrli:entity><xbrli:identifier scheme="http://www.sec.gov/CIK">1</xbrli:identifier></xbrli:entity><xbrli:period><xbrli:startDate>2024-01-01</xbrli:startDate><xbrli:endDate>2024-12-31</xbrli:endDate></xbrli:period></xbrli:context>
+  <xbrli:unit id="USD"><xbrli:measure>iso4217:USD</xbrli:measure></xbrli:unit>
+  <us-gaap:Revenues contextRef="FY24" unitRef="USD" decimals="-6">1000000</us-gaap:Revenues>
+  <us-gaap:NetIncomeLoss contextRef="FY24" unitRef="USD" decimals="-6">250000</us-gaap:NetIncomeLoss>
+</xbrli:xbrl>

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:dc="http://purl.org/dc/elements/1.1/">
+  <channel>
+    <title>Example News</title>
+    <link>https://example.com/</link>
+    <item><title>Release 1.0</title><link>https://example.com/1</link><pubDate>Fri, 08 Nov 2024 10:00:00 GMT</pubDate><dc:creator>Ann</dc:creator><description>First release.</description></item>
+    <item><title>Patch 1.0.1</title><link>https://example.com/2</link><pubDate>Sat, 09 Nov 2024 09:00:00 GMT</pubDate><description>Fixes.</description></item>
+  </channel>
+</rss>

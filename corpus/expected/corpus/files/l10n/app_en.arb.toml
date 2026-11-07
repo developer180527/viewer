@@ -1,0 +1,14 @@
+loader = "arb"
+format = "Application Resource Bundle (ARB)"
+model = "Table"
+
+[table]
+rows = 2
+columns = 4
+headers = ["Key", "Value", "Description", "Placeholders"]
+kinds = ["Text", "Text", "Text", "Text"]
+
+[metadata]
+Messages = "2"
+Nodes = "8"
+Locale = "en"

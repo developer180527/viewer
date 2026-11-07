@@ -1,0 +1,18 @@
+openapi: 3.1.0
+info:
+  title: Pets
+  version: 1.0.0
+paths:
+  /pets:
+    get:
+      operationId: listPets
+      summary: List all pets
+      tags: [pets]
+      responses:
+        '200':
+          description: A list of pets
+    post:
+      operationId: createPet
+      responses:
+        '201':
+          description: Created

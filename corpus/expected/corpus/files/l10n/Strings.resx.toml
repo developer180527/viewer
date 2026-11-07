@@ -1,0 +1,13 @@
+loader = "resx"
+format = ".NET resources (RESX)"
+model = "Table"
+
+[table]
+rows = 2
+columns = 4
+headers = ["Name", "Value", "Comment", "Type"]
+kinds = ["Text", "Text", "Text", "Text"]
+
+[metadata]
+Resources = "2"
+Nodes = "13"

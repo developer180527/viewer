@@ -1,0 +1,12 @@
+loader = "cif"
+format = "Crystallographic Information File"
+model = "Table"
+
+[table]
+rows = 2
+columns = 6
+headers = ["group_PDB", "id", "type_symbol", "Cartn_x", "Cartn_y", "Cartn_z"]
+kinds = ["Text", "Number", "Text", "Number", "Number", "Number"]
+
+[metadata]
+Loops = "1"

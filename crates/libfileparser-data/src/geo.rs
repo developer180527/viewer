@@ -11,93 +11,17 @@ use std::ops::Range;
 use std::sync::Arc;
 
 use libfileparser_core::{
-    Category, Cell, Column, Content, Count, Document, FileSource, FormatInfo, LineText, Links, MemoryUse, OwnedTable, ParseContext, ParseError,
-    Place, Result, Role, TableInfo, TableSource, TextSource, ValueKind,
+    Category, Cell, Column, Content, Count, Document, FileSource, FormatInfo, LineText, MemoryUse, OwnedTable, ParseContext, ParseError,
+    Result, Role, TableInfo, TableSource, TextSource, ValueKind,
 };
 
 use crate::json::{self, Dialect};
+use crate::lines::RowLines;
+use crate::nodes::{MAX_PROPERTIES, NodeTable, SAMPLE};
 use crate::tree::{DataTree, TOP, TreeLinks, cell};
 
-/// Features sampled for property columns.
-const SAMPLE: usize = 1000;
-/// At most this many property columns.
-const MAX_PROPERTIES: usize = 64;
 
 // ---------------------------------------------------------------- shared
-
-/// A cell worked out from a feature's node when its row is read.
-type CellFn = Box<dyn Fn(&DataTree, u32) -> Cell + Send + Sync>;
-
-/// A table whose rows are nodes of a tree, its cells read from them when asked for.
-pub(crate) struct FeatureTable {
-    tree: Arc<DataTree>,
-    rows: Arc<[u32]>,
-    columns: Vec<Column>,
-    cells: Vec<CellFn>,
-}
-
-impl FeatureTable {
-    fn new(tree: Arc<DataTree>, rows: Arc<[u32]>) -> Self {
-        Self { tree, rows, columns: Vec::new(), cells: Vec::new() }
-    }
-
-    fn column(mut self, name: &str, kind: ValueKind, f: impl Fn(&DataTree, u32) -> Cell + Send + Sync + 'static) -> Self {
-        self.columns.push(Column::new(name).with_kind(kind));
-        self.cells.push(Box::new(f));
-        self
-    }
-
-    /// A column per property key of the first features; `props` gives a feature's
-    /// property nodes, each labelled with its key.
-    fn properties(mut self, props: impl Fn(&DataTree, u32) -> Vec<u32> + Send + Sync + Clone + 'static) -> Self {
-        let mut keys: Vec<(String, ValueKind)> = Vec::new();
-        for &row in self.rows.iter().take(SAMPLE) {
-            for p in props(&self.tree, row) {
-                let (key, kind) = (self.tree.label(p).to_string(), self.tree.kind(p));
-                match keys.iter().position(|(k, _)| *k == key) {
-                    Some(i) => keys[i].1 = join(keys[i].1, kind),
-                    None if keys.len() < MAX_PROPERTIES => keys.push((key, kind)),
-                    None => {}
-                }
-            }
-        }
-        for (key, kind) in keys {
-            let props = props.clone();
-            let kind = if matches!(kind, ValueKind::Map | ValueKind::List | ValueKind::Group) { ValueKind::Text } else { kind };
-            let name = key.clone();
-            self = self.column(&name, kind, move |t, row| match props(t, row).into_iter().find(|&p| t.label(p) == key) {
-                Some(p) => t.cell(p).unwrap_or_else(|| Cell::Text(t.value(p).to_string())),
-                None => Cell::Null,
-            });
-        }
-        self
-    }
-}
-
-fn join(a: ValueKind, b: ValueKind) -> ValueKind {
-    match (a, b) {
-        (a, b) if a == b => a,
-        (ValueKind::Null, b) => b,
-        (a, ValueKind::Null) => a,
-        _ => ValueKind::Mixed,
-    }
-}
-
-impl TableSource for FeatureTable {
-    fn info(&self) -> TableInfo {
-        TableInfo::new(self.columns.clone(), Count::Exact(self.rows.len() as u64))
-    }
-
-    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
-        let end = range.end.min(self.rows.len() as u64) as usize;
-        let start = (range.start as usize).min(end);
-        Ok(self.rows[start..end].iter().map(|&row| self.cells.iter().map(|f| f(&self.tree, row)).collect()).collect())
-    }
-
-    fn memory(&self) -> MemoryUse {
-        MemoryUse::heap(self.rows.len() as u64 * 4)
-    }
-}
 
 /// The box around a set of points, longitude and latitude.
 #[derive(Clone, Copy, Debug, Default)]
@@ -133,7 +57,7 @@ impl Bounds {
 }
 
 /// A document of features over a tree: Features, Tree, then the file's own facets.
-fn features_document(format: FormatInfo, table: FeatureTable, bounds: Bounds, src: &FileSource, language: Option<&str>, lines: bool) -> Document {
+fn features_document(format: FormatInfo, table: NodeTable, bounds: Bounds, src: &FileSource, language: Option<&str>, lines: bool) -> Document {
     let (tree, rows) = (table.tree.clone(), table.rows.clone());
     let nodes = tree.len();
     let mut doc = Document::new(format)
@@ -173,7 +97,9 @@ const GEOMETRIES: [&str; 7] = ["Point", "MultiPoint", "LineString", "MultiLineSt
 pub(crate) fn looks_like_geojson(header: &[u8]) -> bool {
     let head = String::from_utf8_lossy(&header[..header.len().min(4096)]);
     let compact: String = head.chars().filter(|c| !c.is_whitespace()).collect();
+    // TopoJSON holds GeoJSON geometry types too.
     head.trim_start().starts_with('{')
+        && !compact.contains("\"type\":\"Topology\"")
         && ["FeatureCollection", "Feature"].iter().chain(GEOMETRIES.iter()).any(|t| compact.contains(&format!("\"type\":\"{t}\"")))
 }
 
@@ -212,7 +138,7 @@ pub(crate) fn geojson(src: &FileSource, cx: &ParseContext) -> Result<Document> {
     }
     let tree = Arc::new(tree);
     let has_id = rows.iter().take(SAMPLE).any(|&r| tree.child(r, "id").is_some());
-    let mut table = FeatureTable::new(tree.clone(), rows);
+    let mut table = NodeTable::new(tree.clone(), rows);
     if has_id {
         table = table.column("ID", ValueKind::Mixed, |t, row| text(t, t.child(row, "id")));
     }
@@ -258,7 +184,7 @@ pub(crate) fn topojson(src: &FileSource, cx: &ParseContext) -> Result<Document> 
     }
     let arcs = tree.child(TOP, "arcs").map_or(0, |a| tree.child_ids(a).len());
     let tree = Arc::new(tree);
-    let table = FeatureTable::new(tree.clone(), rows)
+    let table = NodeTable::new(tree.clone(), rows)
         .column("Object", ValueKind::Text, move |t, row| {
             // The object a geometry is in: its parent's parent, or itself.
             let o = t.parent(row).filter(|&p| t.label(p) == "geometries").and_then(|p| t.parent(p)).unwrap_or(row);
@@ -309,7 +235,7 @@ fn kml_document(tree: DataTree, format: FormatInfo, src: &FileSource, lines: boo
         }
     }
     let tree = Arc::new(tree);
-    let table = FeatureTable::new(tree.clone(), rows)
+    let table = NodeTable::new(tree.clone(), rows)
         .column("Name", ValueKind::Text, |t, row| text(t, t.child(row, "name")))
         .column("Geometry", ValueKind::Text, |t, row| {
             match t.subtree(row).into_iter().skip(1).find(|&n| KML_GEOMETRIES.contains(&local(t.label(n)))) {
@@ -446,7 +372,7 @@ pub(crate) fn gpx(src: &FileSource, cx: &ParseContext) -> Result<Document> {
             None => Cell::Null,
         }
     };
-    let table = FeatureTable::new(tree.clone(), rows)
+    let table = NodeTable::new(tree.clone(), rows)
         .column("Type", ValueKind::Text, |t, row| {
             Cell::Text(match t.label(row) {
                 "wpt" => "Waypoint",
@@ -535,7 +461,7 @@ pub(crate) fn gml(src: &FileSource, cx: &ParseContext) -> Result<Document> {
         .collect();
     let tree = Arc::new(tree);
     let geometry = |t: &DataTree, row: u32| t.subtree(row).into_iter().skip(1).find(|&n| GML_GEOMETRIES.contains(&local(t.label(n))));
-    let table = FeatureTable::new(tree.clone(), rows)
+    let table = NodeTable::new(tree.clone(), rows)
         .column("Feature", ValueKind::Text, |t, row| Cell::Text(t.label(row).to_string()))
         .column("ID", ValueKind::Text, |t, row| text(t, t.child(row, "@gml:id").or_else(|| t.child(row, "@fid"))))
         .column("Geometry", ValueKind::Text, move |t, row| match geometry(t, row) {
@@ -606,7 +532,7 @@ pub(crate) fn osm(src: &FileSource, cx: &ParseContext) -> Result<Document> {
     counts.truncate(OSM_TAG_COLUMNS);
     let generator = tree.child(root, "@generator").map(|g| tree.value(g).to_string());
     let tree = Arc::new(tree);
-    let mut table = FeatureTable::new(tree.clone(), rows)
+    let mut table = NodeTable::new(tree.clone(), rows)
         .column("Kind", ValueKind::Text, |t, row| Cell::Text(t.label(row).to_string()))
         .column("ID", ValueKind::Number, |t, row| t.child(row, "@id").map_or(Cell::Null, |id| Cell::number(t.value(id))))
         .column("Name", ValueKind::Text, |t, row| text(t, osm_tag(t, row, "name")))
@@ -722,19 +648,6 @@ fn wkt(text: &str, cx: &ParseContext) -> Result<Vec<Wkt>> {
         return Err(ParseError::corrupt("WKT: no geometry"));
     }
     Ok(out)
-}
-
-/// Rows and their lines.
-struct RowLines(Vec<Range<u64>>);
-
-impl Links for RowLines {
-    fn links(&self, _: &Document, from: &Place, _: &ParseContext) -> Result<Vec<Place>> {
-        Ok(match *from {
-            Place::Row { facet: 0, row } => self.0.get(row as usize).map(|l| vec![Place::Lines(l.clone())]).unwrap_or_default(),
-            Place::Lines(ref r) => self.0.iter().position(|l| l.start <= r.start && r.start < l.end).map(|row| vec![Place::Row { facet: 0, row: row as u64 }]).unwrap_or_default(),
-            _ => Vec::new(),
-        })
-    }
 }
 
 pub(crate) fn wkt_document(src: &FileSource, cx: &ParseContext) -> Result<Document> {

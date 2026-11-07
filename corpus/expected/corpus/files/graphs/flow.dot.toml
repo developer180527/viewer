@@ -1,0 +1,15 @@
+loader = "dot"
+format = "Graphviz DOT"
+model = "Table"
+
+[table]
+rows = 3
+columns = 3
+headers = ["ID", "Label", "shape"]
+kinds = ["Text", "Text", "Text"]
+
+[metadata]
+Nodes = "3"
+Edges = "3"
+Directed = "yes"
+Name = "Flow"

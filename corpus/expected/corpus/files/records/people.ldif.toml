@@ -1,0 +1,12 @@
+loader = "ldif"
+format = "LDIF"
+model = "Table"
+
+[table]
+rows = 2
+columns = 5
+headers = ["DN", "objectClass", "cn", "mail", "description"]
+kinds = ["Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Entries = "2"

@@ -26,7 +26,36 @@ const GEOJSON: &[u8] = br#"{"type": "FeatureCollection", "features": [
   {"type": "Feature", "geometry": {"type": "LineString", "coordinates": [[2.35, 48.85], [-0.12, 51.5]]}, "properties": {"name": "Paris to London"}}
 ]}"#;
 
+const X12: &[u8] = b"ISA*00*          *00*          *ZZ*SENDER         *ZZ*RECEIVER       *241108*1200*U*00401*000000001*0*P*>~GS*PO*S*R*20241108*1200*1*X*004010~ST*850*0001~BEG*00*SA*PO1**20241108~SE*3*0001~GE*1*1~IEA*1*000000001~";
+
 const NMEA: &[u8] = b"$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\n$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A\n";
+
+/// A little-endian MO file of `pairs`.
+fn mo(pairs: &[(&str, &str)]) -> Vec<u8> {
+    let n = pairs.len() as u32;
+    let (orig_at, tr_at) = (28u32, 28 + 8 * n);
+    let mut strings_at = tr_at + 8 * n;
+    let mut head = Vec::new();
+    for v in [0x950412deu32, 0, n, orig_at, tr_at, 0, 0] {
+        head.extend(v.to_le_bytes());
+    }
+    let (mut origs, mut trs, mut data) = (Vec::new(), Vec::new(), Vec::new());
+    for (o, _) in pairs {
+        origs.extend((o.len() as u32).to_le_bytes());
+        origs.extend(strings_at.to_le_bytes());
+        data.extend(o.as_bytes());
+        data.push(0);
+        strings_at += o.len() as u32 + 1;
+    }
+    for (_, t) in pairs {
+        trs.extend((t.len() as u32).to_le_bytes());
+        trs.extend(strings_at.to_le_bytes());
+        data.extend(t.as_bytes());
+        data.push(0);
+        strings_at += t.len() as u32 + 1;
+    }
+    [head, origs, trs, data].concat()
+}
 
 /// A KMZ: the KML zipped as `doc.kml`.
 fn kmz(kml: &[u8]) -> Vec<u8> {
@@ -104,6 +133,90 @@ fn samples(id: &str) -> Vec<Sample> {
             big("big.osm", many("<osm>", r#"<node id="{i}" lat="1" lon="2"/>"#, "", "</osm>", 30))],
         "wkt" => vec![small("a.wkt", b"POINT (1 2)\nLINESTRING (1 2, 3 4)\n"), big("big.wkt", many("", "POINT ({i} 1)", "\n", "\n", 30))],
         "nmea" => vec![small("a.nmea", NMEA), big("big.nmea", many("", "$GPGLL,4916.45,N,12311.12,W,2254{i}.00,A,A", "\n", "\n", 30))],
+        "rss" => vec![small("a.rss", br#"<rss version="2.0"><channel><title>T</title><item><title>A</title></item></channel></rss>"#),
+            big("big.rss", many("<rss><channel>", "<item><title>{i}</title></item>", "", "</channel></rss>", 30))],
+        "atom" => vec![small("a.atom", br#"<feed xmlns="http://www.w3.org/2005/Atom"><entry><title>A</title></entry></feed>"#),
+            big("big.atom", many(r#"<feed xmlns="http://www.w3.org/2005/Atom">"#, "<entry><title>{i}</title></entry>", "", "</feed>", 30))],
+        "m3u" => vec![small("a.m3u", b"#EXTM3U\n#EXTINF:10,One\none.mp3\n"), big("big.m3u8", many("#EXTM3U\n", "#EXTINF:10,T{i}\n{i}.ts", "\n", "\n", 30))],
+        "pls" => vec![small("a.pls", b"[playlist]\nFile1=a.mp3\nTitle1=A\nNumberOfEntries=1\n"),
+            big("big.pls", many("[playlist]\n", "File{i}=a{i}.mp3", "\n", "\n", 300)).fits_tiny_limits()],
+        "xspf" => vec![small("a.xspf", br#"<playlist xmlns="http://xspf.org/ns/0/"><trackList><track><title>A</title></track></trackList></playlist>"#),
+            big("big.xspf", many(r#"<playlist xmlns="http://xspf.org/ns/0/"><trackList>"#, "<track><title>{i}</title></track>", "", "</trackList></playlist>", 30))],
+        "po" => vec![small("a.po", b"msgid \"Hi\"\nmsgstr \"Hallo\"\n"), big("big.po", many("", "msgid \"m{i}\"\nmsgstr \"t{i}\"", "\n\n", "\n", 30))],
+        "mo" => vec![Sample::new("a.mo", mo(&[("Hi", "Hallo")])).fits_tiny_limits(), Sample::new("big.mo", mo(&(0..30).map(|i| (Box::leak(format!("m{i}").into_boxed_str()) as &str, "t")).collect::<Vec<_>>()))],
+        "xliff" => vec![small("a.xlf", br#"<xliff version="1.2"><file><body><trans-unit id="1"><source>Hi</source><target>Hallo</target></trans-unit></body></file></xliff>"#),
+            big("big.xlf", many(r#"<xliff version="1.2"><file><body>"#, r#"<trans-unit id="{i}"><source>s</source></trans-unit>"#, "", "</body></file></xliff>", 30))],
+        "tmx" => vec![small("a.tmx", br#"<tmx><body><tu><tuv xml:lang="en"><seg>Hi</seg></tuv></tu></body></tmx>"#),
+            big("big.tmx", many("<tmx><body>", r#"<tu><tuv xml:lang="en"><seg>{i}</seg></tuv></tu>"#, "", "</body></tmx>", 30))],
+        "resx" => vec![small("a.resx", br#"<root><data name="A"><value>B</value></data></root>"#),
+            big("big.resx", many("<root>", r#"<data name="k{i}"><value>v</value></data>"#, "", "</root>", 30))],
+        "strings" => vec![small("a.strings", b"\"a\" = \"b\";\n"), big("big.strings", many("", "\"k{i}\" = \"v\";", "\n", "\n", 300)).fits_tiny_limits()],
+        "arb" => vec![small("a.arb", br#"{"@@locale": "en", "hi": "Hi"}"#), big("big.arb", many("{", r#""k{i}": "v""#, ",", "}", 30))],
+        "vcard" => vec![small("a.vcf", b"BEGIN:VCARD\r\nVERSION:4.0\r\nFN:Ann\r\nEND:VCARD\r\n"),
+            big("big.vcf", many("", "BEGIN:VCARD\r\nFN:P{i}\r\nEND:VCARD", "\r\n", "\r\n", 30))],
+        "icalendar" => vec![small("a.ics", b"BEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Lunch\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n"),
+            big("big.ics", many("BEGIN:VCALENDAR\r\n", "BEGIN:VEVENT\r\nSUMMARY:E{i}\r\nEND:VEVENT", "\r\n", "\r\nEND:VCALENDAR\r\n", 30))],
+        "ldif" => vec![small("a.ldif", b"version: 1\ndn: cn=a,dc=x\ncn: a\n"), big("big.ldif", many("", "dn: cn={i},dc=x\ncn: {i}", "\n\n", "\n", 30))],
+        "sql" => vec![small("a.sql", b"CREATE TABLE t (a int);\nINSERT INTO t VALUES (1);\n"), big("big.sql", many("", "INSERT INTO t VALUES ({i});", "\n", "\n", 30))],
+        "protobuf" => vec![small("a.proto", b"message A { string b = 1; }"), big("big.proto", many("message A {", "string f{i} = {i};", "\n", "}", 30))],
+        "thrift" => vec![small("a.thrift", b"struct A { 1: string b }"), big("big.thrift", many("struct A {", "{i}: string f{i},", "\n", "}", 30))],
+        "flatbuffers" => vec![small("a.fbs", b"table A { b:int; }"), big("big.fbs", many("table A {", "f{i}:int;", "\n", "}", 30))],
+        "capnp" => vec![small("a.capnp", b"struct A { b @0 :Text; }"), big("big.capnp", many("struct A {", "f{i} @{i} :Text;", "\n", "}", 30))],
+        "smithy" => vec![small("a.smithy", b"structure A { b: String }"), big("big.smithy", many("structure A {", "f{i}: String", "\n", "}", 30))],
+        "graphql" => vec![small("a.graphql", b"type A { b: Int }"), big("big.graphql", many("type A {", "f{i}: Int", "\n", "}", 30))],
+        "prisma" => vec![small("a.prisma", b"model A {\n  id Int @id\n}\n"), big("big.prisma", many("model A {\n", "f{i} Int", "\n", "\n}", 30))],
+        "dbml" => vec![small("a.dbml", b"Table a {\n  id int\n}\n"), big("big.dbml", many("Table a {\n", "f{i} int", "\n", "\n}", 30))],
+        "avro" => vec![small("a.avsc", br#"{"type": "record", "name": "A", "fields": [{"name": "b", "type": "int"}]}"#),
+            big("big.avsc", many(r#"{"type": "record", "name": "A", "fields": ["#, r#"{"name": "f{i}", "type": "int"}"#, ",", "]}", 30))],
+        "openapi" => vec![small("api.yaml", b"openapi: 3.0.0\npaths:\n  /a:\n    get: {}\n"), big("big.yaml", many("openapi: 3.0.0\npaths:\n", "  /p{i}:\n    get: {}", "\n", "\n", 30))],
+        "xsd" => vec![small("a.xsd", br#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"><xs:element name="a" type="xs:string"/></xs:schema>"#),
+            big("big.xsd", many(r#"<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">"#, r#"<xs:element name="e{i}"/>"#, "", "</xs:schema>", 30))],
+        "turtle" => vec![small("a.ttl", b"@prefix ex: <http://e.com/> .\nex:a ex:b \"c\" .\n"), big("big.nt", many("", "<http://e.com/{i}> <http://e.com/p> \"v\" .", "\n", "\n", 30))],
+        "rdfxml" => vec![small("a.rdf", br#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://e.com/"><rdf:Description rdf:about="http://e.com/a"><ex:b>c</ex:b></rdf:Description></rdf:RDF>"#),
+            big("big.rdf", many(r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:ex="http://e.com/">"#, r#"<rdf:Description rdf:about="http://e.com/{i}"><ex:b>c</ex:b></rdf:Description>"#, "", "</rdf:RDF>", 30))],
+        "trix" => vec![small("a.trix", b"<TriX><graph><triple><uri>http://e.com/a</uri><uri>http://e.com/b</uri><plainLiteral>c</plainLiteral></triple></graph></TriX>"),
+            big("big.trix", many("<TriX><graph>", "<triple><uri>http://e.com/{i}</uri><uri>http://e.com/b</uri><plainLiteral>c</plainLiteral></triple>", "", "</graph></TriX>", 30))],
+        "jsonld" => vec![small("a.jsonld", br#"{"@context": "https://schema.org", "@id": "x", "name": "A"}"#), big("big.jsonld", many(r#"{"@graph": ["#, r#"{"@id": "n{i}"}"#, ",", "]}", 30))],
+        "sparql" => vec![small("q.rq", b"SELECT ?s WHERE { ?s ?p ?o . }"), big("big.rq", many("SELECT * WHERE {\n", "?s{i} ?p ?o .", "\n", "\n}", 30))],
+        "dot" => vec![small("a.dot", b"digraph { a -> b }"), big("big.dot", many("digraph {\n", "n{i} -> m{i};", "\n", "\n}", 30))],
+        "graphml" => vec![small("a.graphml", br#"<graphml><graph edgedefault="directed"><node id="a"/><edge source="a" target="a"/></graph></graphml>"#),
+            big("big.graphml", many("<graphml><graph>", r#"<node id="n{i}"/>"#, "", "</graph></graphml>", 30))],
+        "gexf" => vec![small("a.gexf", br#"<gexf><graph><nodes><node id="0" label="A"/></nodes><edges/></graph></gexf>"#),
+            big("big.gexf", many("<gexf><graph><nodes>", r#"<node id="{i}"/>"#, "", "</nodes></graph></gexf>", 30))],
+        "gxl" => vec![small("a.gxl", br#"<gxl><graph id="g"><node id="a"/></graph></gxl>"#), big("big.gxl", many(r#"<gxl><graph id="g">"#, r#"<node id="n{i}"/>"#, "", "</graph></gxl>", 30))],
+        "graph-gml" => vec![small("a.gml", b"graph [ node [ id 1 ] ]"), big("big.gml", many("graph [\n", "node [ id {i} ]", "\n", "\n]", 30))],
+        "fasta" => vec![small("a.fa", b">s1 one\nACGT\n"), big("big.fa", many("", ">s{i}\nACGT", "\n", "\n", 30))],
+        "fastq" => vec![small("a.fq", b"@r1\nACGT\n+\nIIII\n"), big("big.fq", many("", "@r{i}\nACGT\n+\nIIII", "\n", "\n", 30))],
+        "genbank" => vec![small("a.gb", b"LOCUS       X 4 bp DNA linear SYN 01-JAN-2024\nORIGIN\n        1 acgt\n//\n"),
+            big("big.gb", many("", "LOCUS       X{i} 4 bp DNA linear SYN 01-JAN-2024\n//", "\n", "\n", 30))],
+        "gff" => vec![small("a.gff3", b"##gff-version 3\nchr1\t.\tgene\t1\t9\t.\t+\t.\tID=g1\n"), big("big.gff3", many("##gff-version 3\n", "chr1\t.\tgene\t{i}\t9\t.\t+\t.\tID=g{i}", "\n", "\n", 30))],
+        "bed" => vec![small("a.bed", b"chr1\t0\t10\tx\n"), big("big.bed", many("", "chr1\t{i}\t99", "\n", "\n", 30))],
+        "vcf" => vec![small("a.vcf", b"##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n1\t10\t.\tA\tG\t50\tPASS\t.\n"),
+            big("big.vcf", many("##fileformat=VCFv4.2\n#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n", "1\t{i}\t.\tA\tG\t50\tPASS\t.", "\n", "\n", 30))],
+        "sam" => vec![small("a.sam", b"@HD\tVN:1.6\nr1\t0\tchr1\t1\t60\t4M\t*\t0\t0\tACGT\tIIII\n"), big("big.sam", many("@HD\tVN:1.6\n", "r{i}\t0\tchr1\t1\t60\t4M\t*\t0\t0\tACGT\tIIII", "\n", "\n", 30))],
+        "pdb" => vec![small("a.pdb", b"HEADER    TEST\nATOM      1  N   MET A   1      11.104   6.134  -6.504  1.00  0.00           N\n"),
+            big("big.pdb", many("HEADER    TEST\n", "ATOM      1  N   MET A   1      11.104   6.134  -6.504  1.00  0.00           N", "\n", "\n", 30))],
+        "cif" => vec![small("a.cif", b"data_x\n_cell.length_a 10\n"), big("big.cif", many("data_x\nloop_\n_atom_site.id\n", "{i}", "\n", "\n", 30))],
+        "arff" => vec![small("a.arff", b"@relation r\n@attribute a numeric\n@data\n1\n"), big("big.arff", many("@relation r\n@attribute a numeric\n@data\n", "{i}", "\n", "\n", 30))],
+        "dimacs" => vec![small("a.cnf", b"p cnf 2 1\n1 -2 0\n"), big("big.cnf", many("p cnf 99 30\n", "{i} 0", "\n", "\n", 30))],
+        "x12" => vec![small("a.x12", X12), big("big.x12", [&X12[..106], &many("", "N1*ST*{i}", "~", "~", 30)[..]].concat())],
+        "edifact" => vec![small("a.edi", b"UNA:+.? 'UNB+UNOC:3+A+B'UNZ+0'"), big("big.edi", many("UNA:+.? '", "FTX+AAA+++t{i}", "'", "'", 30))],
+        "hl7" => vec![small("a.hl7", b"MSH|^~\\&|APP|FAC|||20241108||ADT^A01|1|P|2.5\r"), big("big.hl7", many("MSH|^~\\&|APP\r", "OBX|{i}|ST|x", "\r", "\r", 30))],
+        "ofx" => vec![small("a.ofx", b"OFXHEADER:100\n<OFX><BANKMSGSRSV1></BANKMSGSRSV1></OFX>"), big("big.ofx", many("OFXHEADER:100\n<OFX>", "<STMTTRN><TRNAMT>{i}</STMTTRN>", "", "</OFX>", 30))],
+        "qif" => vec![small("a.qif", b"!Type:Bank\nD01/02/2024\nT-5.00\n^\n"), big("big.qif", many("!Type:Bank\n", "D01/02/2024\nT-{i}\n^", "\n", "\n", 30))],
+        "fix" => vec![small("a.fix", b"8=FIX.4.4|9=5|35=0|10=000|\n"), big("big.fix", many("", "8=FIX.4.4|35=0|34={i}|10=000|", "\n", "\n", 30))],
+        "swift" => vec![small("a.fin", b"{1:F01BANKBEBBAXXX0000000000}{2:I103BANKDEFFXXXXN}{4:\n:20:REF\n-}"),
+            big("big.fin", many("{1:F01BANKBEBBAXXX0000000000}{2:I103BANKDEFFXXXXN}{4:\n", ":20:R{i}", "\n", "\n-}", 30))],
+        "xbrl" => vec![small("a.xbrl", br#"<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance"><x contextRef="c">1</x></xbrli:xbrl>"#),
+            big("big.xbrl", many(r#"<xbrli:xbrl xmlns:xbrli="http://www.xbrl.org/2003/instance">"#, r#"<x contextRef="c">{i}</x>"#, "", "</xbrli:xbrl>", 30))],
+        "hcl" => vec![small("a.tf", b"resource \"x\" \"y\" {\n  a = 1\n}\n"), big("big.tf", many("", "variable \"v{i}\" { default = {i} }", "\n", "\n", 30))],
+        "cue" => vec![small("a.cue", b"a: 1\nb: {\n  c: \"x\"\n}\n"), big("big.cue", many("", "f{i}: {i}", "\n", "\n", 30))],
+        "dhall" => vec![small("a.dhall", b"{ a = 1, b = \"x\" }\n"), big("big.dhall", many("{ ", "f{i} = {i}", ", ", " }", 30))],
+        "nickel" => vec![small("a.ncl", b"{ a = 1 }\n"), big("big.ncl", many("{ ", "f{i} = {i}", ", ", " }", 30))],
+        "kdl" => vec![small("a.kdl", b"package { name \"x\" }\n"), big("big.kdl", many("", "node{i} {i}", "\n", "\n", 30))],
+        "cron" => vec![small("a.cron", b"0 2 * * * /backup.sh\n"), big("big.cron", many("", "{i} * * * * job{i}", "\n", "\n", 30))],
+        "sgml" => vec![small("a.sgml", b"<doc><p>hi</doc>"), big("big.sgml", many("<doc>", "<p>{i}</p>", "", "</doc>", 30))],
+        "fixed-width" => vec![small("a.fwf", b"NAME  AGE\nAnn    42\n"), big("big.fwf", many("NAME  AGE\n", "Ann    {i}", "\n", "\n", 30))],
         other => panic!("no samples for {other}"),
     }
 }

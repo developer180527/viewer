@@ -1,0 +1,13 @@
+loader = "rdfxml"
+format = "OWL (RDF/XML)"
+model = "Table"
+
+[table]
+rows = 4
+columns = 5
+headers = ["Subject", "Predicate", "Object", "Datatype", "Language"]
+kinds = ["Text", "Text", "Mixed", "Text", "Text"]
+
+[metadata]
+Statements = "4"
+Subjects = "2"
