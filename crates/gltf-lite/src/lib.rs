@@ -181,6 +181,9 @@ pub struct Loaded {
     /// missing or not permitted, by URI as the file gives it. A blocked buffer loses
     /// geometry, not only a texture.
     pub unreadable: Vec<(String, ResolveErrorKind)>,
+    /// The extensions the file says it uses, and those it says a reader must know.
+    pub extensions_used: Vec<String>,
+    pub extensions_required: Vec<String>,
 }
 
 /// Extensions that change what the data means and can't be skipped.
@@ -241,14 +244,38 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
         return Err(Error::Scene(e));
     }
     loader.builder.finish();
-    Ok(Loaded { images: loader.images, warnings: loader.warnings, unreadable: loader.unreadable })
+    Ok(Loaded {
+        images: loader.images,
+        warnings: loader.warnings,
+        unreadable: loader.unreadable,
+        extensions_used: root.extensions_used.clone(),
+        extensions_required: root.extensions_required.clone(),
+    })
 }
 
-/// JSON range, and the BIN chunk's range for GLB.
-fn split_container(file: &Bytes) -> Result<(std::ops::Range<usize>, Option<std::ops::Range<usize>>), Error> {
-    let bytes = (**file).as_ref();
+/// One chunk of a GLB container: its type as written (`JSON`, `BIN\0`, or another a
+/// later version or extension adds) and where its data is in the file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct GlbChunk {
+    pub kind: [u8; 4],
+    pub range: std::ops::Range<usize>,
+}
+
+impl GlbChunk {
+    pub const JSON: [u8; 4] = *b"JSON";
+    pub const BIN: [u8; 4] = *b"BIN\0";
+
+    /// The type for people: `JSON`, `BIN`, or the four bytes as text.
+    pub fn name(&self) -> String {
+        String::from_utf8_lossy(&self.kind).trim_end_matches('\0').to_string()
+    }
+}
+
+/// A GLB's chunks in file order; `None` for a `.gltf` (JSON) file. A damaged container
+/// is an error, as for [`load`].
+pub fn glb_chunks(bytes: &[u8]) -> Result<Option<Vec<GlbChunk>>, Error> {
     if !bytes.starts_with(b"glTF") {
-        return Ok((0..bytes.len(), None));
+        return Ok(None);
     }
     let u32_at = |at: usize| bytes.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
     let bad = |what: &str| Error::Format(format!("GLB {what}"));
@@ -256,20 +283,47 @@ fn split_container(file: &Bytes) -> Result<(std::ops::Range<usize>, Option<std::
         return Err(Error::Unsupported("GLB container version other than 2".into()));
     }
     let total = u32_at(8).ok_or_else(|| bad("header is truncated"))?.min(bytes.len());
-    let (mut json, mut bin) = (None, None);
+    let mut chunks = Vec::new();
     let mut at = 12;
     while at + 8 <= total {
-        let (len, kind) = (u32_at(at).unwrap(), u32_at(at + 4).unwrap());
+        let len = u32_at(at).unwrap();
+        let kind: [u8; 4] = bytes[at + 4..at + 8].try_into().unwrap();
         let start = at + 8;
         let end = start.checked_add(len).filter(|&e| e <= total).ok_or_else(|| bad("chunk runs past the file"))?;
-        match kind {
-            0x4E4F_534A if json.is_none() => json = Some(start..end),
-            0x004E_4942 if bin.is_none() => bin = Some(start..end),
-            _ => {}
-        }
+        chunks.push(GlbChunk { kind, range: start..end });
         at = end.next_multiple_of(4);
     }
-    Ok((json.ok_or_else(|| bad("has no JSON chunk"))?, bin))
+    Ok(Some(chunks))
+}
+
+/// JSON range, and the BIN chunk's range for GLB.
+fn split_container(file: &Bytes) -> Result<(std::ops::Range<usize>, Option<std::ops::Range<usize>>), Error> {
+    let bytes = (**file).as_ref();
+    let Some(chunks) = glb_chunks(bytes)? else { return Ok((0..bytes.len(), None)) };
+    let first = |kind: [u8; 4]| chunks.iter().find(|c| c.kind == kind).map(|c| c.range.clone());
+    let json = first(GlbChunk::JSON).ok_or_else(|| Error::Format("GLB has no JSON chunk".into()))?;
+    Ok((json, first(GlbChunk::BIN)))
+}
+
+/// How this crate treats a glTF extension.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ExtensionSupport {
+    /// Read: what it adds is in the scene.
+    Read,
+    /// Changes what the data means and isn't read: a file that requires it fails.
+    Unsupported,
+    /// Not read; the model loads without what it adds.
+    Ignored,
+}
+
+pub fn extension_support(name: &str) -> ExtensionSupport {
+    if KNOWN_EXTENSIONS.contains(&name) {
+        ExtensionSupport::Read
+    } else if FATAL_EXTENSIONS.contains(&name) {
+        ExtensionSupport::Unsupported
+    } else {
+        ExtensionSupport::Ignored
+    }
 }
 
 fn load_uri(uri: &str, resolver: &dyn Resolver) -> Result<Bytes, ResolveError> {

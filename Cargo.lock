@@ -1333,6 +1333,7 @@ name = "libfileparser-3d"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "base64 0.22.1",
  "exr",
  "gltf-lite",
  "image",
@@ -1340,6 +1341,7 @@ dependencies = [
  "libfileparser-core",
  "libfileparser-testkit",
  "scene-data",
+ "serde_json",
  "ufbx",
  "usd-lite",
 ]

@@ -4,8 +4,14 @@
 
 use libfileparser_core::{Category, Dependencies, DependencyStatus, Detection, Document, FileSource, ParseContext, Reader, ReaderInfo};
 
+use std::sync::Arc;
+
+use libfileparser_core::{Content, FacetInfo, Model, Role};
+
 use crate::build::{ImageJob, ImageSource, SceneDocument, decode_textures, detect_by};
 use crate::textures;
+
+mod facets;
 
 pub struct GltfReader;
 
@@ -38,7 +44,34 @@ impl Reader for GltfReader {
             })
             .collect();
         let textures = decode_textures(builder.texture_sink(), jobs, cx);
-        SceneDocument::new("gltf", format, scene).warnings(loaded.warnings).textures(textures).dependencies(deps).build()
+        let glb = src.header().starts_with(b"glTF");
+        let extensions = facets::extensions_table(&loaded.extensions_used, &loaded.extensions_required);
+        let from = src.clone();
+        SceneDocument::new("gltf", format, scene)
+            .warnings(loaded.warnings)
+            .textures(textures)
+            .dependencies(deps)
+            .facets(move |doc| {
+                let tree_src = from.clone();
+                let mut doc = doc.with_lazy_facet(FacetInfo::new(Role::Structure, "glTF", Model::Tree), move |_| {
+                    Ok(Content::Tree(Arc::new(facets::GltfTree::new(facets::parse(&tree_src)?))))
+                });
+                if glb {
+                    let text_src = from.clone();
+                    doc = doc.with_lazy_facet(FacetInfo::new(Role::Source, "JSON chunk", Model::Text), move |_| {
+                        Ok(Content::Text(Arc::new(facets::json_text(&text_src)?)))
+                    });
+                    doc = doc.with_lazy_facet(FacetInfo::new(Role::Package, "Chunks", Model::Container), move |_| {
+                        let json = facets::parse(&from).ok();
+                        Ok(Content::Container(Arc::new(facets::GlbChunks::new(&from, json.as_ref())?)))
+                    });
+                }
+                if let Some(table) = extensions {
+                    doc = doc.with_facet(Role::Inspector, "Extensions used", Content::Table(Arc::new(table)));
+                }
+                doc
+            })
+            .build()
     }
 }
 

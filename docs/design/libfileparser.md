@@ -85,7 +85,7 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 
 Built so far: `Raster`, `Text`, `Tree`, `Table`, `Container`, `Scene` and `Hex`, what `-3d` needs; `Pages`, `Flow`, `Markdown` and `Media` arrive with their categories.
 
-`-core` also holds the generic implementations every category shares: `LineText` (a `TextSource` over any bytes, indexed by line), `OwnedTree`, `OwnedTable`, and the hex model.
+`-core` also holds the generic implementations every category shares: `LineText` (a `TextSource` over any bytes, indexed by line), `OwnedTree`, `OwnedTable`, and the hex model. `FileSource::part` makes a range of a file a file of its own, sharing its bytes: a container's entries (a GLB's chunks, an image inside a model) open that way without a copy.
 
 ### Hooks
 

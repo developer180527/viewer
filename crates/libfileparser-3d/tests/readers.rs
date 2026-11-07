@@ -120,7 +120,7 @@ fn dependencies_say_what_each_file_is_for_and_where_it_was_found() {
     let (doc, cx) = open_in_corpus("3d/cube-gltf/cube.gltf", libfileparser_core::InlineSpawn);
     let facets: Vec<_> = doc.facets().map(|f| (f.role, f.name.as_str())).collect();
     use libfileparser_core::Role::*;
-    assert_eq!(facets, [(Primary, "Scene"), (Dependencies, "Dependencies"), (Inspector, "Materials"), (Inspector, "Textures")]);
+    assert_eq!(facets, [(Primary, "Scene"), (Structure, "glTF"), (Dependencies, "Dependencies"), (Inspector, "Materials"), (Inspector, "Textures")]);
     assert_eq!(
         table(&doc, &cx, "Dependencies").unwrap(),
         [row(&["cube.bin", "buffer", "", "read"]), row(&["checker.png", "texture", "textures/checker.png", "read"])]
@@ -250,4 +250,66 @@ fn textures_show_decoding_then_decoded_and_list_the_missing_ones() {
 
     let (doc, cx) = open_in_corpus("3d/missing-texture/cube.gltf", libfileparser_core::InlineSpawn);
     assert_eq!(table(&doc, &cx, "Textures").unwrap(), [row(&["not-here.png", "file", "", "", "missing"])]);
+}
+
+#[test]
+fn glb_shows_its_gltf_json_chunk_and_chunks() {
+    use libfileparser_core::Role::*;
+    let (doc, cx) = open_in_corpus("3d/cube.glb", libfileparser_core::InlineSpawn);
+    let facets: Vec<_> = doc.facets().map(|f| (f.role, f.name.as_str())).collect();
+    assert_eq!(facets, [(Primary, "Scene"), (Structure, "glTF"), (Source, "JSON chunk"), (Package, "Chunks"), (Inspector, "Materials"), (Inspector, "Textures")]);
+
+    let gltf = tree(&doc, &cx, "glTF", 1);
+    assert!(gltf.iter().any(|l| l.starts_with("asset = ")) && gltf.iter().any(|l| l.starts_with("meshes = [")), "{gltf:?}");
+
+    let i = doc.facets().position(|f| f.name == "JSON chunk").unwrap();
+    let Ok(Content::Text(text)) = doc.facet(i, &cx) else { panic!("not text") };
+    assert_eq!(text.info().language.as_deref(), Some("json"));
+    let first = text.lines(0..1).unwrap();
+    assert!(first[0].as_slice().starts_with(b"{"));
+
+    let i = doc.facets().position(|f| f.name == "Chunks").unwrap();
+    let Ok(Content::Container(chunks)) = doc.facet(i, &cx) else { panic!("not a container") };
+    let entries = chunks.entries(0..10).unwrap();
+    let paths: Vec<_> = entries.iter().map(|e| e.path.as_str()).collect();
+    assert_eq!(paths[..2], ["JSON.json", "BIN.bin"]);
+    let image = paths.iter().position(|p| p.starts_with("images/")).expect("the embedded image");
+    // An entry opens as a file of its own, a view of the GLB's bytes.
+    let png = chunks.open(image as u64).unwrap();
+    assert!(png.bytes().starts_with(b"\x89PNG"), "{}", png.name());
+    assert_eq!(png.len(), entries[image].size);
+    let json = chunks.open(0).unwrap();
+    assert!(serde_json::from_slice::<serde_json::Value>(json.bytes()).is_ok());
+}
+
+#[test]
+fn gltf_lists_its_extensions() {
+    // A triangle in a data: URI buffer, using one extension read here and one not.
+    let mut bin = Vec::new();
+    for v in [0f32, 0., 0., 1., 0., 0., 0., 1., 0.] {
+        bin.extend_from_slice(&v.to_le_bytes());
+    }
+    use base64::Engine;
+    let uri = format!("data:application/octet-stream;base64,{}", base64::engine::general_purpose::STANDARD.encode(&bin));
+    let json = serde_json::json!({
+        "asset": { "version": "2.0" },
+        "extensionsUsed": ["KHR_materials_unlit", "KHR_materials_sheen"],
+        "extensionsRequired": ["KHR_materials_unlit"],
+        "buffers": [{ "uri": uri, "byteLength": 36 }],
+        "bufferViews": [{ "buffer": 0, "byteLength": 36 }],
+        "accessors": [{ "bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 0] }],
+        "meshes": [{ "primitives": [{ "attributes": { "POSITION": 0 } }] }],
+        "nodes": [{ "mesh": 0 }],
+        "scenes": [{ "nodes": [0] }]
+    });
+    let src = FileSource::from_bytes("tri.gltf", serde_json::to_vec(&json).unwrap());
+    let cx = ParseContext::new();
+    let doc = GltfReader.open(&src, &cx).unwrap();
+    assert_eq!(
+        table(&doc, &cx, "Extensions used").unwrap(),
+        [row(&["KHR_materials_unlit", "yes", "read"]), row(&["KHR_materials_sheen", "no", "not read"])]
+    );
+    // A .gltf's JSON is the front door's Source, so no JSON chunk or Chunks here.
+    let names: Vec<_> = doc.facets().map(|f| f.name.clone()).collect();
+    assert!(names.contains(&"glTF".to_string()) && !names.iter().any(|n| n == "JSON chunk" || n == "Chunks"), "{names:?}");
 }

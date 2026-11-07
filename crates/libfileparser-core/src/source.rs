@@ -6,6 +6,8 @@ use std::sync::Arc;
 enum Data {
     Mapped(memmap2::Mmap),
     Owned(Vec<u8>),
+    /// A range of another file's bytes, sharing them.
+    Part(Arc<Data>, std::ops::Range<usize>),
 }
 
 impl AsRef<[u8]> for Data {
@@ -13,6 +15,7 @@ impl AsRef<[u8]> for Data {
         match self {
             Data::Mapped(m) => m,
             Data::Owned(v) => v,
+            Data::Part(of, range) => &(**of).as_ref()[range.clone()],
         }
     }
 }
@@ -90,10 +93,17 @@ impl FileSource {
     }
 
     pub fn bytes(&self) -> &[u8] {
-        match &*self.data {
-            Data::Mapped(m) => m,
-            Data::Owned(v) => v,
-        }
+        (*self.data).as_ref()
+    }
+
+    /// `range` of this file's bytes as a file of its own named `name`, sharing the
+    /// bytes rather than copying them: a GLB's JSON chunk, an image inside a model.
+    /// The range is clamped to the file.
+    pub fn part(&self, name: impl Into<String>, range: std::ops::Range<usize>) -> Self {
+        let len = self.bytes().len();
+        let end = range.end.min(len);
+        let range = range.start.min(end)..end;
+        Self { name: name.into().into(), path: None, data: Arc::new(Data::Part(self.data.clone(), range)), folder: false }
     }
 
     /// The bytes as a shared handle that keeps the mapping alive, for consumers that
@@ -131,5 +141,21 @@ impl fmt::Debug for FileSource {
             .field("name", &self.name)
             .field("len", &self.len())
             .finish()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FileSource;
+
+    #[test]
+    fn a_part_shares_its_file_and_is_clamped() {
+        let file = FileSource::from_bytes("model.glb", b"glTF....{\"asset\":{}}rest".to_vec());
+        let json = file.part("model.json", 8..20);
+        assert_eq!((json.name(), json.bytes()), ("model.json", &b"{\"asset\":{}}"[..]));
+        assert!(json.path().is_none());
+        // Of a part, and past the end: clamped, never a panic.
+        assert_eq!(json.part("x", 1..100).bytes(), b"\"asset\":{}}");
+        assert!(file.part("y", 50..60).is_empty());
     }
 }

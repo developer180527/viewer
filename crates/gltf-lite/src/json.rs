@@ -20,6 +20,7 @@ pub struct Root {
     pub materials: Vec<Material>,
     pub textures: Vec<Texture>,
     pub images: Vec<Image>,
+    pub extensions_used: Vec<String>,
     pub extensions_required: Vec<String>,
     pub extensions: Map<String, Value>,
 }
