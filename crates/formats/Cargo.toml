@@ -8,7 +8,6 @@ license.workspace = true
 [dependencies]
 anyhow.workspace = true
 viewer-core.workspace = true
-viewer-fmt-image.workspace = true
 viewer-fmt-doc.workspace = true
 viewer-fmt-data.workspace = true
 libfileparser.workspace = true

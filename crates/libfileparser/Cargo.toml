@@ -6,13 +6,15 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-default = ["3d", "text", "archives"]
+default = ["images", "3d", "text", "archives"]
+images = ["dep:libfileparser-images"]
 3d = ["dep:libfileparser-3d"]
 text = ["dep:libfileparser-text"]
 archives = ["dep:libfileparser-archives"]
 
 [dependencies]
 libfileparser-core.workspace = true
+libfileparser-images = { workspace = true, optional = true }
 libfileparser-3d = { workspace = true, optional = true }
 libfileparser-text = { workspace = true, optional = true }
 libfileparser-archives = { workspace = true, optional = true }

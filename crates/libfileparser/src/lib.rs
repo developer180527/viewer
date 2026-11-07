@@ -12,7 +12,7 @@
 //!
 //! It has no policy of its own: it takes the app's [`ParseContext`] like any category,
 //! with `-core`'s defaults unless the app gives its own. Categories are features
-//! (`3d`, `text`, `archives`, all on by default); an app that wants one kind of file
+//! (`images`, `3d`, `text`, `archives`, all on by default); an app that wants one kind of file
 //! takes that category alone.
 //!
 //! ```ignore
@@ -33,6 +33,8 @@ pub fn readers() -> &'static [&'static dyn Reader] {
     ALL.get_or_init(|| {
         #[allow(unused_mut)]
         let mut all: Vec<&'static dyn Reader> = Vec::new();
+        #[cfg(feature = "images")]
+        all.extend(libfileparser_images::readers());
         #[cfg(feature = "3d")]
         all.extend(libfileparser_3d::readers());
         #[cfg(feature = "archives")]

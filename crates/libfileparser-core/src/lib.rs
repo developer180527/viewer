@@ -24,7 +24,7 @@ mod source;
 
 pub use bytes::Bytes;
 pub use content::{
-    Container, Content, Count, Entry, EntryKind, LineText, MemoryUse, Model, NodeId, OwnedTable, OwnedTree, Raster, SceneDoc, TableInfo,
+    Band, BandSource, Bands, Container, Content, Count, Entry, EntryKind, LineText, MemoryUse, Model, NodeId, OwnedTable, OwnedTree, Pixels, Raster, SceneDoc, TableInfo,
     TableSource, TextInfo, TextSource, TreeNode, TreeSource,
 };
 pub use dependency::{Dependencies, Dependency, DependencyStatus, DependencyTable, Unreadable};

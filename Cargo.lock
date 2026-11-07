@@ -1335,6 +1335,7 @@ dependencies = [
  "libfileparser-3d",
  "libfileparser-archives",
  "libfileparser-core",
+ "libfileparser-images",
  "libfileparser-testkit",
  "libfileparser-text",
  "zip",
@@ -1375,6 +1376,17 @@ version = "0.1.0"
 dependencies = [
  "memmap2",
  "scene-data",
+]
+
+[[package]]
+name = "libfileparser-images"
+version = "0.1.0"
+dependencies = [
+ "image",
+ "libfileparser-core",
+ "libfileparser-testkit",
+ "png",
+ "resvg",
 ]
 
 [[package]]
@@ -3458,7 +3470,6 @@ dependencies = [
  "viewer-core",
  "viewer-fmt-data",
  "viewer-fmt-doc",
- "viewer-fmt-image",
  "viewer-fmt-pdf",
  "viewer-formats",
  "wgpu",
@@ -3510,17 +3521,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "viewer-fmt-image"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "image",
- "png",
- "resvg",
- "viewer-core",
-]
-
-[[package]]
 name = "viewer-fmt-pdf"
 version = "0.1.0"
 dependencies = [
@@ -3540,7 +3540,6 @@ dependencies = [
  "viewer-core",
  "viewer-fmt-data",
  "viewer-fmt-doc",
- "viewer-fmt-image",
  "viewer-fmt-pdf",
 ]
 

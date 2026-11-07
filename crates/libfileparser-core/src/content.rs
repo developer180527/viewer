@@ -56,7 +56,10 @@ impl Content {
     /// What this content holds.
     pub fn memory(&self) -> MemoryUse {
         match self {
-            Content::Raster(r) => MemoryUse::heap(r.rgba.len() as u64),
+            Content::Raster(r) => match &r.pixels {
+                Pixels::Full(p) => MemoryUse::heap(p.len() as u64),
+                Pixels::Bands(s) => s.memory(),
+            },
             Content::Text(t) => t.memory(),
             Content::Tree(t) => t.memory(),
             Content::Table(t) => t.memory(),
@@ -99,12 +102,47 @@ impl std::ops::Add for MemoryUse {
 
 // ---------------------------------------------------------------- raster
 
-/// An image in straight (non-premultiplied) RGBA8.
+/// An image in straight (non-premultiplied) RGBA8: its size, then its pixels, either
+/// already decoded or decoded band by band when asked.
 #[derive(Clone)]
 pub struct Raster {
     width: u32,
     height: u32,
-    rgba: Arc<[u8]>,
+    pixels: Pixels,
+}
+
+/// A raster's pixels.
+#[derive(Clone)]
+#[non_exhaustive]
+pub enum Pixels {
+    /// Every row: `width * height * 4` bytes.
+    Full(Arc<[u8]>),
+    /// Decoded when asked for, a band of rows at a time: a document holds only how to
+    /// decode the image (its file and format), never the image, and an app decides
+    /// where and how much to decode (a thread streaming bands to the GPU, or the whole
+    /// image at once).
+    Bands(Arc<dyn BandSource>),
+}
+
+/// Rows `y..y + rgba.len() / (width * 4)` of an image, as RGBA8.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Band {
+    pub y: u32,
+    pub rgba: Vec<u8>,
+}
+
+/// An image's bands, top to bottom, each decoded when it's asked for.
+pub type Bands = Box<dyn Iterator<Item = Result<Band>> + Send>;
+
+/// Decodes an image band by band, on the calling thread: the library starts no thread
+/// of its own (an app that wants decoding off its UI thread pulls from one of its own).
+pub trait BandSource: Send + Sync {
+    /// The bands from the top. Each call starts again, so the image can be shown twice
+    /// without being kept; an error ends them.
+    fn bands(&self) -> Result<Bands>;
+    fn memory(&self) -> MemoryUse {
+        MemoryUse::default()
+    }
 }
 
 impl Raster {
@@ -113,7 +151,12 @@ impl Raster {
         if rgba.len() as u64 != width as u64 * height as u64 * 4 {
             return Err(ParseError::corrupt(format!("{} bytes for a {width} × {height} image", rgba.len())));
         }
-        Ok(Self { width, height, rgba: rgba.into() })
+        Ok(Self { width, height, pixels: Pixels::Full(rgba.into()) })
+    }
+
+    /// An image decoded by `source` when asked for.
+    pub fn from_bands(width: u32, height: u32, source: impl BandSource + 'static) -> Self {
+        Self { width, height, pixels: Pixels::Bands(Arc::new(source)) }
     }
 
     pub fn width(&self) -> u32 {
@@ -124,8 +167,39 @@ impl Raster {
         self.height
     }
 
-    pub fn rgba(&self) -> &[u8] {
-        &self.rgba
+    pub fn pixels(&self) -> &Pixels {
+        &self.pixels
+    }
+
+    /// The pixels, when they are already decoded.
+    pub fn rgba(&self) -> Option<&[u8]> {
+        match &self.pixels {
+            Pixels::Full(p) => Some(p),
+            Pixels::Bands(_) => None,
+        }
+    }
+
+    /// Every pixel at once: decoded now when the raster is in bands. A band that runs
+    /// past the bottom, or a source that stops early, is an error.
+    pub fn decode(&self) -> Result<Vec<u8>> {
+        let source = match &self.pixels {
+            Pixels::Full(p) => return Ok(p.to_vec()),
+            Pixels::Bands(s) => s,
+        };
+        let row = self.width as usize * 4;
+        let mut rgba = vec![0u8; row * self.height as usize];
+        let mut filled = 0usize;
+        for band in source.bands()? {
+            let band = band?;
+            let start = band.y as usize * row;
+            let end = start.checked_add(band.rgba.len()).filter(|&e| e <= rgba.len()).ok_or_else(|| ParseError::corrupt("a band runs past the image"))?;
+            rgba[start..end].copy_from_slice(&band.rgba);
+            filled = filled.max(end);
+        }
+        if filled < rgba.len() {
+            return Err(ParseError::corrupt(format!("the image ended at row {} of {}", filled / row.max(1), self.height)));
+        }
+        Ok(rgba)
     }
 }
 

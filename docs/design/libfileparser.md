@@ -1,6 +1,6 @@
 # libfileparser: open any file, in any app
 
-Status: design agreed 2026-11-06. Built: `-core` and `-testkit` (2026-11-06); `-3d` (2026-11-06–07, [libfileparser-3d.md](libfileparser-3d.md)); `-text`, `-archives` and the `libfileparser` front door, which Viewer opens 3D files, archives and folders through, its View as listing every facet (§12 step 3, 2026-11-07). Images, data and docs are still Viewer's own loaders (§12 step 4). Pre-1.0: every API here may change until §5's checks are in place. Crate names are settled; type names are a first draft. Builds on [document-model.md](document-model.md). [libfileparser-3d.md](libfileparser-3d.md) applies this design to 3D.
+Status: design agreed 2026-11-06. Built: `-core` and `-testkit` (2026-11-06); `-3d` (2026-11-06–07, [libfileparser-3d.md](libfileparser-3d.md)); `-text`, `-archives` and the `libfileparser` front door, which Viewer opens 3D files, archives and folders through, its View as listing every facet (§12 step 3, 2026-11-07); `-images` (§12 step 4, 2026-11-07). Data and docs are still Viewer's own loaders. Pre-1.0: every API here may change until §5's checks are in place. Crate names are settled; type names are a first draft. Builds on [document-model.md](document-model.md). [libfileparser-3d.md](libfileparser-3d.md) applies this design to 3D.
 
 **Goal:** any app (an IDE, a game engine editor, a chat app, a file manager) can open and show any kind of file, taking only the parts it needs, cheaply. Viewer is the first user, not the owner: nothing here knows about Viewer, libgui or a GPU.
 
@@ -71,7 +71,7 @@ What a facet's data looks like. Large ones are **sources read by range**, never 
 
 | Model | Shape | Read by |
 |---|---|---|
-| `Raster` | Size, then pixels (whole today; bands come with `-images`) | Bands |
+| `Raster` | Size, then pixels: whole, or a `BandSource` that decodes bands of rows when asked, on the caller's thread, each time from the top. A document holds how to decode an image, never the decoded image; the app chooses where to decode and how much (`Raster::decode` for all at once) | Bands |
 | `Pages` (`PageSource`) | Page count and sizes; render a region into the caller's buffer | Page and region |
 | `Flow` (later) | Reflowing styled text with images (DOCX, EPUB) | Blocks |
 | `Text` (`TextSource`) | `info()`: line count, encoding, language | `lines(a..b)` as shared bytes |
@@ -352,7 +352,7 @@ The corpus passes after every step.
 1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse`, `FacetProvider`; the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ⬜ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI: planned, not running yet.
 2. 🟡 **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md) (moved and on the hooks 2026-11-06; its other facets to come): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
 3. ✅ **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it (2026-11-07). `-archives` is Viewer's former `fmt-archive`, moved: limits come from the context, tar entries are views of the archive. Viewer keeps the front door's document with the page, so View as lists its facets (Scene, Stage, Layers…, Source, Raw) and switches between them without reading the file again; `--view-as` takes a facet name too. Viewer still converts a facet to its own content to show it (trees and tables built up front, at most 50,000 nodes and 100,000 rows), until its views read libfileparser's content models directly.
-4. **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1.
+4. 🟡 **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1. ✅ `-images` (2026-11-07): Viewer's `fmt-image` moved. Opening reads the header only (size, colour type, the image-pixel limit); pixels are a band source: non-interlaced PNGs row by row, other formats decoded whole in their own layout and converted to RGBA a band at a time, SVG rendered when asked. Viewer decodes images up to 16 megapixels whole on its loader thread and streams bigger ones band by band to the GPU from a thread of its own, as before. Not yet: `-3d` decoding its textures through `-images` (§2's "sideways toward leaves"), §4.1's reduced-size and region decoding.
 5. **`-thumb`** and a thumbnail CLI, as the first user outside Viewer.
 6. **`-remote`** (MuPDF in a helper on desktop), then **`-c`**.
 

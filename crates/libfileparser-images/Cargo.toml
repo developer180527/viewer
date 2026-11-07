@@ -1,17 +1,19 @@
 [package]
-name = "viewer-fmt-image"
-description = "Raster and vector image loaders."
+name = "libfileparser-images"
+description = "Any image into a document: PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, DDS, QOI, ICO, TGA and SVG, decoded when shown, big ones band by band (docs/design/libfileparser.md §2)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-viewer-core.workspace = true
-anyhow.workspace = true
-# Pure-Rust decoders only, so this builds on every target (PLAN.md §5).
+libfileparser-core.workspace = true
+# Pure-Rust decoders only, so this builds on every target.
 image = { version = "0.25", default-features = false, features = [
     "png", "jpeg", "gif", "webp", "bmp", "tiff", "ico", "tga", "qoi", "pnm", "hdr", "exr", "dds", "ff", "rayon",
 ] }
 # Row-by-row PNG decoding for big images (the version `image` uses).
 png = "0.18"
 resvg = { version = "0.49", default-features = false, features = ["text", "system-fonts", "memmap-fonts", "svgz", "raster-images"] }
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true

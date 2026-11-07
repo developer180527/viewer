@@ -37,7 +37,10 @@ pub fn summarize(doc: &Document, cx: &ParseContext) -> String {
 pub fn content_summary(content: &Content, out: &mut String) {
     match content {
         Content::Raster(r) => {
-            let _ = writeln!(out, "  raster {}x{} fnv {:016x}", r.width(), r.height(), fnv(r.rgba()));
+            let _ = match r.decode() {
+                Ok(rgba) => writeln!(out, "  raster {}x{} fnv {:016x}", r.width(), r.height(), fnv(&rgba)),
+                Err(e) => writeln!(out, "  raster {}x{} not decoded: {e}", r.width(), r.height()),
+            };
         }
         Content::Text(t) => {
             let info = t.info();

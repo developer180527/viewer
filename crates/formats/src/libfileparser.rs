@@ -15,8 +15,8 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Result, anyhow, bail};
-use libfileparser::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Reader, Role, Spawn, TreeSource};
-use viewer_core::{Document, Facets, FileSource, FormatLoader, Raster, SceneDoc, Unreadables};
+use libfileparser::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Pixels, Reader, Role, Spawn, TreeSource};
+use viewer_core::{BandStream, Document, Facets, FileSource, FormatLoader, Raster, SceneDoc, Unreadables};
 
 /// A libfileparser reader as a Viewer loader.
 pub struct ReaderLoader(pub &'static dyn Reader);
@@ -63,9 +63,13 @@ pub fn open_folder(path: &Path) -> Result<Document> {
 
 fn viewer_document(doc: Arc<libfileparser::Document>, index: usize, src: &FileSource, cx: &ParseContext) -> Result<Document> {
     let content = convert(&doc, index, src, cx)?;
+    let streamed = matches!(&content, viewer_core::Content::Raster(r) if matches!(r.pixels, viewer_core::Pixels::Bands(_)));
     let mut out = Document::new(doc.format().name.clone(), content);
     for (k, v) in doc.metadata() {
         out = out.with_meta(k.clone(), v);
+    }
+    if streamed {
+        out = out.with_meta("Decoded", "in bands, straight to the GPU");
     }
     out.unreadable = Unreadables::from_dependencies(doc.dependencies().clone());
     out.facets = Some(Facets { doc, shown: index });
@@ -84,7 +88,7 @@ fn convert(doc: &libfileparser::Document, index: usize, src: &FileSource, cx: &P
     let info = doc.facets().nth(index).ok_or_else(|| anyhow!("no facet {index}"))?.clone();
     Ok(match doc.facet(index, cx).map_err(|e| anyhow!("{}: {e}", info.name))? {
         Content::Scene(s) => viewer_core::Content::Scene(SceneDoc { scene: s.scene().clone(), textures_pending: s.pending_counter() }),
-        Content::Raster(r) => viewer_core::Content::Raster(Raster::full(r.width(), r.height(), r.rgba().to_vec())),
+        Content::Raster(r) => viewer_core::Content::Raster(raster(&r)?),
         Content::Hex(src) => viewer_core::Content::Hex(src),
         Content::Text(t) => {
             // Viewer's text loader highlights; give it the file itself when the facet is
@@ -120,6 +124,30 @@ fn convert(doc: &libfileparser::Document, index: usize, src: &FileSource, cx: &P
         }
         Content::Container(c) => viewer_core::Content::Container(Arc::new(EntriesOf::new(c)?)),
         _ => bail!("{} is content Viewer can't show yet", info.name),
+    })
+}
+
+/// Above this many pixels (64 MB as RGBA) an image streams: decoded band by band on a
+/// thread and uploaded as the bands arrive, so the whole RGBA image never sits in
+/// memory. Below it, decoded whole here, on the loader thread.
+const STREAM_ABOVE_PIXELS: u64 = 16 << 20;
+
+fn raster(r: &libfileparser::Raster) -> Result<Raster> {
+    let (width, height) = (r.width(), r.height());
+    Ok(match r.pixels() {
+        Pixels::Bands(source) if width as u64 * height as u64 > STREAM_ABOVE_PIXELS => {
+            let source = source.clone();
+            let stream = BandStream::spawn(move |emit| {
+                for band in source.bands().map_err(|e| e.to_string())? {
+                    if !emit(band.map_err(|e| e.to_string())?) {
+                        return Ok(());
+                    }
+                }
+                Ok(())
+            });
+            Raster { width, height, pixels: viewer_core::Pixels::Bands(stream) }
+        }
+        _ => Raster::full(width, height, r.decode().map_err(|e| anyhow!("{e}"))?),
     })
 }
 

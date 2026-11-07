@@ -17,7 +17,7 @@ usd-lite.workspace = true
 serde_json = { version = "1", features = ["preserve_order"] }
 # Official bindings to ufbx, a single-file C loader for FBX (and OBJ/MTL).
 ufbx = "0.11"
-# Texture decoding; the same pure-Rust decoders viewer-fmt-image already builds.
+# Texture decoding; the same pure-Rust decoders libfileparser-images builds.
 # JPEG decoded at 1/2–1/8 scale in the IDCT, so a 4K map never exists at full size.
 jpeg-decoder = { version = "0.3", default-features = false }
 # EXR read pixel by pixel, shrinking as it decodes (see textures.rs); the version `image` uses.

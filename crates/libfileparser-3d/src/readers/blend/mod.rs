@@ -181,7 +181,7 @@ mod tests {
     fn preview_is_found_after_rend_and_flipped_upright() {
         let (r, version) = preview(&blend_with_preview(2, 2), &Limits::desktop()).unwrap();
         assert_eq!((r.width(), r.height()), (2, 2));
-        let rgba = r.rgba();
+        let rgba = r.rgba().unwrap();
         assert_eq!(&rgba[..4], [0, 0, 255, 255], "top row first");
         assert_eq!(&rgba[8..12], [255, 0, 0, 255]);
         assert_eq!(version, "2.83");

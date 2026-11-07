@@ -60,13 +60,13 @@ MIT or Apache-2.0, except `crates/pdf-mupdf`, which links MuPDF and is AGPL-3.0-
 
 ```
 crates/core          traits, content models, registry, hex fallback
-crates/fmt-image     image + SVG loaders
 crates/fmt-doc       text / code / Markdown loaders
 crates/fmt-data      JSON / TOML / CSV loaders
 crates/libfileparser          the front door: every category together, plus the Source, Package and Raw facets
 crates/libfileparser-core     libfileparser's contracts: documents, facets, links, Reader, hooks, limits
 crates/libfileparser-testkit  hook fakes and the conformance suite every reader passes
 crates/libfileparser-3d       glTF, FBX/OBJ (ufbx), STL, PLY, USD, .blend; their structure facets; texture decoding
+crates/libfileparser-images   PNG, JPEG, WebP, GIF, TIFF, EXR, HDR… and SVG, decoded band by band when shown
 crates/libfileparser-text     text by lines and its language; the Source facet
 crates/libfileparser-archives zip / tar / gzip containers, folders; the Package facet
 crates/fmt-pdf       PDF loader; picks the backend by target

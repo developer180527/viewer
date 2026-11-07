@@ -190,11 +190,9 @@ impl Raster {
     }
 }
 
-/// Rows `y..y + rgba.len() / (width * 4)` of an image.
-pub struct Band {
-    pub y: u32,
-    pub rgba: Vec<u8>,
-}
+/// Rows `y..y + rgba.len() / (width * 4)` of an image: libfileparser's, so its bands
+/// come through unchanged.
+pub use libfileparser_core::Band;
 
 pub enum Next {
     Band(Band),
