@@ -24,6 +24,8 @@ libfileparser                  all categories together, in the shared model: det
    ├── libfileparser-3d        │
    ├── libfileparser-docs      │  category libraries: each reads ANY file of its kind,
    ├── libfileparser-data      │  into documents with facets, and works on its own
+   ├── libfileparser-sheets    │  (§2.1)
+   ├── libfileparser-datasets  │  (§2.1)
    ├── libfileparser-text      │
    ├── libfileparser-archives  │
    ├── libfileparser-media     ┘  (later; FFmpeg)
@@ -42,8 +44,10 @@ optional, beside them:
 | **`-images`** | PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, SVG; later HEIC, RAW, JPEG XL, PSD | Raster | A leaf |
 | **`-3d`** | glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDA/USDC/USDZ, `.blend`; later CAD, point clouds | Scene | `-images`, ufbx, `usd-lite` |
 | **`-docs`** | PDF; later comics, DOCX, ODT, RTF, EPUB, PPTX, ODP | Pages, Flow | `-images`; feature `mupdf` (AGPL); PDFKit on Apple |
-| **`-data`** | JSON, JSON Lines, TOML, YAML, XML, CSV/TSV; later XLSX, ODS, Parquet, SQLite | Table, Tree | — |
-| **`-text`** | Text, code, logs, Markdown | Text, Markdown | — |
+| **`-data`** | Data written as text: structured, config, delimited tables, schemas, RDF, graphs, geo, logs, science records, SQL, contacts and calendars, business messages, localization, feeds (§2.1) | Tree, Table | Pure Rust, a feature per family |
+| **`-sheets`** | ODS, FODS, SYLK, DIF; later XLSX, XLSM, XLS, Numbers | Workbook (a Container of Tables) | zip, XML |
+| **`-datasets`** | HDF5, NetCDF, FITS, MATLAB, R, SAS, Stata, SPSS, Parquet, ORC, Feather, SQLite | Table, Tree | Heavy readers, as features |
+| **`-text`** | Text, code; Markdown until `-docs` owns it | Text, Markdown | — |
 | **`-archives`** | Zip, tar, gzip, folders; later 7z, RAR, ISO | Container | — |
 | **`-media`** (later) | Audio, video, subtitles | Media | FFmpeg (LGPL), optional |
 | **`libfileparser`** | Whatever is enabled | — | The categories |
@@ -54,6 +58,77 @@ optional, beside them:
 2. **Generic facets live in one place:** Source (the file's text by line) and Raw (its bytes) in `-core`, which every category's documents end with (`Document::with_file_facets`), so a category used alone has them; container listings in `-archives`, which the front door adds to a zip no category listed. No category writes its own. (Until 2026-11-07 Source came from the front door only, so `-3d` alone had none.)
 3. **Sideways only toward leaves:** `-3d` and `-docs` may use `-images` and `-core`'s generic types; nothing may use `-3d` or `-docs`.
 4. **Heavy or copyleft parts are features inside their category** (`-docs` + `mupdf`, `-media` + FFmpeg), named in the feature list, never on by accident. A default build is MIT/Apache throughout.
+5. **Every format has one owner; other categories may also read it** (§2.1).
+
+### 2.1 Which category owns which format
+
+Decided 2026-11-08. Not built yet, except where marked.
+
+**The rule.**
+
+1. **One owner per format:** the category that matches what the file is *for*. HTML is a document, SVG an image, subtitles media. In the front door, the owner's reading is the document and its primary facet.
+2. **Others may also read it,** from their own angle, when their model says something useful: `-data` reads an SVG as an XML tree. Used alone, that category opens the file that way, so "reads any file of its kind" means every format it owns plus every format its model fits. In the front door it doesn't compete: the Library asks it as a facet provider, and its facets come after the owner's, before Source and Raw, made only when asked for.
+3. **No owner enabled or built yet:** the best other reading opens the file instead. Subtitles open as `-data`'s cue table until `-media` exists; then the media facet goes in front and the cue table stays. Adding an owner later is a minor version (§5).
+4. **Text needs no claim:** `-core` gives every text file Source and Raw (§2, boundary 2), so `-text` owns plain text and code only, never JSON, SQL or logs.
+5. **Content decides; the extension is a hint.** A reader claims a file only when its bytes match (the ambiguous extensions are below). What nothing claims opens as text or Raw, never as a wrong tree.
+6. **How:** each entry in a reader's format list says *owns* or *also reads* (a new field on a `#[non_exhaustive]` type, so not breaking). The Library opens with the owner and adds the others as facet providers.
+7. **Parsing lives once.** When two categories read one format, the parser is in one crate (or a `-lite` format library) and the other uses it, keeping §2's boundary 3.
+
+**`-data`: owner.** One crate, a Cargo feature per family, all on by default.
+
+| Family (feature) | Formats | Facets |
+|---|---|---|
+| Structured (always) | `.json` `.jsonl` `.ndjson` `.json5` `.jsonc` `.hjson` `.yaml` `.yml` `.toml` `.xml` `.sgml` `.sgm` `.plist` | Tree; JSON Lines also Table |
+| Delimited (always) | `.csv` `.tsv` `.dsv` `.psv` `.ssv` `.fwf` `.dat` `.prn` | Table |
+| `config` | `.ini` `.properties` `.env` `.conf` `.cfg` `.hcl` `.tf` `.cue` `.dhall` `.ncl` `.kdl` `.cron` | Tree (parsed as written, never evaluated); cron a Table |
+| `schemas` | `.proto` `.avsc` `.thrift` `.fbs` `.capnp` `.smithy` `.graphql` `.gql` `.openapi` `.asyncapi` `.xsd` `.rng` `.sch` `.wsdl` `.dbml` `.prisma` | Tree of types and fields |
+| `rdf` | `.rdf` `.owl` `.ttl` `.nt` `.nq` `.trig` `.jsonld` `.trix` `.rq` `.sparql` | Table of triples or quads, Tree; queries a Tree |
+| `graphs` | `.graphml` `.gexf` `.gxl` `.dot`, Graph Modelling `.gml` | Tables of nodes and edges, Tree |
+| `geo` | `.geojson` `.topojson` `.kml` `.kmz` `.gpx` `.gml` `.wkt` `.osm` `.nmea` | Tree, Table of features; a map view later, in libviewer |
+| `logs` | `.log` `.syslog` `.gelf` `.cef` `.ltsv` `.har` | Table of entries |
+| `science` | `.arff` `.dimacs` `.fasta` `.fa` `.fna` `.fastq` `.fq` `.gb` `.gbk` `.gff` `.gff3` `.bed` variant-call `.vcf` `.sam` `.pdb` `.ent` `.cif` | Table of records, Tree |
+| `sql` | `.sql` `.dump` `.cql` | Tree of statements; Tables from `CREATE`/`INSERT` |
+| `records` | vCard `.vcf`, `.ics` `.ical` `.ldif` | Table of entries, Tree |
+| `business` | `.edi` `.x12` `.hl7` `.ofx` `.qif` `.fix` `.fin` `.xbrl` | Tree of segments, Table |
+| `l10n` | `.po` `.pot` `.mo` `.xlf` `.xliff` `.tmx` `.resx` `.strings` `.stringsdict` `.arb` | Table of keys and translations |
+| `feeds` | `.m3u` `.m3u8` `.pls` `.xspf` `.rss` `.atom` | Table of entries, Tree |
+
+The JSON, JSON Lines, TOML, YAML, XML and CSV/TSV readers move from Viewer's `viewer-fmt-data`. `.kmz` is a zip: `-data` reads the KML inside, and the zip is a Package facet from `-archives`.
+
+**`-sheets` and `-datasets`: owners.** They are separate from `-data` because of their dependencies and models (2026-11-08):
+
+| Crate | Formats | Why not in `-data` |
+|---|---|---|
+| **`-sheets`** | `.ods` `.fods` `.slk` `.dif`; later `.xlsx` `.xlsm` `.xls` `.numbers` | Workbooks: several sheets, typed cells, formulas and their values, merged cells; zip and XML underneath |
+| **`-datasets`** | `.h5` `.hdf5` `.nc` `.fits` `.fit` `.mat` `.rds` `.rda` `.sas7bdat` `.dta` `.sav` `.parquet` `.orc` `.feather` `.sqlite` `.sqlite3` `.db` | Binary arrays and column stores; large readers, some in C, each a feature |
+
+**Owned elsewhere; `-data` also reads:**
+
+| Formats | Owner | `-data` adds |
+|---|---|---|
+| `.html` `.htm` `.xhtml` | `-docs` | DOM tree |
+| `.md` `.markdown` | `-docs` (`-text` until then) | Front matter as a Tree |
+| `.rst` `.adoc` `.org` `.textile` `.rtf` | `-docs` | Nothing |
+| `.svg` | `-images` | XML tree |
+| `.srt` `.vtt` `.ttml` | `-media` | Table of cues; opens them until `-media` exists |
+
+**Owned here; other categories also read:** `.pdb` `.ent` `.cif` (`-data`), a molecule Scene from `-3d` (later); `.fits` (`-datasets`), an image from `-images`; `.kmz` (`-data`), the Package facet from `-archives`.
+
+**Ambiguous extensions,** told apart by content:
+
+| Extension | Could be | Tells them apart |
+|---|---|---|
+| `.vcf` | Variant calls (`science`) or vCard (`records`) | `##fileformat=VCF` vs `BEGIN:VCARD` |
+| `.gml` | Geography Markup (`geo`) or Graph Modelling (`graphs`) | XML vs `graph [` |
+| `.fit` | FITS or Garmin FIT (both `-datasets`) | `SIMPLE  =` vs `.FIT` at byte 8 |
+| `.mat` | MATLAB v5 or v7.3 (HDF5), both `-datasets` | Header text vs HDF5 signature |
+| `.db` | SQLite, or anything else (Thumbs.db, Berkeley DB) | SQLite header; otherwise Raw |
+| `.dat` `.prn` | Delimited text, or anything | Delimiters found; otherwise Raw |
+| `.conf` `.cfg` | INI-like, or a program's own syntax | Sections or `key = value` lines; otherwise text |
+| `.sch` | Schematron, or a circuit schematic | XML only; otherwise Raw |
+| `.ent` | PDB, or an XML entity file | PDB record names; otherwise text |
+| `.fin` | SWIFT MT message, or anything | `{1:` block; otherwise Raw |
+| `.strings` | Text or binary plist | `bplist` signature |
 
 ## 3. `-core`: the contracts
 
@@ -305,7 +380,7 @@ What it adds is only what no single category can do:
 2. **Open the best reading;** on `NotThisFormat` or `Corrupt`, the next.
 3. **One document from several readings:** the best reading's facets, then the generic ones (Raw always; Source when text; Package when a container the reader didn't cover), then other readings' facets that add something new, made only when asked (document-model.md §4).
 4. **Containers:** a Package entry opens through the same detection, as a child document.
-5. **Features** choose categories (`images`, `3d`, `docs`, `data`, `text`, `archives`, `media`) and backends (`docs-mupdf`). Presets: `minimal` (pure Rust, permissive, WASM too), `default` (common formats, permissive), `full`.
+5. **Features** choose categories (`images`, `3d`, `docs`, `data`, `sheets`, `datasets`, `text`, `archives`, `media`) and backends (`docs-mupdf`). Presets: `minimal` (pure Rust, permissive, WASM too), `default` (common formats, permissive), `full`.
 6. **Nothing runs at startup:** readers are a static table; no category initialises until a matching file opens.
 
 Thread pools, folder grants, platform limits and the like are the app's, through the hooks; Viewer's are in `crates/formats/src/libfileparser.rs`.
@@ -379,7 +454,7 @@ The corpus passes after every step.
 1. ✅ **`-core` and `-testkit`** (2026-11-06): documents with facets, content models with range sources, generic Text/Tree/Hex, `Reader`, hooks, `Limits`, `ParseError`, `Dependencies`, `MemoryUse` (`FacetProvider` was listed here but only written 2026-11-07, §6); the fakes and the conformance suite. Sources made ranged, fallible and shared; safe file resolvers (`NoFiles` default, `FolderFiles`, `AnyFiles`); panics caught in facets and jobs; `Unsupported` and `InvalidRequest` errors (all 2026-11-06). ✅ API snapshots (`cargo public-api`) and `cargo semver-checks` in CI (2026-11-07, §5).
 2. 🟡 **`-3d`**, as in [libfileparser-3d.md](libfileparser-3d.md) (moved and on the hooks 2026-11-06; its other facets to come): it uses every hook and has the richest facets. If the design holds there, it holds everywhere.
 3. ✅ **The front door** with `-3d`, `-text` (Source facets) and `-archives` (Package facets); Viewer's 3D loading and View-as list switch to it (2026-11-07). `-archives` is Viewer's former `fmt-archive`, moved: limits come from the context, tar entries are views of the archive. Viewer keeps the front door's document with the page, so View as lists its facets (Scene, Stage, Layers…, Source, Raw) and switches between them without reading the file again; `--view-as` takes a facet name too. Until 2026-11-07 Viewer converted a facet to its own content to show it; now libviewer's views read the content models directly ([libviewer.md](libviewer.md)).
-4. 🟡 **The other categories,** one at a time: `-images`, `-data`, `-docs`, moving today's `viewer-fmt-*` loaders, each meeting §1. ✅ `-images` (2026-11-07): Viewer's `fmt-image` moved. Opening reads the header only (size, colour type, the image-pixel limit); pixels are a band source: non-interlaced PNGs row by row, other formats decoded whole in their own layout and converted to RGBA a band at a time, SVG rendered when asked. Viewer decodes images up to 16 megapixels whole on its loader thread and streams bigger ones band by band to the GPU from a thread of its own, as before. Not yet: `-3d` decoding its textures through `-images` (§2's "sideways toward leaves"), §4.1's reduced-size and region decoding.
+4. 🟡 **The other categories,** one at a time: `-images`, `-data` (with §2.1's owner and also-reads field), `-docs`, then `-sheets` and `-datasets`, moving today's `viewer-fmt-*` loaders, each meeting §1. ✅ `-images` (2026-11-07): Viewer's `fmt-image` moved. Opening reads the header only (size, colour type, the image-pixel limit); pixels are a band source: non-interlaced PNGs row by row, other formats decoded whole in their own layout and converted to RGBA a band at a time, SVG rendered when asked. Viewer decodes images up to 16 megapixels whole on its loader thread and streams bigger ones band by band to the GPU from a thread of its own, as before. Not yet: `-3d` decoding its textures through `-images` (§2's "sideways toward leaves"), §4.1's reduced-size and region decoding.
 5. **`-thumb`** and a thumbnail CLI, as the first user outside Viewer.
 6. **`-remote`** (MuPDF in a helper on desktop), then **`-c`**.
 
