@@ -38,12 +38,12 @@ Viewer has two hosts: the window (wgpu) and `--screenshot` (libgui's CPU rendere
 ## 3. Boundaries
 
 - **libviewer depends on** `libfileparser-core` (the content models), libgui, RendererX and wgpu. Never on a category library or a format: it can't know one.
-- **What stays in the app:** windows, menus, navigation, policy (which files may be read), the highlighter (`Highlights`: Viewer's is syntect), and views for content libfileparser has no model for yet: Markdown and PDF pages, which move here with `-docs`.
+- **What stays in the app:** windows, menus, navigation, policy (which files may be read), the highlighter (`Highlights`: Viewer's is syntect), and views for content libfileparser has no model for yet.
 - **Threads:** the raster view decodes bands on a thread of its own (the library side, libfileparser, starts none: it gives a band source, and the view decides where to pull from it).
 
 ## 4. Order of work
 
 1. ✅ **Split out** (2026-11-07): the views, the host contract and the 3D helper, moved from `crates/app/src/lg/`; views read libfileparser's content models directly, so Viewer's facets are no longer converted (trees lazy without a cap, tables live, containers listed on demand). Viewer's own loaders (JSON, TOML, CSV) build libfileparser trees and tables; its highlighted text is a `TextSource` with `Highlights`.
 2. **Renderers apart from views:** the toolkit-free part (tiling, band streaming, 3D frames) as a crate of its own, so a view for another UI toolkit reuses it (architecture.md §2).
-3. ✅ **Pages and Markdown** with `-docs`, and their views here (2026-11-08): the tiled page view moved from Viewer; Markdown formatted with libgui's widget.
+3. ✅ **Pages and Flow** with `-docs`, and their views here (2026-11-08): the tiled page view moved from Viewer; `FlowView` shows formatted text (Markdown, DOCX, ODT, EPUB, RTF, Org) with libgui's Markdown widget.
 4. **Links in views:** select in one view, highlight in another (`Document::links`), as an inspector does.

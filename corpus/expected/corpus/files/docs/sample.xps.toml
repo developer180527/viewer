@@ -1,0 +1,12 @@
+loader = "xps"
+format = "XPS document"
+model = "Pages"
+
+[pages]
+backend = "MuPDF"
+count = 1
+sizes = ["612x792"]
+
+[metadata]
+Pages = "1"
+"Rendered by" = "MuPDF"

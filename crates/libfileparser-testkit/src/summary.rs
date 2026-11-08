@@ -71,6 +71,31 @@ pub fn content_summary(content: &Content, out: &mut String) {
                 }
             }
         }
+        Content::Flow(f) => {
+            let _ = writeln!(out, "  flow: {} blocks", f.block_count());
+            match f.blocks(0..SHOWN as u64) {
+                Ok(blocks) => blocks.iter().for_each(|b| {
+                    let s = format!("{b:?}");
+                    let _ = writeln!(out, "  | {}", s.chars().take(160).collect::<String>());
+                }),
+                Err(e) => {
+                    let _ = writeln!(out, "  blocks failed: {e}");
+                }
+            }
+        }
+        Content::Pages(p) => {
+            let _ = writeln!(out, "  pages: {} by {}", p.page_count(), p.engine());
+            for i in 0..p.page_count().min(SHOWN as u64) {
+                match p.page_size(i) {
+                    Ok(s) => {
+                        let _ = writeln!(out, "  - page {} {}x{}", i + 1, s.width, s.height);
+                    }
+                    Err(e) => {
+                        let _ = writeln!(out, "  - page {} failed: {e}", i + 1);
+                    }
+                }
+            }
+        }
         Content::Container(c) => {
             let _ = writeln!(out, "  container: {} entries", c.entry_count());
             match c.entries(0..SHOWN as u64) {

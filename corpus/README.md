@@ -30,7 +30,7 @@ Every open runs on its own thread with a time limit, so a hang fails the test in
 
 ## Real-world files
 
-`fetch-real.sh` shallow-clones public test suites (toml-test, JSONTestSuite, the W3C RDF tests, htslib, pydot, kdl, hcl, x12-parser, pydifact, ofxparse, mt940, Arelle and more: about 4,000 files, ~50 MB) into `real/`, sorted by the reader each file should open with; `<reader>-invalid/` holds test suites' negative cases, which must fail or fall back cleanly. They're kept out of git (each has its own licence) and checked by an opt-in test that fails on any crash or hang and reports, per folder, what opened as what:
+`fetch-real.sh` clones public test suites one at a time into a throwaway folder (latest commit only, only the test folders), sorts their files into `real/`, and deletes the clone; it clones (toml-test, JSONTestSuite, the W3C RDF tests, htslib, pydot, kdl, hcl, x12-parser, pydifact, ofxparse, mt940, Arelle; for documents GitHub's markup tests, py-pdf's sample files, python-docx, Apache POI, odfpy, EPUBCheck; and more: about 4,000 files, ~50 MB) into `real/`, sorted by the reader each file should open with; `<reader>-invalid/` holds test suites' negative cases, which must fail or fall back cleanly. They're kept out of git (each has its own licence) and checked by an opt-in test that fails on any crash or hang and reports, per folder, what opened as what:
 
 ```bash
 corpus/fetch-real.sh

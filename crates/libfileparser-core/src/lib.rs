@@ -16,6 +16,7 @@ mod content;
 mod dependency;
 mod document;
 mod error;
+mod flow;
 mod generic;
 mod hooks;
 mod limits;
@@ -32,6 +33,7 @@ pub use content::{
 };
 pub use dependency::{Dependencies, Dependency, DependencyStatus, DependencyTable, Unreadable};
 pub use document::{Document, FacetInfo, FormatInfo, Role, Warning};
+pub use flow::{Block, FlowSource, Inline, OwnedFlow};
 pub use error::{LimitExceeded, ParseError, Position, Result};
 pub use generic::{FacetProvider, FileParts, is_text};
 pub use hooks::{AnyFiles, Cancel, FileResolver, FolderFiles, InlineSpawn, NoFiles, NoNotify, Notify, ParseContext, Spawn};

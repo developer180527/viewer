@@ -1,0 +1,9 @@
+[package]
+name = "rtf-lite"
+description = "Reads Rich Text Format into events (paragraphs, headings, marks, tables, links), for any document model. No dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]

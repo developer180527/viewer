@@ -11,7 +11,7 @@
 //! | `Raster` | [`raster`]: tiles on the GPU; an image in bands decoded on a thread, two bands ahead |
 //! | `Scene` | [`scene`]: RendererX, orbit, pan, zoom |
 //! | `Pages` | [`pages`]: every page in a vertical scroll, rendered in tiles on a thread, only where the window looks |
-//! | `Markdown` | [`markdown`]: formatted, from its source lines |
+//! | `Flow` | [`flow`]: formatted text (headings, lists, tables, code…) |
 //!
 //! [`View`] keeps one content's view state between frames (scroll, what's expanded,
 //! the GPU tiles) and [`show`] draws any content with the right view. The app is the
@@ -40,7 +40,7 @@ use libfileparser_core::{Container, Content};
 use libgui::{TextureId, Ui};
 
 pub use host::{Frame3d, Host, SceneGpu, Waker, draw_scene};
-pub use markdown::{MarkdownView, markdown};
+pub use markdown::{FlowView, flow};
 pub use pages::{PagesView, pages};
 pub use raster::{RasterView, raster};
 pub use scene::{SceneView, scene};
@@ -66,7 +66,7 @@ pub enum View {
     Table(TableView),
     Scene(Box<SceneView>),
     Pages(Box<PagesView>),
-    Markdown(Box<MarkdownView>),
+    Flow(Box<FlowView>),
 }
 
 impl View {
@@ -78,7 +78,7 @@ impl View {
             Content::Container(c) => Self::Table(TableView::for_container(c.as_ref())),
             Content::Scene(_) => Self::Scene(Box::default()),
             Content::Pages(_) => Self::Pages(Box::default()),
-            Content::Markdown(t) => Self::Markdown(Box::new(MarkdownView::new(t.as_ref()))),
+            Content::Flow(f) => Self::Flow(Box::new(FlowView::new(f.as_ref()))),
             _ => Self::None,
         }
     }
@@ -106,8 +106,8 @@ pub fn show(ui: &mut Ui, content: &Content, view: &mut View, host: &mut dyn Host
         (Content::Raster(r), View::Raster(v)) => raster(ui, r, v, host),
         (Content::Scene(s), View::Scene(v)) => scene(ui, s, v, host),
         (Content::Pages(p), View::Pages(v)) => pages(ui, p, v, host),
-        (Content::Markdown(_), View::Markdown(v)) => markdown(ui, v),
-        (Content::Scene(_) | Content::Raster(_) | Content::Tree(_) | Content::Table(_) | Content::Container(_) | Content::Pages(_) | Content::Markdown(_), _) => {
+        (Content::Flow(_), View::Flow(v)) => flow(ui, v),
+        (Content::Scene(_) | Content::Raster(_) | Content::Tree(_) | Content::Table(_) | Content::Container(_) | Content::Pages(_) | Content::Flow(_), _) => {
             ui.label_muted("This view was made for other content.");
         }
         _ => {
@@ -128,7 +128,7 @@ pub fn model_name(content: &Content) -> &'static str {
         Content::Hex(_) => "Hex",
         Content::Scene(_) => "3D scene",
         Content::Pages(_) => "Pages",
-        Content::Markdown(_) => "Rich text",
+        Content::Flow(_) => "Rich text",
         _ => "Other",
     }
 }

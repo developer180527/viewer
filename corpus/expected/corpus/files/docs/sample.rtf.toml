@@ -1,0 +1,10 @@
+loader = "rtf"
+format = "Rich Text Format"
+model = "Rich text"
+
+[flow]
+blocks = 4
+kinds = ["Heading", "Paragraph", "Table"]
+
+[metadata]
+Title = "Corpus RTF"

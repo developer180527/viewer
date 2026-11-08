@@ -311,8 +311,125 @@ def pdf(pages):
     return out
 
 
+def zip_of(parts, stored_first=None):
+    """A zip with fixed dates (so the bytes don't change between runs); the first part
+    stored uncompressed when named (EPUB's and ODF's `mimetype`)."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for name, data in parts:
+            method = zipfile.ZIP_STORED if name == stored_first else zipfile.ZIP_DEFLATED
+            info = zipfile.ZipInfo(name, date_time=(2026, 1, 1, 0, 0, 0))
+            info.compress_type = method
+            z.writestr(info, data)
+    return buf.getvalue()
+
+
+W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"'
+
+
+def docx():
+    def run(text, props=""):
+        return f'<w:r>{"<w:rPr>" + props + "</w:rPr>" if props else ""}<w:t xml:space="preserve">{text}</w:t></w:r>'
+    body = (
+        '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr>' + run("Corpus document") + "</w:p>"
+        + "<w:p>" + run("Plain, ") + run("bold", "<w:b/>") + run(", ") + run("italic", "<w:i/>") + run(" and ")
+        + '<w:hyperlink r:id="rLink">' + run("a link") + "</w:hyperlink>" + run(".") + "</w:p>"
+        + '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' + run("First") + "</w:p>"
+        + '<w:p><w:pPr><w:numPr><w:ilvl w:val="0"/><w:numId w:val="1"/></w:numPr></w:pPr>' + run("Second") + "</w:p>"
+        + "<w:tbl><w:tr><w:tc><w:p>" + run("A") + "</w:p></w:tc><w:tc><w:p>" + run("B") + "</w:p></w:tc></w:tr>"
+        + "<w:tr><w:tc><w:p>" + run("1") + "</w:p></w:tc><w:tc><w:p>" + run("2") + "</w:p></w:tc></w:tr></w:tbl>"
+    )
+    return zip_of([
+        ("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>'),
+        ("_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/><Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/></Relationships>'),
+        ("word/document.xml", f'<?xml version="1.0"?><w:document {W}><w:body>{body}</w:body></w:document>'),
+        ("word/_rels/document.xml.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rLink" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" Target="https://example.org" TargetMode="External"/></Relationships>'),
+        ("word/numbering.xml", f'<?xml version="1.0"?><w:numbering {W}><w:abstractNum w:abstractNumId="0"><w:lvl w:ilvl="0"><w:numFmt w:val="decimal"/></w:lvl></w:abstractNum><w:num w:numId="1"><w:abstractNumId w:val="0"/></w:num></w:numbering>'),
+        ("docProps/core.xml", '<?xml version="1.0"?><cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Corpus document</dc:title><dc:creator>Viewer</dc:creator></cp:coreProperties>'),
+    ])
+
+
+def odt():
+    content = (
+        '<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:xlink="http://www.w3.org/1999/xlink">'
+        '<office:automatic-styles><style:style style:name="T1" style:family="text"><style:text-properties fo:font-weight="bold"/></style:style>'
+        '<text:list-style style:name="L1"><text:list-level-style-number text:level="1"/></text:list-style></office:automatic-styles>'
+        '<office:body><office:text><text:h text:outline-level="1">Corpus text</text:h>'
+        '<text:p>Plain and <text:span text:style-name="T1">bold</text:span> and <text:a xlink:href="https://example.org">a link</text:a>.</text:p>'
+        '<text:list text:style-name="L1"><text:list-item><text:p>One</text:p></text:list-item><text:list-item><text:p>Two</text:p></text:list-item></text:list>'
+        '<table:table><table:table-row><table:table-cell><text:p>A</text:p></table:table-cell><table:table-cell><text:p>B</text:p></table:table-cell></table:table-row></table:table>'
+        '</office:text></office:body></office:document-content>'
+    )
+    meta = '<?xml version="1.0"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:meta="urn:oasis:names:tc:opendocument:xmlns:meta:1.0"><office:meta><dc:title>Corpus text</dc:title><meta:document-statistic meta:page-count="1" meta:word-count="12"/></office:meta></office:document-meta>'
+    return zip_of([("mimetype", "application/vnd.oasis.opendocument.text"), ("content.xml", content), ("meta.xml", meta),
+                   ("META-INF/manifest.xml", '<?xml version="1.0"?><manifest:manifest xmlns:manifest="urn:oasis:names:tc:opendocument:xmlns:manifest:1.0"/>')], stored_first="mimetype")
+
+
+def epub():
+    chapter = lambda title, body: f'<?xml version="1.0" encoding="utf-8"?><html xmlns="http://www.w3.org/1999/xhtml"><head><title>{title}</title></head><body><h1>{title}</h1>{body}</body></html>'
+    opf = ('<?xml version="1.0"?><package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="id"><metadata xmlns:dc="http://purl.org/dc/elements/1.1/">'
+           '<dc:identifier id="id">corpus</dc:identifier><dc:title>Corpus Book</dc:title><dc:creator>Viewer</dc:creator><dc:language>en</dc:language></metadata>'
+           '<manifest><item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/><item id="c1" href="text/c1.xhtml" media-type="application/xhtml+xml"/>'
+           '<item id="c2" href="text/c2.xhtml" media-type="application/xhtml+xml"/><item id="img" href="images/dot.png" media-type="image/png"/></manifest>'
+           '<spine><itemref idref="c1"/><itemref idref="c2"/></spine></package>')
+    nav = ('<?xml version="1.0"?><html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops"><body><nav epub:type="toc"><ol>'
+           '<li><a href="text/c1.xhtml">Chapter One</a></li><li><a href="text/c2.xhtml">Chapter Two</a></li></ol></nav></body></html>')
+    return zip_of([
+        ("mimetype", "application/epub+zip"),
+        ("META-INF/container.xml", '<?xml version="1.0"?><container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container"><rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles></container>'),
+        ("OEBPS/content.opf", opf), ("OEBPS/nav.xhtml", nav),
+        ("OEBPS/text/c1.xhtml", chapter("Chapter One", '<p>It <em>was</em> a <strong>dark</strong> night.</p><p><img src="../images/dot.png" alt="A dot"/></p>')),
+        ("OEBPS/text/c2.xhtml", chapter("Chapter Two", "<ul><li>one</li><li>two</li></ul><blockquote><p>Quoted.</p></blockquote>")),
+        ("OEBPS/images/dot.png", png(8, 8, checker)),
+    ], stored_first="mimetype")
+
+
+def comic(kind):
+    pages = [(f"page{n}.png", png(48, 64, lambda x, y, n=n: (n * 60 % 256, x * 5, y * 4, 255))) for n in (1, 2, 10)]
+    info = ("ComicInfo.xml", "<ComicInfo><Title>Corpus Comic</Title><Series>Samples</Series><Number>1</Number></ComicInfo>")
+    if kind == "cbz":
+        return zip_of(pages + [info])
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w", format=tarfile.USTAR_FORMAT) as t:
+        for name, data in pages + [(info[0], info[1].encode())]:
+            ti = tarfile.TarInfo(name)
+            ti.size, ti.mtime = len(data), 0
+            t.addfile(ti, io.BytesIO(data))
+    return buf.getvalue()
+
+
+def xps():
+    page = ('<FixedPage xmlns="http://schemas.microsoft.com/xps/2005/06" Width="816" Height="1056">'
+            '<Path Data="M 96,96 L 720,96 720,192 96,192 Z" Fill="#FF2266CC"/></FixedPage>')
+    return zip_of([
+        ("[Content_Types].xml", '<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="fdseq" ContentType="application/vnd.ms-package.xps-fixeddocumentsequence+xml"/><Default Extension="fdoc" ContentType="application/vnd.ms-package.xps-fixeddocument+xml"/><Default Extension="fpage" ContentType="application/vnd.ms-package.xps-fixedpage+xml"/></Types>'),
+        ("_rels/.rels", '<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="r1" Type="http://schemas.microsoft.com/xps/2005/06/fixedrepresentation" Target="/FixedDocSeq.fdseq"/></Relationships>'),
+        ("FixedDocSeq.fdseq", '<FixedDocumentSequence xmlns="http://schemas.microsoft.com/xps/2005/06"><DocumentReference Source="/Documents/1/FixedDoc.fdoc"/></FixedDocumentSequence>'),
+        ("Documents/1/FixedDoc.fdoc", '<FixedDocument xmlns="http://schemas.microsoft.com/xps/2005/06"><PageContent Source="/Documents/1/Pages/1.fpage"/></FixedDocument>'),
+        ("Documents/1/Pages/1.fpage", page),
+    ])
+
+
+RTF = r"""{\rtf1\ansi\ansicpg1252{\fonttbl{\f0 Helvetica;}}{\stylesheet{\s1 heading 1;}}{\info{\title Corpus RTF}}
+{\s1 Corpus RTF\par}
+\pard Plain, {\b bold}, {\i italic} and caf\'e9 \u8212? all here.\par
+{\field{\*\fldinst HYPERLINK "https://example.org"}{\fldrslt a link}}\par
+\trowd\intbl A\cell B\cell\row
+}
+"""
+
+
 def docs():
     write("pdf/two-pages.pdf", pdf([(612, 792, "Corpus page one"), (842, 595, "Page two, landscape")]))
+    write("docs/sample.docx", docx())
+    write("docs/sample.odt", odt())
+    write("docs/sample.epub", epub())
+    write("docs/sample.cbz", comic("cbz"))
+    write("docs/sample.cbt", comic("cbt"))
+    write("docs/sample.xps", xps())
+    write("docs/sample.rtf", RTF)
+    write("docs/sample.org", "#+TITLE: Corpus Org\n* Heading\nSome *bold*, /italic/ and =code=, with [[https://example.org][a link]].\n- one\n- two\n#+BEGIN_SRC sh\nls\n#+END_SRC\n| a | b |\n|---+---|\n| 1 | 2 |\n")
 
 
 # ---------------------------------------------------------------- data

@@ -1,0 +1,10 @@
+loader = "org"
+format = "Org document"
+model = "Rich text"
+
+[flow]
+blocks = 5
+kinds = ["Heading", "Paragraph", "List", "Code", "Table"]
+
+[metadata]
+Title = "Corpus Org"

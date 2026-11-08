@@ -2,9 +2,9 @@ loader = "markdown"
 format = "Markdown"
 model = "Rich text"
 
-[markdown]
-chars = 375
+[flow]
+blocks = 6
+kinds = ["Heading", "Paragraph", "List", "Table", "Code", "Quote"]
 
 [metadata]
-Lines = "19"
 Words = "64"

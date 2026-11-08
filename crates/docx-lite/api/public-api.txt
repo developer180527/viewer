@@ -1,0 +1,107 @@
+pub mod docx_lite
+#[non_exhaustive] pub enum docx_lite::Error
+pub docx_lite::Error::NotDocx
+pub docx_lite::Error::Stopped
+pub docx_lite::Error::TooDeep(usize)
+pub docx_lite::Error::TooLarge
+pub docx_lite::Error::TooLarge::max: u64
+pub docx_lite::Error::TooLarge::value: u64
+pub docx_lite::Error::TooLarge::what: &'static str
+pub docx_lite::Error::Xml
+pub docx_lite::Error::Xml::message: alloc::string::String
+pub docx_lite::Error::Xml::part: alloc::string::String
+pub docx_lite::Error::Zip(alloc::string::String)
+impl core::clone::Clone for docx_lite::Error
+pub fn docx_lite::Error::clone(&self) -> docx_lite::Error
+impl core::cmp::Eq for docx_lite::Error
+impl core::cmp::PartialEq for docx_lite::Error
+pub fn docx_lite::Error::eq(&self, &docx_lite::Error) -> bool
+impl core::convert::From<docx_lite::Stop> for docx_lite::Error
+pub fn docx_lite::Error::from(docx_lite::Stop) -> Self
+impl core::error::Error for docx_lite::Error
+impl core::fmt::Debug for docx_lite::Error
+pub fn docx_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for docx_lite::Error
+pub fn docx_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for docx_lite::Error
+#[non_exhaustive] pub enum docx_lite::Tag
+pub docx_lite::Tag::Cell
+pub docx_lite::Tag::Emphasis
+pub docx_lite::Tag::Heading(u8)
+pub docx_lite::Tag::Item
+pub docx_lite::Tag::Link(alloc::string::String)
+pub docx_lite::Tag::List
+pub docx_lite::Tag::List::ordered: bool
+pub docx_lite::Tag::Paragraph
+pub docx_lite::Tag::Row
+pub docx_lite::Tag::Strikethrough
+pub docx_lite::Tag::Strong
+pub docx_lite::Tag::Subscript
+pub docx_lite::Tag::Superscript
+pub docx_lite::Tag::Table
+pub docx_lite::Tag::Underline
+impl core::clone::Clone for docx_lite::Tag
+pub fn docx_lite::Tag::clone(&self) -> docx_lite::Tag
+impl core::cmp::Eq for docx_lite::Tag
+impl core::cmp::PartialEq for docx_lite::Tag
+pub fn docx_lite::Tag::eq(&self, &docx_lite::Tag) -> bool
+impl core::fmt::Debug for docx_lite::Tag
+pub fn docx_lite::Tag::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for docx_lite::Tag
+#[non_exhaustive] pub struct docx_lite::Info
+pub docx_lite::Info::author: core::option::Option<alloc::string::String>
+pub docx_lite::Info::last_edited_by: core::option::Option<alloc::string::String>
+pub docx_lite::Info::subject: core::option::Option<alloc::string::String>
+pub docx_lite::Info::title: core::option::Option<alloc::string::String>
+impl core::clone::Clone for docx_lite::Info
+pub fn docx_lite::Info::clone(&self) -> docx_lite::Info
+impl core::cmp::Eq for docx_lite::Info
+impl core::cmp::PartialEq for docx_lite::Info
+pub fn docx_lite::Info::eq(&self, &docx_lite::Info) -> bool
+impl core::default::Default for docx_lite::Info
+pub fn docx_lite::Info::default() -> docx_lite::Info
+impl core::fmt::Debug for docx_lite::Info
+pub fn docx_lite::Info::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for docx_lite::Info
+#[non_exhaustive] pub struct docx_lite::Limits
+pub docx_lite::Limits::depth: usize
+pub docx_lite::Limits::entries: usize
+pub docx_lite::Limits::part_bytes: u64
+pub docx_lite::Limits::unpack_always: u64
+pub docx_lite::Limits::unpack_ratio: u64
+impl docx_lite::Limits
+pub fn docx_lite::Limits::with_depth(self, usize) -> Self
+pub fn docx_lite::Limits::with_entries(self, usize) -> Self
+pub fn docx_lite::Limits::with_part_bytes(self, u64) -> Self
+pub fn docx_lite::Limits::with_unpack(self, u64, u64) -> Self
+impl core::clone::Clone for docx_lite::Limits
+pub fn docx_lite::Limits::clone(&self) -> docx_lite::Limits
+impl core::cmp::Eq for docx_lite::Limits
+impl core::cmp::PartialEq for docx_lite::Limits
+pub fn docx_lite::Limits::eq(&self, &docx_lite::Limits) -> bool
+impl core::default::Default for docx_lite::Limits
+pub fn docx_lite::Limits::default() -> Self
+impl core::fmt::Debug for docx_lite::Limits
+pub fn docx_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for docx_lite::Limits
+pub struct docx_lite::Stop
+impl core::clone::Clone for docx_lite::Stop
+pub fn docx_lite::Stop::clone(&self) -> docx_lite::Stop
+impl core::cmp::Eq for docx_lite::Stop
+impl core::cmp::PartialEq for docx_lite::Stop
+pub fn docx_lite::Stop::eq(&self, &docx_lite::Stop) -> bool
+impl core::convert::From<docx_lite::Stop> for docx_lite::Error
+pub fn docx_lite::Error::from(docx_lite::Stop) -> Self
+impl core::fmt::Debug for docx_lite::Stop
+pub fn docx_lite::Stop::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for docx_lite::Stop
+impl core::marker::StructuralPartialEq for docx_lite::Stop
+pub trait docx_lite::Sink
+pub fn docx_lite::Sink::close(&mut self, docx_lite::Tag) -> core::result::Result<(), docx_lite::Stop>
+pub fn docx_lite::Sink::image(&mut self, &str, &str) -> core::result::Result<(), docx_lite::Stop>
+pub fn docx_lite::Sink::line_break(&mut self) -> core::result::Result<(), docx_lite::Stop>
+pub fn docx_lite::Sink::note(&mut self, &str) -> core::result::Result<(), docx_lite::Stop>
+pub fn docx_lite::Sink::open(&mut self, docx_lite::Tag) -> core::result::Result<(), docx_lite::Stop>
+pub fn docx_lite::Sink::page_break(&mut self) -> core::result::Result<(), docx_lite::Stop>
+pub fn docx_lite::Sink::text(&mut self, &str) -> core::result::Result<(), docx_lite::Stop>
+pub fn docx_lite::parse<S: docx_lite::Sink>(&[u8], &mut S, &docx_lite::Limits) -> core::result::Result<docx_lite::Info, docx_lite::Error>

@@ -1,18 +1,24 @@
-"""Sorts real-world test files (corpus/fetch-real.sh) into folders named by the
-reader each should open with; `<reader>-invalid/` for test suites' negative cases."""
+"""Sorts one clone's real-world test files (corpus/fetch-real.sh) into folders named by
+the reader each should open with; `<reader>-invalid/` for test suites' negative cases.
+
+    organize-real.py <clone> <out>     (adds to <out>; the clone is then deleted)
+"""
 
 import os, shutil, sys
-repos, out = sys.argv[1], sys.argv[2]
-shutil.rmtree(out, ignore_errors=True)
+clone, out = sys.argv[1].rstrip("/"), sys.argv[2]
 by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nickel", "ofx": "ofx", "qfx": "ofx",
           "dot": "dot", "gv": "dot", "ics": "icalendar", "vcf": None, "sam": "sam", "fa": "fasta", "fasta": "fasta",
           "fq": "fastq", "fastq": "fastq", "gff3": "gff", "gpx": "gpx", "toml": "toml", "json": "json", "csv": "delimited",
           "ttl": "turtle", "nt": "turtle", "nq": "turtle", "trig": "turtle", "rdf": "rdfxml", "hl7": "hl7", "qif": "qif",
           "po": "po", "pot": "po", "mo": "mo", "kml": "kml", "yaml": "yaml", "xbrl": "xbrl", "proto": "protobuf",
-          "sta": "swift", "edi": "edifact"}
+          "sta": "swift", "edi": "edifact",
+          # Documents.
+          "pdf": "pdf", "md": "markdown", "markdown": "markdown", "rst": "rst", "asciidoc": "asciidoc", "adoc": "asciidoc",
+          "org": "org", "textile": "textile", "docx": "docx", "odt": "odt", "rtf": "rtf", "epub": "epub", "doc": "doc",
+          "pptx": "pptx", "ods": "ods", "html": "html", "htm": "html"}
 counts = {}
-for repo in sorted(os.listdir(repos)):
-    root = os.path.join(repos, repo)
+for repo in [os.path.basename(clone)]:
+    root = clone
     for dp, dirs, files in os.walk(root):
         dirs[:] = [d for d in dirs if d != ".git"]
         for f in files:
@@ -41,5 +47,4 @@ for repo in sorted(os.listdir(repos)):
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(path, dst)
             counts[folder] = counts.get(folder, 0) + 1
-for k in sorted(counts):
-    print(f"{k:20} {counts[k]}")
+print(f"{os.path.basename(clone)}: {sum(counts.values())} files", file=sys.stderr)

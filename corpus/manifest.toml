@@ -72,6 +72,32 @@ golden = true
 # No PDF backend on Windows yet (docs/design/pdf.md §10 step 7).
 skip_on = ["windows"]
 
+[[file]]
+path = "corpus/files/docs/sample.docx"
+
+[[file]]
+path = "corpus/files/docs/sample.odt"
+
+[[file]]
+path = "corpus/files/docs/sample.epub"
+
+[[file]]
+path = "corpus/files/docs/sample.rtf"
+
+[[file]]
+path = "corpus/files/docs/sample.org"
+
+[[file]]
+path = "corpus/files/docs/sample.cbz"
+
+[[file]]
+path = "corpus/files/docs/sample.cbt"
+
+[[file]]
+path = "corpus/files/docs/sample.xps"
+# No MuPDF on Windows yet (docs/design/pdf.md §10 step 7).
+skip_on = ["windows"]
+
 # ---------------------------------------------------------------- data
 
 [[file]]

@@ -2,7 +2,7 @@ pub mod libviewer
 #[non_exhaustive] pub enum libviewer::Action
 pub libviewer::Action::OpenEntry(alloc::sync::Arc<dyn libfileparser_core::content::Container>, u64)
 #[non_exhaustive] pub enum libviewer::View
-pub libviewer::View::Markdown(alloc::boxed::Box<libviewer::MarkdownView>)
+pub libviewer::View::Flow(alloc::boxed::Box<libviewer::FlowView>)
 pub libviewer::View::None
 pub libviewer::View::Pages(alloc::boxed::Box<libviewer::PagesView>)
 pub libviewer::View::Raster(libviewer::RasterView)
@@ -12,6 +12,9 @@ pub libviewer::View::Tree(libviewer::TreeView)
 impl libviewer::View
 pub fn libviewer::View::new(&libfileparser_core::content::Content) -> Self
 pub fn libviewer::View::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
+pub struct libviewer::FlowView
+impl libviewer::FlowView
+pub fn libviewer::FlowView::new(&dyn libfileparser_core::flow::FlowSource) -> Self
 #[non_exhaustive] pub struct libviewer::Frame3d
 pub libviewer::Frame3d::busy: bool
 pub libviewer::Frame3d::error: core::option::Option<alloc::string::String>
@@ -22,9 +25,6 @@ pub fn libviewer::Frame3d::pending() -> Self
 pub fn libviewer::Frame3d::shown(core::option::Option<libgui::draw::TextureId>, bool) -> Self
 impl core::default::Default for libviewer::Frame3d
 pub fn libviewer::Frame3d::default() -> libviewer::Frame3d
-pub struct libviewer::MarkdownView
-impl libviewer::MarkdownView
-pub fn libviewer::MarkdownView::new(&dyn libfileparser_core::content::TextSource) -> Self
 pub struct libviewer::PagesView
 impl libviewer::PagesView
 pub fn libviewer::PagesView::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
@@ -69,10 +69,10 @@ pub fn libviewer::Host::uploads_done(&mut self)
 pub fn libviewer::Host::waker(&self) -> libviewer::Waker
 pub fn libviewer::container(&mut libgui::ui::Ui, &alloc::sync::Arc<dyn libfileparser_core::content::Container>, &mut libviewer::TableView) -> core::option::Option<u64>
 pub fn libviewer::draw_scene((&rendererx::Renderer, &wgpu::api::device::Device, &wgpu::api::queue::Queue), &mut libviewer::SceneGpu, &scene_data::scene::CpuScene, (u32, u32), &rendererx::camera::Camera, [f32; 4], bool) -> bool
+pub fn libviewer::flow(&mut libgui::ui::Ui, &mut libviewer::FlowView)
 pub fn libviewer::hex(&mut libgui::ui::Ui, &[u8])
 pub fn libviewer::hex_file(&mut libgui::ui::Ui, &libfileparser_core::source::FileSource)
 pub fn libviewer::human_bytes(u64) -> alloc::string::String
-pub fn libviewer::markdown(&mut libgui::ui::Ui, &mut libviewer::MarkdownView)
 pub fn libviewer::model_name(&libfileparser_core::content::Content) -> &'static str
 pub fn libviewer::pages(&mut libgui::ui::Ui, &alloc::sync::Arc<dyn libfileparser_core::pages::PageSource>, &mut libviewer::PagesView, &mut dyn libviewer::Host)
 pub fn libviewer::raster(&mut libgui::ui::Ui, &libfileparser_core::content::Raster, &mut libviewer::RasterView, &mut dyn libviewer::Host)

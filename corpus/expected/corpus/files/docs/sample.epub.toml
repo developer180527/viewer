@@ -1,0 +1,13 @@
+loader = "epub"
+format = "EPUB book"
+model = "Rich text"
+
+[flow]
+blocks = 7
+kinds = ["Heading", "Paragraph", "Break", "Heading", "List", "Quote"]
+
+[metadata]
+Title = "Corpus Book"
+Author = "Viewer"
+Language = "en"
+Chapters = "2"

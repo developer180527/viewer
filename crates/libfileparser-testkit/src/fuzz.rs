@@ -394,6 +394,23 @@ pub fn read(content: &Content) {
             let _ = t.find("/");
             let _ = t.find("/a/b[2]");
         }
+        Content::Flow(f) => {
+            let n = f.block_count().known();
+            let _ = f.blocks(0..50);
+            if let Ok(blocks) = f.blocks(n.saturating_sub(50)..n) {
+                let _ = format!("{blocks:?}");
+            }
+            let _ = f.resource("x.png");
+        }
+        Content::Pages(p) => {
+            let n = p.page_count();
+            for i in [0, n.saturating_sub(1)] {
+                if let Ok(size) = p.page_size(i) {
+                    let scale = 64.0 / size.width.max(size.height).max(1.0);
+                    let _ = p.render(i, scale, libfileparser_core::PageRect::whole(size), &mut Vec::new(), &libfileparser_core::Cancel::new());
+                }
+            }
+        }
         Content::Container(c) => {
             let n = c.entry_count().known();
             if let Ok(entries) = c.entries(0..n.min(100)) {

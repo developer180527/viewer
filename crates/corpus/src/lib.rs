@@ -176,11 +176,13 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
                 scene_summary(scene.scene(), &mut t);
                 "scene"
             }
-            Model::Markdown(md) => {
-                let lines = md.lines(0..md.info().lines.known()).map_err(|e| e.to_string())?;
-                let chars: usize = lines.iter().map(|l| String::from_utf8_lossy(l).chars().count() + 1).sum();
-                t.insert("chars".into(), int(chars.saturating_sub(1)));
-                "markdown"
+            Model::Flow(flow) => {
+                let blocks = flow.blocks(0..flow.block_count().known()).map_err(|e| e.to_string())?;
+                t.insert("blocks".into(), int(blocks.len()));
+                let mut kinds: Vec<String> = blocks.iter().map(|b| format!("{b:?}").split([' ', '(', '{']).next().unwrap_or("").to_string()).collect();
+                kinds.dedup();
+                t.insert("kinds".into(), list(kinds.iter().cloned(), kinds.len()));
+                "flow"
             }
             Model::Pages(pages) => {
                 let n = pages.page_count() as usize;

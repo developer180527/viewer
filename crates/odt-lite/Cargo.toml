@@ -1,0 +1,11 @@
+[package]
+name = "odt-lite"
+description = "Reads OpenDocument text (ODT) into events (headings, paragraphs, marks, lists, tables, links, images), for any document model. Lenient with what real files contain."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+quick-xml = "0.41"

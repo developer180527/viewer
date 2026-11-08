@@ -1,0 +1,11 @@
+loader = "docx"
+format = "Word document"
+model = "Rich text"
+
+[flow]
+blocks = 4
+kinds = ["Heading", "Paragraph", "List", "Table"]
+
+[metadata]
+Title = "Corpus document"
+Author = "Viewer"

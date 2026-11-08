@@ -10,7 +10,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 crates=(libfileparser-core libfileparser libfileparser-3d libfileparser-images libfileparser-text
-        libfileparser-archives libfileparser-data libfileparser-docs libfileparser-testkit usd-lite gltf-lite scene-data libviewer)
+        libfileparser-archives libfileparser-data libfileparser-docs libfileparser-testkit usd-lite gltf-lite rtf-lite docx-lite odt-lite scene-data libviewer)
 status=0
 diff_out=$(mktemp)
 trap 'rm -f "$diff_out"' EXIT

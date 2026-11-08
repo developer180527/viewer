@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use libfileparser_core::{Category, Confidence, Content, Detection, Document, FileSource, FormatInfo, Limit, PageSource, ParseContext, Reader, ReaderInfo, Result, Role};
+use libfileparser_core::{Category, Confidence, Detection, Document, FileSource, PageSource, ParseContext, Reader, ReaderInfo, Result};
 
 /// What a PDF reader reads, for any engine: id `"pdf"`, so an app's reader replaces
 /// this one by id.
@@ -31,17 +31,7 @@ pub fn detect(header: &[u8], name: &str) -> Detection {
 /// engine's name, `meta` (version, title, …), then the file's Raw facet. A page count
 /// past `cx.limits.pages` is [`ParseError::TooLarge`](libfileparser_core::ParseError::TooLarge).
 pub fn document(src: &FileSource, pages: Arc<dyn PageSource>, meta: Vec<(String, String)>, cx: &ParseContext) -> Result<Document> {
-    let count = pages.page_count();
-    cx.limits.check(Limit::Pages, count)?;
-    let engine = pages.engine().to_string();
-    let mut doc = Document::new(FormatInfo::new("pdf", "PDF document", Category::Docs))
-        .with_facet(Role::Primary, "Pages", Content::Pages(pages))
-        .with_meta("Pages", count)
-        .with_meta("Rendered by", engine);
-    for (k, v) in meta {
-        doc = doc.with_meta(k, v);
-    }
-    Ok(doc.with_file_facets(src, None))
+    crate::pages::document("pdf", "PDF document", src, pages, meta, cx)
 }
 
 /// PDF through MuPDF (`mupdf` feature); without it, PDFs are named and refused.

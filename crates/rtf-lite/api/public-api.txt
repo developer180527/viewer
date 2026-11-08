@@ -1,0 +1,84 @@
+pub mod rtf_lite
+#[non_exhaustive] pub enum rtf_lite::Error
+pub rtf_lite::Error::NotRtf
+pub rtf_lite::Error::Stopped
+pub rtf_lite::Error::TooDeep(usize)
+impl core::clone::Clone for rtf_lite::Error
+pub fn rtf_lite::Error::clone(&self) -> rtf_lite::Error
+impl core::cmp::Eq for rtf_lite::Error
+impl core::cmp::PartialEq for rtf_lite::Error
+pub fn rtf_lite::Error::eq(&self, &rtf_lite::Error) -> bool
+impl core::convert::From<rtf_lite::Stop> for rtf_lite::Error
+pub fn rtf_lite::Error::from(rtf_lite::Stop) -> Self
+impl core::error::Error for rtf_lite::Error
+impl core::fmt::Debug for rtf_lite::Error
+pub fn rtf_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for rtf_lite::Error
+pub fn rtf_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for rtf_lite::Error
+#[non_exhaustive] pub enum rtf_lite::Tag
+pub rtf_lite::Tag::Cell
+pub rtf_lite::Tag::Emphasis
+pub rtf_lite::Tag::Heading(u8)
+pub rtf_lite::Tag::Link(alloc::string::String)
+pub rtf_lite::Tag::Paragraph
+pub rtf_lite::Tag::Row
+pub rtf_lite::Tag::Strikethrough
+pub rtf_lite::Tag::Strong
+pub rtf_lite::Tag::Subscript
+pub rtf_lite::Tag::Superscript
+pub rtf_lite::Tag::Table
+pub rtf_lite::Tag::Underline
+impl core::clone::Clone for rtf_lite::Tag
+pub fn rtf_lite::Tag::clone(&self) -> rtf_lite::Tag
+impl core::cmp::Eq for rtf_lite::Tag
+impl core::cmp::PartialEq for rtf_lite::Tag
+pub fn rtf_lite::Tag::eq(&self, &rtf_lite::Tag) -> bool
+impl core::fmt::Debug for rtf_lite::Tag
+pub fn rtf_lite::Tag::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for rtf_lite::Tag
+#[non_exhaustive] pub struct rtf_lite::Info
+pub rtf_lite::Info::title: core::option::Option<alloc::string::String>
+impl core::clone::Clone for rtf_lite::Info
+pub fn rtf_lite::Info::clone(&self) -> rtf_lite::Info
+impl core::cmp::Eq for rtf_lite::Info
+impl core::cmp::PartialEq for rtf_lite::Info
+pub fn rtf_lite::Info::eq(&self, &rtf_lite::Info) -> bool
+impl core::default::Default for rtf_lite::Info
+pub fn rtf_lite::Info::default() -> rtf_lite::Info
+impl core::fmt::Debug for rtf_lite::Info
+pub fn rtf_lite::Info::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for rtf_lite::Info
+#[non_exhaustive] pub struct rtf_lite::Limits
+pub rtf_lite::Limits::depth: usize
+impl rtf_lite::Limits
+pub fn rtf_lite::Limits::with_depth(self, usize) -> Self
+impl core::clone::Clone for rtf_lite::Limits
+pub fn rtf_lite::Limits::clone(&self) -> rtf_lite::Limits
+impl core::cmp::Eq for rtf_lite::Limits
+impl core::cmp::PartialEq for rtf_lite::Limits
+pub fn rtf_lite::Limits::eq(&self, &rtf_lite::Limits) -> bool
+impl core::default::Default for rtf_lite::Limits
+pub fn rtf_lite::Limits::default() -> Self
+impl core::fmt::Debug for rtf_lite::Limits
+pub fn rtf_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for rtf_lite::Limits
+pub struct rtf_lite::Stop
+impl core::clone::Clone for rtf_lite::Stop
+pub fn rtf_lite::Stop::clone(&self) -> rtf_lite::Stop
+impl core::cmp::Eq for rtf_lite::Stop
+impl core::cmp::PartialEq for rtf_lite::Stop
+pub fn rtf_lite::Stop::eq(&self, &rtf_lite::Stop) -> bool
+impl core::convert::From<rtf_lite::Stop> for rtf_lite::Error
+pub fn rtf_lite::Error::from(rtf_lite::Stop) -> Self
+impl core::fmt::Debug for rtf_lite::Stop
+pub fn rtf_lite::Stop::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for rtf_lite::Stop
+impl core::marker::StructuralPartialEq for rtf_lite::Stop
+pub trait rtf_lite::Sink
+pub fn rtf_lite::Sink::close(&mut self, rtf_lite::Tag) -> core::result::Result<(), rtf_lite::Stop>
+pub fn rtf_lite::Sink::line_break(&mut self) -> core::result::Result<(), rtf_lite::Stop>
+pub fn rtf_lite::Sink::open(&mut self, rtf_lite::Tag) -> core::result::Result<(), rtf_lite::Stop>
+pub fn rtf_lite::Sink::page_break(&mut self) -> core::result::Result<(), rtf_lite::Stop>
+pub fn rtf_lite::Sink::text(&mut self, &str) -> core::result::Result<(), rtf_lite::Stop>
+pub fn rtf_lite::parse<S: rtf_lite::Sink>(&[u8], &mut S, &rtf_lite::Limits) -> core::result::Result<rtf_lite::Info, rtf_lite::Error>

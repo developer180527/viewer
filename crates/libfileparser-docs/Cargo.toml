@@ -16,6 +16,25 @@ mupdf = ["dep:libfileparser-mupdf"]
 
 [dependencies]
 libfileparser-core.workspace = true
+# Our own format libraries (docs/design/libfileparser.md §6), where no mature one was
+# more reliable on the real-world corpus.
+rtf-lite.workspace = true
+docx-lite.workspace = true
+odt-lite.workspace = true
+# Markdown (CommonMark and GitHub's tables, strikethrough, task lists, footnotes).
+pulldown-cmark = { version = "0.13", default-features = false }
+# Comics' pages are images (a sideways use toward a leaf, docs/design/libfileparser.md §2).
+libfileparser-images.workspace = true
+# Zip-based documents (CBZ, DOCX, ODT, EPUB, XPS) and CBT; pure Rust.
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+tar = { version = "0.4", default-features = false }
+# HTML and XHTML (EPUB chapters): html5ever, Servo's HTML parser, through scraper's DOM.
+scraper = { version = "0.29", default-features = false }
+ego-tree = "0.11"
+# EPUB 2 and 3: the container, package, spine, table of contents and resources.
+rbook = { version = "0.7", default-features = false, features = ["threadsafe"] }
+# Org: orgize's parse, through its HTML export.
+orgize = "=0.10.0-alpha.10"
 
 # MuPDF's Windows build isn't wired in yet (docs/design/pdf.md §10).
 [target.'cfg(not(windows))'.dependencies]

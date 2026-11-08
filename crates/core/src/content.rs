@@ -118,7 +118,7 @@ impl Content {
                 libfileparser_core::Content::Hex(_) => "Hex",
                 libfileparser_core::Content::Scene(_) => "3D scene",
                 libfileparser_core::Content::Pages(_) => "Pages",
-                libfileparser_core::Content::Markdown(_) => "Rich text",
+                libfileparser_core::Content::Flow(_) => "Rich text",
                 _ => "Other",
             },
             Content::Text(_) => "Text",

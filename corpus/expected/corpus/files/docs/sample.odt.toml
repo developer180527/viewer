@@ -1,0 +1,12 @@
+loader = "odt"
+format = "OpenDocument text"
+model = "Rich text"
+
+[flow]
+blocks = 4
+kinds = ["Heading", "Paragraph", "List", "Table"]
+
+[metadata]
+Title = "Corpus text"
+Pages = "1"
+Words = "12"

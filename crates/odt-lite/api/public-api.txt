@@ -1,0 +1,107 @@
+pub mod odt_lite
+#[non_exhaustive] pub enum odt_lite::Error
+pub odt_lite::Error::NotOdt
+pub odt_lite::Error::Stopped
+pub odt_lite::Error::TooDeep(usize)
+pub odt_lite::Error::TooLarge
+pub odt_lite::Error::TooLarge::max: u64
+pub odt_lite::Error::TooLarge::value: u64
+pub odt_lite::Error::TooLarge::what: &'static str
+pub odt_lite::Error::Xml
+pub odt_lite::Error::Xml::message: alloc::string::String
+pub odt_lite::Error::Xml::part: alloc::string::String
+pub odt_lite::Error::Zip(alloc::string::String)
+impl core::clone::Clone for odt_lite::Error
+pub fn odt_lite::Error::clone(&self) -> odt_lite::Error
+impl core::cmp::Eq for odt_lite::Error
+impl core::cmp::PartialEq for odt_lite::Error
+pub fn odt_lite::Error::eq(&self, &odt_lite::Error) -> bool
+impl core::convert::From<odt_lite::Stop> for odt_lite::Error
+pub fn odt_lite::Error::from(odt_lite::Stop) -> Self
+impl core::error::Error for odt_lite::Error
+impl core::fmt::Debug for odt_lite::Error
+pub fn odt_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for odt_lite::Error
+pub fn odt_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for odt_lite::Error
+#[non_exhaustive] pub enum odt_lite::Tag
+pub odt_lite::Tag::Cell
+pub odt_lite::Tag::Emphasis
+pub odt_lite::Tag::Heading(u8)
+pub odt_lite::Tag::Item
+pub odt_lite::Tag::Link(alloc::string::String)
+pub odt_lite::Tag::List
+pub odt_lite::Tag::List::ordered: bool
+pub odt_lite::Tag::Paragraph
+pub odt_lite::Tag::Row
+pub odt_lite::Tag::Row::header: bool
+pub odt_lite::Tag::Strikethrough
+pub odt_lite::Tag::Strong
+pub odt_lite::Tag::Subscript
+pub odt_lite::Tag::Superscript
+pub odt_lite::Tag::Table
+pub odt_lite::Tag::Underline
+impl core::clone::Clone for odt_lite::Tag
+pub fn odt_lite::Tag::clone(&self) -> odt_lite::Tag
+impl core::cmp::Eq for odt_lite::Tag
+impl core::cmp::PartialEq for odt_lite::Tag
+pub fn odt_lite::Tag::eq(&self, &odt_lite::Tag) -> bool
+impl core::fmt::Debug for odt_lite::Tag
+pub fn odt_lite::Tag::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for odt_lite::Tag
+#[non_exhaustive] pub struct odt_lite::Info
+pub odt_lite::Info::author: core::option::Option<alloc::string::String>
+pub odt_lite::Info::pages: core::option::Option<u64>
+pub odt_lite::Info::subject: core::option::Option<alloc::string::String>
+pub odt_lite::Info::title: core::option::Option<alloc::string::String>
+pub odt_lite::Info::words: core::option::Option<u64>
+impl core::clone::Clone for odt_lite::Info
+pub fn odt_lite::Info::clone(&self) -> odt_lite::Info
+impl core::cmp::Eq for odt_lite::Info
+impl core::cmp::PartialEq for odt_lite::Info
+pub fn odt_lite::Info::eq(&self, &odt_lite::Info) -> bool
+impl core::default::Default for odt_lite::Info
+pub fn odt_lite::Info::default() -> odt_lite::Info
+impl core::fmt::Debug for odt_lite::Info
+pub fn odt_lite::Info::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for odt_lite::Info
+#[non_exhaustive] pub struct odt_lite::Limits
+pub odt_lite::Limits::depth: usize
+pub odt_lite::Limits::entries: usize
+pub odt_lite::Limits::part_bytes: u64
+pub odt_lite::Limits::unpack_always: u64
+pub odt_lite::Limits::unpack_ratio: u64
+impl odt_lite::Limits
+pub fn odt_lite::Limits::with_depth(self, usize) -> Self
+pub fn odt_lite::Limits::with_entries(self, usize) -> Self
+pub fn odt_lite::Limits::with_part_bytes(self, u64) -> Self
+pub fn odt_lite::Limits::with_unpack(self, u64, u64) -> Self
+impl core::clone::Clone for odt_lite::Limits
+pub fn odt_lite::Limits::clone(&self) -> odt_lite::Limits
+impl core::cmp::Eq for odt_lite::Limits
+impl core::cmp::PartialEq for odt_lite::Limits
+pub fn odt_lite::Limits::eq(&self, &odt_lite::Limits) -> bool
+impl core::default::Default for odt_lite::Limits
+pub fn odt_lite::Limits::default() -> Self
+impl core::fmt::Debug for odt_lite::Limits
+pub fn odt_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for odt_lite::Limits
+pub struct odt_lite::Stop
+impl core::clone::Clone for odt_lite::Stop
+pub fn odt_lite::Stop::clone(&self) -> odt_lite::Stop
+impl core::cmp::Eq for odt_lite::Stop
+impl core::cmp::PartialEq for odt_lite::Stop
+pub fn odt_lite::Stop::eq(&self, &odt_lite::Stop) -> bool
+impl core::convert::From<odt_lite::Stop> for odt_lite::Error
+pub fn odt_lite::Error::from(odt_lite::Stop) -> Self
+impl core::fmt::Debug for odt_lite::Stop
+pub fn odt_lite::Stop::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for odt_lite::Stop
+impl core::marker::StructuralPartialEq for odt_lite::Stop
+pub trait odt_lite::Sink
+pub fn odt_lite::Sink::close(&mut self, odt_lite::Tag) -> core::result::Result<(), odt_lite::Stop>
+pub fn odt_lite::Sink::image(&mut self, &str, &str) -> core::result::Result<(), odt_lite::Stop>
+pub fn odt_lite::Sink::line_break(&mut self) -> core::result::Result<(), odt_lite::Stop>
+pub fn odt_lite::Sink::open(&mut self, odt_lite::Tag) -> core::result::Result<(), odt_lite::Stop>
+pub fn odt_lite::Sink::text(&mut self, &str) -> core::result::Result<(), odt_lite::Stop>
+pub fn odt_lite::parse<S: odt_lite::Sink>(&[u8], &mut S, &odt_lite::Limits) -> core::result::Result<odt_lite::Info, odt_lite::Error>

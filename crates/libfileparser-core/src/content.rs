@@ -13,7 +13,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 #[cfg(feature = "scene")]
 use scene_data::CpuScene;
 
-use crate::{Bytes, Cell, Column, FileSource, PageSource, ParseError, Result, ValueKind};
+use crate::{Bytes, Cell, Column, FileSource, FlowSource, PageSource, ParseError, Result, ValueKind};
 
 /// One facet's data. Cheap to clone: every variant shares its data.
 #[derive(Clone)]
@@ -26,8 +26,9 @@ pub enum Content {
     Container(Arc<dyn Container>),
     /// Pages laid out one after another, rendered a region at a time (PDF).
     Pages(Arc<dyn PageSource>),
-    /// Markdown source, shown formatted: its lines, read like any text.
-    Markdown(Arc<dyn TextSource>),
+    /// Formatted text: headings, paragraphs, lists, tables… read by block
+    /// (Markdown, DOCX, ODT, RTF, EPUB).
+    Flow(Arc<dyn FlowSource>),
     /// A 3D scene (feature `scene`).
     #[cfg(feature = "scene")]
     Scene(SceneDoc),
@@ -45,7 +46,7 @@ pub enum Model {
     Table,
     Container,
     Pages,
-    Markdown,
+    Flow,
     Scene,
     Hex,
 }
@@ -59,7 +60,7 @@ impl Content {
             Content::Table(_) => Model::Table,
             Content::Container(_) => Model::Container,
             Content::Pages(_) => Model::Pages,
-            Content::Markdown(_) => Model::Markdown,
+            Content::Flow(_) => Model::Flow,
             #[cfg(feature = "scene")]
             Content::Scene(_) => Model::Scene,
             Content::Hex(_) => Model::Hex,
@@ -78,7 +79,7 @@ impl Content {
             Content::Table(t) => t.memory(),
             Content::Container(c) => c.memory(),
             Content::Pages(p) => p.memory(),
-            Content::Markdown(t) => t.memory(),
+            Content::Flow(f) => f.memory(),
             #[cfg(feature = "scene")]
             Content::Scene(s) => MemoryUse::heap(s.scene.read().cpu_bytes()),
             Content::Hex(src) => MemoryUse::mapped(src.len()),
