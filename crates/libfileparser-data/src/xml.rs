@@ -94,8 +94,10 @@ pub(crate) fn parse(bytes: &[u8], cx: &ParseContext) -> Result<DataTree> {
                         .map(|c| c.into_owned())
                         .unwrap_or_else(|_| String::from_utf8_lossy(&t).into_owned());
                     if open.text.trim().is_empty() {
-                        open.text_line =
-                            lines.line(start + (t.len() - text.trim_start().len()).min(t.len()));
+                        // Leading white space counted in the raw bytes, which the
+                        // decoded text may not match byte for byte.
+                        let lead = t.iter().take_while(|b| b.is_ascii_whitespace()).count();
+                        open.text_line = lines.line(start + lead);
                     }
                     open.text.push_str(&text);
                 }

@@ -1,0 +1,45 @@
+"""Sorts real-world test files (corpus/fetch-real.sh) into folders named by the
+reader each should open with; `<reader>-invalid/` for test suites' negative cases."""
+
+import os, shutil, sys
+repos, out = sys.argv[1], sys.argv[2]
+shutil.rmtree(out, ignore_errors=True)
+by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nickel", "ofx": "ofx", "qfx": "ofx",
+          "dot": "dot", "gv": "dot", "ics": "icalendar", "vcf": None, "sam": "sam", "fa": "fasta", "fasta": "fasta",
+          "fq": "fastq", "fastq": "fastq", "gff3": "gff", "gpx": "gpx", "toml": "toml", "json": "json", "csv": "delimited",
+          "ttl": "turtle", "nt": "turtle", "nq": "turtle", "trig": "turtle", "rdf": "rdfxml", "hl7": "hl7", "qif": "qif",
+          "po": "po", "pot": "po", "mo": "mo", "kml": "kml", "yaml": "yaml", "xbrl": "xbrl", "proto": "protobuf",
+          "sta": "swift", "edi": "edifact"}
+counts = {}
+for repo in sorted(os.listdir(repos)):
+    root = os.path.join(repos, repo)
+    for dp, dirs, files in os.walk(root):
+        dirs[:] = [d for d in dirs if d != ".git"]
+        for f in files:
+            path = os.path.join(dp, f)
+            rel = os.path.relpath(path, root)
+            ext = f.rsplit(".", 1)[-1].lower() if "." in f else ""
+            reader = by_ext.get(ext)
+            head = open(path, "rb").read(256)
+            if ext == "vcf":
+                reader = "vcard" if b"BEGIN:VCARD" in head else "vcf"
+            if ext == "txt":
+                if repo.startswith("imsweb_x12"): reader = "x12"
+                elif repo.startswith("nerdocs_pydifact"): reader = "edifact"
+                elif repo.startswith("Efferent-Health"): reader = "hl7"
+                elif repo.startswith("WoLpH_mt940"): reader = "swift"
+            if repo.startswith("WoLpH_mt940") and ext not in ("sta", "txt"):
+                reader = None
+            if reader is None:
+                continue
+            # Invalid on purpose: they must fail (or fall back), not crash.
+            name = f.lower()
+            invalid = ("/invalid/" in "/" + rel + "/" or (repo.startswith("nst_") and f.startswith("n_"))
+                       or ("-bad-" in name) or (reader == "rdfxml" and "error" in name) or "fail" in rel.lower())
+            folder = reader + ("-invalid" if invalid else "")
+            dst = os.path.join(out, folder, (repo.split("_", 1)[1] + "__" + rel.replace("/", "__"))[-150:])
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
+            shutil.copyfile(path, dst)
+            counts[folder] = counts.get(folder, 0) + 1
+for k in sorted(counts):
+    print(f"{k:20} {counts[k]}")

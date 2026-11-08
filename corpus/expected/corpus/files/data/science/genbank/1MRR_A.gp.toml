@@ -1,0 +1,12 @@
+loader = "genbank"
+format = "GenBank"
+model = "Table"
+
+[table]
+rows = 1
+columns = 9
+headers = ["Locus", "Length (bp)", "Molecule", "Topology", "Date", "Definition", "Accession", "Organism", "Features"]
+kinds = ["Text", "Number", "Text", "Text", "Date", "Text", "Text", "Text", "Number"]
+
+[metadata]
+Records = "1"

@@ -27,7 +27,8 @@ pub(crate) fn parse(bytes: &[u8], cx: &ParseContext, leaves: bool) -> Result<Dat
             if let Some(open) = stack.last_mut() {
                 let text = decode(&String::from_utf8_lossy(&s[i..end]));
                 if open.text.trim().is_empty() {
-                    open.text_line = lines.line(i + (s[i..end].len() - String::from_utf8_lossy(&s[i..end]).trim_start().len()));
+                    let lead = s[i..end].iter().take_while(|b| b.is_ascii_whitespace()).count();
+                    open.text_line = lines.line(i + lead);
                 }
                 open.text.push_str(&text);
             }

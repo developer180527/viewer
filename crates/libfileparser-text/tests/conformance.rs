@@ -11,7 +11,7 @@ fn corpus(path: &str) -> Vec<u8> {
 fn every_reader_conforms() {
     // A few lines' index fits even the tiny limits.
     let samples = [
-        Sample::new("people.tsv", corpus("data/people.tsv")).fits_tiny_limits(),
+        Sample::new("people.tsv", corpus("data/delimited/people.tsv")).fits_tiny_limits(),
         Sample::new("tri.usda", corpus("3d/tri.usda")).fits_tiny_limits(),
         Sample::new("notes.txt", b"one\ntwo\r\nthree".to_vec()).fits_tiny_limits(),
     ];
@@ -40,4 +40,19 @@ fn text_opens_by_line_in_its_language() {
     let Some(Content::Text(s)) = libfileparser_text::source(&usda, None, &cx).unwrap() else { panic!() };
     assert_eq!(s.info().language.as_deref(), Some("usd"));
     assert!(libfileparser_text::source(&FileSource::from_bytes("a.glb", b"glTF\x02\0\0\0".to_vec()), None, &cx).unwrap().is_none());
+}
+
+fn corpus_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files")
+}
+
+/// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), nothing panics or hangs.
+#[test]
+fn every_reader_survives_fuzzing() {
+    libfileparser_testkit::assert_fuzz_clean(libfileparser_text::readers(), |id| {
+        let reader = libfileparser_text::readers().iter().find(|r| r.info().id == id).copied().expect("a reader");
+        let mut s = vec![Sample::new("notes.txt", b"one\ntwo\r\nthree".to_vec()), Sample::new("main.rs", b"fn main() {\n    println!(\"hi\");\n}\n".to_vec())];
+        s.extend(libfileparser_testkit::corpus_samples(&corpus_dir(), reader));
+        s
+    });
 }

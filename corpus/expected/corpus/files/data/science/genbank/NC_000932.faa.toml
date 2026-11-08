@@ -1,0 +1,13 @@
+loader = "fasta"
+format = "FASTA"
+model = "Table"
+
+[table]
+rows = 85
+columns = 4
+headers = ["ID", "Description", "Length", "Sequence"]
+kinds = ["Text", "Text", "Number", "Text"]
+
+[metadata]
+Sequences = "85"
+Residues = "26409"

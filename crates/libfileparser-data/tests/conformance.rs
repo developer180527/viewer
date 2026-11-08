@@ -78,7 +78,7 @@ fn samples(id: &str) -> Vec<Sample> {
             big("big.json", many("[", "{\"id\": {i}}", ",\n", "]", 50)),
         ],
         "json-lines" => vec![
-            small("events.jsonl", &corpus("data/events.jsonl")),
+            small("events.jsonl", &corpus("data/structured/events.jsonl")),
             small("one.ndjson", b"{\"a\":1}\n"),
             big("big.jsonl", many("", "{\"id\": {i}, \"ok\": true}", "\n", "\n", 50)),
         ],
@@ -99,7 +99,7 @@ fn samples(id: &str) -> Vec<Sample> {
         "properties" => vec![small("a.properties", b"a=1\nb: 2\n"), big("big.properties", many("", "k{i}={i}", "\n", "\n", 50))],
         "env" => vec![small(".env", b"A=1\nexport B='x'\n"), big("big.env", many("", "K{i}={i}", "\n", "\n", 50))],
         "delimited" => vec![
-            small("people.tsv", &corpus("data/people.tsv")),
+            small("people.tsv", &corpus("data/delimited/people.tsv")),
             small("a.csv", b"a;b\n1;2\n"),
             big("big.csv", many("a,b\n", "{i},x", "\n", "\n", 50)),
         ],
@@ -603,4 +603,17 @@ fn osm_wkt_nmea_and_gml() {
     assert_eq!(rows[0], [Cell::Text("river".into()), Cell::Text("r1".into()), Cell::Text("LineString".into()), Cell::Int(3), Cell::Text("Thames".into())]);
     // Graph Modelling Language is another .gml: not this.
     assert!(libfileparser_data::detect(b"graph [ node [ id 1 ] ]", "g.gml").iter().all(|(r, _)| r.info().id != "gml"));
+}
+
+/// Every reader, its samples and the corpus files it reads damaged thousands of ways
+/// (`LFP_FUZZ_ITERATIONS` for more): nothing panics or hangs.
+#[test]
+fn every_reader_survives_fuzzing() {
+    let corpus_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files");
+    libfileparser_testkit::assert_fuzz_clean(libfileparser_data::readers(), |id| {
+        let reader = libfileparser_data::readers().iter().find(|r| r.info().id == id).copied().expect("a reader");
+        let mut s = samples(id);
+        s.extend(libfileparser_testkit::corpus_samples(&corpus_dir, reader));
+        s
+    });
 }

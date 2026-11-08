@@ -3,6 +3,7 @@
 //! GML over their tree. (A drawn graph is a view for libviewer to add, on libgui's
 //! node graph.)
 
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -245,7 +246,10 @@ fn gml_tree(text: &str, cx: &ParseContext) -> Result<DataTree> {
 
 pub(crate) fn looks_like_graph_gml(header: &[u8]) -> bool {
     let text = String::from_utf8_lossy(header);
-    text.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#')).is_some_and(|l| l.starts_with("graph") || l.starts_with("Creator") || l.starts_with("Version"))
+    // `graph [` (DOT's is `graph name {`), or the `Creator`/`Version` keys before it.
+    let compact: String = text.chars().filter(|c| !c.is_whitespace()).take(4096).collect();
+    let first = text.lines().map(str::trim).find(|l| !l.is_empty() && !l.starts_with('#'));
+    first.is_some_and(|l| l.starts_with("graph") || l.starts_with("Creator") || l.starts_with("Version")) && compact.contains("graph[")
 }
 
 pub(crate) fn graph_gml(src: &FileSource, cx: &ParseContext) -> Result<Document> {
@@ -368,7 +372,7 @@ fn dot_tokens(s: &str) -> Result<Vec<(Tok, usize)>> {
             let end = s[i..].find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.' || (ch == '-' && false) || (!ch.is_ascii() && !ch.is_whitespace()))).map_or(b.len(), |p| i + p);
             let end = if end == i {
                 // A numeral like `-1.5`.
-                s[i..].find(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-')).map_or(b.len(), |p| i + p).max(i + 1)
+                s[i..].find(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-')).map_or(b.len(), |p| i + p).max(i + s[i..].chars().next().map_or(1, char::len_utf8))
             } else {
                 end
             };
@@ -396,6 +400,8 @@ struct DotParser<'a> {
     i: usize,
     lines: LineCounter<'a>,
     out: Dot,
+    /// Where each node id is in `out.nodes`: a graph can have a million nodes.
+    index: HashMap<String, usize>,
     cx: &'a ParseContext,
 }
 
@@ -462,9 +468,12 @@ impl DotParser<'_> {
     }
 
     fn node(&mut self, id: &str, attrs: Vec<(String, String)>, line: u64) {
-        match self.out.nodes.iter_mut().find(|n| n.0 == id) {
-            Some(n) => n.1.extend(attrs),
-            None => self.out.nodes.push((id.to_string(), attrs, line..line + 1)),
+        match self.index.get(id) {
+            Some(&i) => self.out.nodes[i].1.extend(attrs),
+            None => {
+                self.index.insert(id.to_string(), self.out.nodes.len());
+                self.out.nodes.push((id.to_string(), attrs, line..line + 1));
+            }
         }
     }
 
@@ -502,13 +511,8 @@ impl DotParser<'_> {
         if self.sym("}") {
             self.i += 1;
         }
-        let mut ids: Vec<String> = Vec::new();
-        for id in mentioned.into_iter().chain(self.out.nodes[before..].iter().map(|n| n.0.clone())) {
-            if !ids.contains(&id) {
-                ids.push(id);
-            }
-        }
-        Ok(ids)
+        let mut seen = HashSet::new();
+        Ok(mentioned.into_iter().chain(self.out.nodes[before..].iter().map(|n| n.0.clone())).filter(|id| seen.insert(id.clone())).collect())
     }
 
     /// Statements to the closing `}`: the node ids they mention.
@@ -576,7 +580,7 @@ impl DotParser<'_> {
 
 fn dot(text: &str, cx: &ParseContext) -> Result<Dot> {
     let toks = dot_tokens(text)?;
-    let mut p = DotParser { toks, i: 0, lines: LineCounter::new(text.as_bytes()), out: Dot { nodes: Vec::new(), edges: Vec::new(), directed: false, name: None }, cx };
+    let mut p = DotParser { toks, i: 0, lines: LineCounter::new(text.as_bytes()), out: Dot { nodes: Vec::new(), edges: Vec::new(), directed: false, name: None }, index: HashMap::new(), cx };
     // `strict? (graph|digraph) name? {`.
     if matches!(p.peek(), Some(Tok::Id(k)) if k.eq_ignore_ascii_case("strict")) {
         p.i += 1;
@@ -657,7 +661,9 @@ pub(crate) fn looks_like_dot(header: &[u8]) -> bool {
     first.is_some_and(|l| {
         let l = l.to_ascii_lowercase();
         let l = l.strip_prefix("strict ").unwrap_or(&l);
-        (l.starts_with("digraph") || l.starts_with("graph")) && text.contains('{')
+        let rest = l.strip_prefix("digraph").or_else(|| l.strip_prefix("graph"));
+        // Then a name or the brace; not TriG's `GRAPH :g {` or `GRAPH <iri> {`.
+        rest.is_some_and(|r| r.starts_with([' ', '\t', '{']) && !r.trim_start().starts_with([':', '<', '[', '_'])) && text.contains('{')
     })
 }
 

@@ -35,3 +35,21 @@ fn hostile_images_fail_cleanly() {
         assert!(r.decode().is_err());
     }
 }
+
+fn corpus_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files")
+}
+
+/// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), nothing panics or hangs:
+/// headers claiming huge sizes, truncated pixel data, broken chunks.
+#[test]
+fn every_reader_survives_fuzzing() {
+    libfileparser_testkit::assert_fuzz_clean(libfileparser_images::readers(), |id| {
+        let reader = libfileparser_images::readers().iter().find(|r| r.info().id == id).copied().expect("a reader");
+        let mut s = libfileparser_testkit::corpus_samples(&corpus_dir(), reader);
+        if id == "svg" {
+            s.push(Sample::new("dot.svg", br#"<svg xmlns="http://www.w3.org/2000/svg" width="4" height="4"><circle cx="2" cy="2" r="2"/></svg>"#.to_vec()));
+        }
+        s
+    });
+}

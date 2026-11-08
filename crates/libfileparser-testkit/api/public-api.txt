@@ -16,6 +16,31 @@ pub fn libfileparser_testkit::DenyFiles::default() -> libfileparser_testkit::Den
 impl core::marker::Copy for libfileparser_testkit::DenyFiles
 impl libfileparser_core::hooks::FileResolver for libfileparser_testkit::DenyFiles
 pub fn libfileparser_testkit::DenyFiles::resolve(&self, &libfileparser_core::source::FileSource, &str) -> core::result::Result<libfileparser_core::source::FileSource, libfileparser_core::dependency::Unreadable>
+pub struct libfileparser_testkit::Failure
+pub libfileparser_testkit::Failure::how: alloc::string::String
+pub libfileparser_testkit::Failure::sample: alloc::string::String
+pub libfileparser_testkit::Failure::saved: core::option::Option<std::path::PathBuf>
+pub libfileparser_testkit::Failure::target: alloc::string::String
+pub libfileparser_testkit::Failure::what: alloc::string::String
+impl core::fmt::Debug for libfileparser_testkit::Failure
+pub fn libfileparser_testkit::Failure::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for libfileparser_testkit::Failure
+pub fn libfileparser_testkit::Failure::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct libfileparser_testkit::Fuzz
+pub libfileparser_testkit::Fuzz::iterations: usize
+pub libfileparser_testkit::Fuzz::limits: libfileparser_core::limits::Limits
+pub libfileparser_testkit::Fuzz::seed: u64
+pub libfileparser_testkit::Fuzz::time_limit: core::time::Duration
+impl libfileparser_testkit::Fuzz
+pub fn libfileparser_testkit::Fuzz::inputs(&self, &str, &[(alloc::string::String, alloc::vec::Vec<u8>)]) -> alloc::vec::Vec<(alloc::string::String, alloc::string::String, alloc::vec::Vec<u8>)>
+pub fn libfileparser_testkit::Fuzz::iterations(self, usize) -> Self
+pub fn libfileparser_testkit::Fuzz::new() -> Self
+pub fn libfileparser_testkit::Fuzz::reader(&self, &'static dyn libfileparser_core::reader::Reader, &[libfileparser_testkit::Sample]) -> alloc::vec::Vec<libfileparser_testkit::Failure>
+pub fn libfileparser_testkit::Fuzz::run(&self, &str, &[(alloc::string::String, alloc::vec::Vec<u8>)], impl core::ops::function::Fn(&str, &[u8]) + core::marker::Send + core::marker::Sync + 'static) -> alloc::vec::Vec<libfileparser_testkit::Failure>
+impl core::clone::Clone for libfileparser_testkit::Fuzz
+pub fn libfileparser_testkit::Fuzz::clone(&self) -> libfileparser_testkit::Fuzz
+impl core::default::Default for libfileparser_testkit::Fuzz
+pub fn libfileparser_testkit::Fuzz::default() -> Self
 pub struct libfileparser_testkit::MemFiles(_)
 impl libfileparser_testkit::MemFiles
 pub fn libfileparser_testkit::MemFiles::new(impl core::iter::traits::collect::IntoIterator<Item = (alloc::string::String, alloc::vec::Vec<u8>)>) -> Self
@@ -43,6 +68,14 @@ impl<F: core::clone::Clone> core::clone::Clone for libfileparser_testkit::Record
 pub fn libfileparser_testkit::RecordingFiles<F>::clone(&self) -> libfileparser_testkit::RecordingFiles<F>
 impl<F: libfileparser_core::hooks::FileResolver> libfileparser_core::hooks::FileResolver for libfileparser_testkit::RecordingFiles<F>
 pub fn libfileparser_testkit::RecordingFiles<F>::resolve(&self, &libfileparser_core::source::FileSource, &str) -> core::result::Result<libfileparser_core::source::FileSource, libfileparser_core::dependency::Unreadable>
+pub struct libfileparser_testkit::Rng(_)
+impl libfileparser_testkit::Rng
+pub fn libfileparser_testkit::Rng::below(&mut self, usize) -> usize
+pub fn libfileparser_testkit::Rng::chance(&mut self, usize) -> bool
+pub fn libfileparser_testkit::Rng::new(u64) -> Self
+pub fn libfileparser_testkit::Rng::next_u64(&mut self) -> u64
+impl core::clone::Clone for libfileparser_testkit::Rng
+pub fn libfileparser_testkit::Rng::clone(&self) -> libfileparser_testkit::Rng
 pub struct libfileparser_testkit::Sample
 impl libfileparser_testkit::Sample
 pub fn libfileparser_testkit::Sample::fits_tiny_limits(self) -> Self
@@ -51,8 +84,13 @@ pub fn libfileparser_testkit::Sample::new(impl core::convert::Into<alloc::string
 pub fn libfileparser_testkit::Sample::with_neighbour(self, impl core::convert::Into<alloc::string::String>, impl core::convert::Into<alloc::vec::Vec<u8>>) -> Self
 impl core::clone::Clone for libfileparser_testkit::Sample
 pub fn libfileparser_testkit::Sample::clone(&self) -> libfileparser_testkit::Sample
+pub fn libfileparser_testkit::assert_bytes_fuzz_clean(&str, &[(alloc::string::String, alloc::vec::Vec<u8>)], impl core::ops::function::Fn(&str, &[u8]) + core::marker::Send + core::marker::Sync + 'static)
 pub fn libfileparser_testkit::assert_conforms(&dyn libfileparser_core::reader::Reader, &[libfileparser_testkit::Sample])
+pub fn libfileparser_testkit::assert_fuzz_clean(&[&'static dyn libfileparser_core::reader::Reader], impl core::ops::function::Fn(&str) -> alloc::vec::Vec<libfileparser_testkit::Sample>)
 pub fn libfileparser_testkit::check(&dyn libfileparser_core::reader::Reader, &[libfileparser_testkit::Sample]) -> alloc::vec::Vec<alloc::string::String>
 pub fn libfileparser_testkit::content_summary(&libfileparser_core::content::Content, &mut alloc::string::String)
+pub fn libfileparser_testkit::corpus_samples(&std::path::Path, &dyn libfileparser_core::reader::Reader) -> alloc::vec::Vec<libfileparser_testkit::Sample>
+pub fn libfileparser_testkit::exercise(&libfileparser_core::document::Document, &libfileparser_core::hooks::ParseContext)
+pub fn libfileparser_testkit::read(&libfileparser_core::content::Content)
 pub fn libfileparser_testkit::summarize(&libfileparser_core::document::Document, &libfileparser_core::hooks::ParseContext) -> alloc::string::String
 pub fn libfileparser_testkit::tiny_limits() -> libfileparser_core::limits::Limits

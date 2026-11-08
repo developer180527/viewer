@@ -331,13 +331,14 @@ fn strings_entries(text: &str) -> Result<Vec<StringsEntry>> {
             while j < b.len() && b[j] != b'"' {
                 if b[j] == b'\\' && j + 1 < b.len() {
                     j += 1;
-                    out.push(match b[j] {
-                        b'n' => '\n',
-                        b't' => '\t',
-                        b'r' => '\r',
-                        c => c as char,
+                    let ch = text[j..].chars().next()?;
+                    out.push(match ch {
+                        'n' => '\n',
+                        't' => '\t',
+                        'r' => '\r',
+                        c => c,
                     });
-                    j += 1;
+                    j += ch.len_utf8();
                 } else {
                     let ch = text[j..].chars().next()?;
                     out.push(ch);

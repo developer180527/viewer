@@ -147,6 +147,7 @@ pub fn compose(root: Layer, root_id: &str, resolver: &dyn Resolver, limits: &Lim
         warned: HashSet::new(),
         out: Layer::default(),
         prims: 0,
+        work: 0,
         arcs: Vec::new(),
         arc_index: HashMap::new(),
         variant_sets: Vec::new(),
@@ -174,7 +175,6 @@ const ARC_FIELDS: &[&str] = &["references", "payload", "inheritPaths", "speciali
 
 const MAX_LAYERS: usize = 256;
 const MAX_DEPTH: u32 = 64;
-const MAX_PRIMS: usize = 1_000_000;
 
 struct Composer<'r> {
     resolver: &'r dyn Resolver,
@@ -189,6 +189,8 @@ struct Composer<'r> {
     warned: HashSet<String>,
     out: Layer,
     prims: usize,
+    /// Expansion steps taken.
+    work: usize,
     arcs: Vec<LayerArc>,
     /// (from layer, kind, asset) → index in `arcs`.
     arc_index: HashMap<(usize, ArcKind, String), usize>,
@@ -373,6 +375,13 @@ impl Composer<'_> {
             self.warn(format!("{dst}: composition nested too deeply"));
             return;
         }
+        // All the work composition may do, so arcs that keep bringing in more stop
+        // in time as well as in size.
+        self.work += 1;
+        if self.work > self.limits.max_prims.saturating_mul(4) {
+            self.warn(format!("composition stopped after {} steps", self.work - 1));
+            return;
+        }
         if !seen.insert((site.stack, site.path.clone())) {
             return;
         }
@@ -474,8 +483,8 @@ impl Composer<'_> {
             children.into_iter().rev().map(|n| (child_path("/", &n), vec![child_site(&root, &n)])).collect();
         while let Some((path, base)) = work.pop() {
             self.prims += 1;
-            if self.prims > MAX_PRIMS {
-                self.warn(format!("more than {MAX_PRIMS} prims; the rest are skipped"));
+            if self.prims > self.limits.max_prims {
+                self.warn(format!("more than {} prims; the rest are skipped", self.limits.max_prims));
                 return;
             }
             let sites = self.prim_sites(base, &path);

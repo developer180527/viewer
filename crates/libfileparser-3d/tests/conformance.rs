@@ -49,3 +49,19 @@ fn every_reader_conforms() {
         assert_conforms(*reader, &samples);
     }
 }
+
+fn corpus_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files")
+}
+
+/// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), nothing panics or hangs:
+/// accessors past their buffers, counts claiming billions, broken records and blocks.
+#[test]
+fn every_reader_survives_fuzzing() {
+    libfileparser_testkit::assert_fuzz_clean(libfileparser_3d::readers(), |id| {
+        let reader = libfileparser_3d::readers().iter().find(|r| r.info().id == id).copied().expect("a reader");
+        let mut s = samples(id);
+        s.extend(libfileparser_testkit::corpus_samples(&corpus_dir(), reader));
+        s
+    });
+}

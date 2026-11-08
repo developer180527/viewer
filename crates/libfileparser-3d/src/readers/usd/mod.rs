@@ -109,7 +109,10 @@ impl Files<'_> {
 /// usd-lite's limits within the context's.
 fn limits(cx: &ParseContext) -> Limits {
     let d = Limits::default();
-    d.with_max_elements(d.max_elements.min(cx.limits.geometry as usize)).with_max_decompressed(d.max_decompressed.min(cx.limits.allocation as usize))
+    d.with_max_elements(d.max_elements.min(cx.limits.geometry as usize))
+        .with_max_decompressed(d.max_decompressed.min(cx.limits.allocation as usize))
+        // Prims made through references beyond what's written: the expansion limit.
+        .with_max_prims(d.max_prims.min(cx.limits.expansion as usize))
 }
 
 /// usd-lite names a limit only in words; its element cap is the document's items limit.

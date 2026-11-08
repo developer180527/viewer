@@ -75,305 +75,481 @@ skip_on = ["windows"]
 # ---------------------------------------------------------------- data
 
 [[file]]
-path = "corpus/files/data/people.tsv"
+path = "corpus/files/data/delimited/people.tsv"
 
 [[file]]
-path = "corpus/files/data/events.jsonl"
+path = "corpus/files/data/structured/events.jsonl"
 
 [[file]]
-path = "corpus/files/data/config.yaml"
+path = "corpus/files/data/structured/config.yaml"
 
 [[file]]
-path = "corpus/files/data/feed.xml"
+path = "corpus/files/data/feeds/feed.xml"
 
 [[file]]
-path = "corpus/files/data/settings.xml"
+path = "corpus/files/data/structured/settings.xml"
 
 [[file]]
-path = "corpus/files/data/Info.plist"
+path = "corpus/files/data/structured/Info.plist"
 
 [[file]]
-path = "corpus/files/data/binary.plist"
+path = "corpus/files/data/structured/binary.plist"
 
 [[file]]
-path = "corpus/files/data/settings.json5"
+path = "corpus/files/data/structured/settings.json5"
 
 [[file]]
-path = "corpus/files/data/config.hjson"
+path = "corpus/files/data/structured/config.hjson"
 
 [[file]]
-path = "corpus/files/data/app.ini"
+path = "corpus/files/data/config/app.ini"
 
 [[file]]
-path = "corpus/files/data/app.properties"
+path = "corpus/files/data/config/app.properties"
 
 [[file]]
-path = "corpus/files/data/sample.env"
+path = "corpus/files/data/config/sample.env"
 
 [[file]]
-path = "corpus/files/data/app.log"
+path = "corpus/files/data/logs/app.log"
 
 [[file]]
-path = "corpus/files/data/access.log"
+path = "corpus/files/data/logs/access.log"
 
 [[file]]
-path = "corpus/files/data/system.syslog"
+path = "corpus/files/data/logs/system.syslog"
 
 [[file]]
-path = "corpus/files/data/service.log"
+path = "corpus/files/data/logs/service.log"
 
 [[file]]
-path = "corpus/files/data/access.ltsv"
+path = "corpus/files/data/logs/access.ltsv"
 
 [[file]]
-path = "corpus/files/data/alerts.cef"
+path = "corpus/files/data/logs/alerts.cef"
 
 [[file]]
-path = "corpus/files/data/events.gelf"
+path = "corpus/files/data/logs/events.gelf"
 
 [[file]]
-path = "corpus/files/data/session.har"
+path = "corpus/files/data/logs/session.har"
 
 [[file]]
-path = "corpus/files/data/guide.sgml"
+path = "corpus/files/data/structured/guide.sgml"
 
 [[file]]
-path = "corpus/files/data/people.fwf"
+path = "corpus/files/data/delimited/people.fwf"
 
 # ---------------------------------------------------------------- feeds
 
 [[file]]
-path = "corpus/files/feeds/blog.atom"
+path = "corpus/files/data/feeds/blog.atom"
 
 [[file]]
-path = "corpus/files/feeds/mix.xspf"
+path = "corpus/files/data/feeds/mix.xspf"
 
 [[file]]
-path = "corpus/files/feeds/news.rss"
+path = "corpus/files/data/feeds/news.rss"
 
 [[file]]
-path = "corpus/files/feeds/radio.pls"
+path = "corpus/files/data/feeds/radio.pls"
 
 [[file]]
-path = "corpus/files/feeds/stream.m3u8"
+path = "corpus/files/data/feeds/stream.m3u8"
 
 # ---------------------------------------------------------------- l10n
 
 [[file]]
-path = "corpus/files/l10n/Localizable.strings"
+path = "corpus/files/data/l10n/Localizable.strings"
 
 [[file]]
-path = "corpus/files/l10n/Strings.resx"
+path = "corpus/files/data/l10n/Strings.resx"
 
 [[file]]
-path = "corpus/files/l10n/app.xlf"
+path = "corpus/files/data/l10n/app.xlf"
 
 [[file]]
-path = "corpus/files/l10n/app_en.arb"
+path = "corpus/files/data/l10n/app_en.arb"
 
 [[file]]
-path = "corpus/files/l10n/de.mo"
+path = "corpus/files/data/l10n/de.mo"
 
 [[file]]
-path = "corpus/files/l10n/de.po"
+path = "corpus/files/data/l10n/de.po"
 
 [[file]]
-path = "corpus/files/l10n/memory.tmx"
+path = "corpus/files/data/l10n/memory.tmx"
 
 # ---------------------------------------------------------------- records
 
 [[file]]
-path = "corpus/files/records/contacts.vcf"
+path = "corpus/files/data/records/contacts.vcf"
 
 [[file]]
-path = "corpus/files/records/people.ldif"
+path = "corpus/files/data/records/people.ldif"
 
 [[file]]
-path = "corpus/files/records/work.ics"
+path = "corpus/files/data/records/work.ics"
 
 # ---------------------------------------------------------------- sql
 
 [[file]]
-path = "corpus/files/sql/shop.sql"
+path = "corpus/files/data/sql/shop.sql"
 
 # ---------------------------------------------------------------- schemas
 
 [[file]]
-path = "corpus/files/schemas/monster.fbs"
+path = "corpus/files/data/schemas/monster.fbs"
 
 [[file]]
-path = "corpus/files/schemas/openapi.yaml"
+path = "corpus/files/data/schemas/openapi.yaml"
 
 [[file]]
-path = "corpus/files/schemas/order.xsd"
+path = "corpus/files/data/schemas/order.xsd"
 
 [[file]]
-path = "corpus/files/schemas/people.proto"
+path = "corpus/files/data/schemas/people.proto"
 
 [[file]]
-path = "corpus/files/schemas/person.capnp"
+path = "corpus/files/data/schemas/person.capnp"
 
 [[file]]
-path = "corpus/files/schemas/schema.graphql"
+path = "corpus/files/data/schemas/schema.graphql"
 
 [[file]]
-path = "corpus/files/schemas/schema.prisma"
+path = "corpus/files/data/schemas/schema.prisma"
 
 [[file]]
-path = "corpus/files/schemas/shop.dbml"
+path = "corpus/files/data/schemas/shop.dbml"
 
 [[file]]
-path = "corpus/files/schemas/user.avsc"
+path = "corpus/files/data/schemas/user.avsc"
 
 [[file]]
-path = "corpus/files/schemas/user.thrift"
+path = "corpus/files/data/schemas/user.thrift"
 
 [[file]]
-path = "corpus/files/schemas/weather.smithy"
+path = "corpus/files/data/schemas/weather.smithy"
 
 # ---------------------------------------------------------------- rdf
 
 [[file]]
-path = "corpus/files/rdf/animals.owl"
+path = "corpus/files/data/rdf/animals.owl"
 
 [[file]]
-path = "corpus/files/rdf/graph.trix"
+path = "corpus/files/data/rdf/graph.trix"
 
 [[file]]
-path = "corpus/files/rdf/org.jsonld"
+path = "corpus/files/data/rdf/org.jsonld"
 
 [[file]]
-path = "corpus/files/rdf/people.rq"
+path = "corpus/files/data/rdf/people.rq"
 
 [[file]]
-path = "corpus/files/rdf/people.ttl"
+path = "corpus/files/data/rdf/people.ttl"
 
 # ---------------------------------------------------------------- graphs
 
 [[file]]
-path = "corpus/files/graphs/flow.dot"
+path = "corpus/files/data/graphs/flow.dot"
 
 [[file]]
-path = "corpus/files/graphs/karate.gml"
+path = "corpus/files/data/graphs/karate.gml"
 
 [[file]]
-path = "corpus/files/graphs/network.graphml"
+path = "corpus/files/data/graphs/network.graphml"
 
 [[file]]
-path = "corpus/files/graphs/simple.gxl"
+path = "corpus/files/data/graphs/simple.gxl"
 
 [[file]]
-path = "corpus/files/graphs/web.gexf"
+path = "corpus/files/data/graphs/web.gexf"
 
 # ---------------------------------------------------------------- science
 
 [[file]]
-path = "corpus/files/science/1abc.cif"
+path = "corpus/files/data/science/1abc.cif"
 
 [[file]]
-path = "corpus/files/science/1abc.pdb"
+path = "corpus/files/data/science/1abc.pdb"
 
 [[file]]
-path = "corpus/files/science/aligned.sam"
+path = "corpus/files/data/science/aligned.sam"
 
 [[file]]
-path = "corpus/files/science/calls.vcf"
+path = "corpus/files/data/science/calls.vcf"
 
 [[file]]
-path = "corpus/files/science/genes.gff3"
+path = "corpus/files/data/science/genes.gff3"
 
 [[file]]
-path = "corpus/files/science/insulin.fasta"
+path = "corpus/files/data/science/insulin.fasta"
 
 [[file]]
-path = "corpus/files/science/iris.arff"
+path = "corpus/files/data/science/iris.arff"
 
 [[file]]
-path = "corpus/files/science/lambda.gb"
+path = "corpus/files/data/science/lambda.gb"
 
 [[file]]
-path = "corpus/files/science/peaks.bed"
+path = "corpus/files/data/science/peaks.bed"
 
 [[file]]
-path = "corpus/files/science/problem.cnf"
+path = "corpus/files/data/science/problem.cnf"
 
 [[file]]
-path = "corpus/files/science/reads.fastq"
+path = "corpus/files/data/science/reads.fastq"
+
+# Real GenBank and related files from Biopython's test suite (Tests/GenBank).
+
+[[file]]
+path = "corpus/files/data/science/genbank/1MRR_A.gp"
+
+[[file]]
+path = "corpus/files/data/science/genbank/DS830848.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/EU851978.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/EU851978_output.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/EZ116220.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/GU949562.1.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/HM138502.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/HM138502_output.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/KF527485.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/KF527485_output.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_000932.faa"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_000932.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_000932.gb.bgz"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_005816.faa"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_005816.ffn"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_005816.fna"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_005816.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NC_005816.tsv"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NP_416719.gbwithparts"
+
+[[file]]
+path = "corpus/files/data/science/genbank/NT_019265.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/addgene-plasmid-11664-sequence-180430.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/addgene-plasmid-39296-sequence-49545.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/arab1.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/bad_loc_wrap.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/bad_origin_wrap.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/bad_origin_wrap_CDS.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/bad_origin_wrap_fuzzy.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/bad_origin_wrap_linear.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/blank_seq.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/cor6_6.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/cor6_6.gb.bgz"
+
+[[file]]
+path = "corpus/files/data/science/genbank/dbsource_wrap.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/empty_accession.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/empty_feature_qualifier.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/empty_version.gbk"
+
+[[file]]
+path = "corpus/files/data/science/genbank/extra_keywords.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/gbvrl1_start.seq"
+
+[[file]]
+path = "corpus/files/data/science/genbank/invalid_locus_line_spacing.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/invalid_misc_feature.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/invalid_product.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/invalid_structured_comment.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/iro.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/negative_location.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/no_end_marker.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/no_origin_no_end.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/noref.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/noref_date_warning.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/one_of.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/origin_line.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/pBAD30.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/pri1.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/protein_refseq.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/protein_refseq2.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/qualifier_escaping_read.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/qualifier_escaping_write.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/tls_KDHP01000000.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/tsa_acropora.gb"
+
+[[file]]
+path = "corpus/files/data/science/genbank/wrong_sequence_indent.gb"
 
 # ---------------------------------------------------------------- business
 
 [[file]]
-path = "corpus/files/business/admit.hl7"
+path = "corpus/files/data/business/admit.hl7"
 
 [[file]]
-path = "corpus/files/business/cash.qif"
+path = "corpus/files/data/business/cash.qif"
 
 [[file]]
-path = "corpus/files/business/order.edi"
+path = "corpus/files/data/business/order.edi"
 
 [[file]]
-path = "corpus/files/business/order.x12"
+path = "corpus/files/data/business/order.x12"
 
 [[file]]
-path = "corpus/files/business/payment.fin"
+path = "corpus/files/data/business/payment.fin"
 
 [[file]]
-path = "corpus/files/business/report.xbrl"
+path = "corpus/files/data/business/report.xbrl"
 
 [[file]]
-path = "corpus/files/business/session.fix"
+path = "corpus/files/data/business/session.fix"
 
 [[file]]
-path = "corpus/files/business/statement.ofx"
+path = "corpus/files/data/business/statement.ofx"
 
 # ---------------------------------------------------------------- config
 
 [[file]]
-path = "corpus/files/config/app.cue"
+path = "corpus/files/data/config/app.cue"
 
 [[file]]
-path = "corpus/files/config/app.dhall"
+path = "corpus/files/data/config/app.dhall"
 
 [[file]]
-path = "corpus/files/config/app.ncl"
+path = "corpus/files/data/config/app.ncl"
 
 [[file]]
-path = "corpus/files/config/jobs.cron"
+path = "corpus/files/data/config/jobs.cron"
 
 [[file]]
-path = "corpus/files/config/main.tf"
+path = "corpus/files/data/config/main.tf"
 
 [[file]]
-path = "corpus/files/config/package.kdl"
+path = "corpus/files/data/config/package.kdl"
 
 # ---------------------------------------------------------------- geo
 
 [[file]]
-path = "corpus/files/geo/cities.geojson"
+path = "corpus/files/data/geo/cities.geojson"
 
 [[file]]
-path = "corpus/files/geo/regions.topojson"
+path = "corpus/files/data/geo/regions.topojson"
 
 [[file]]
-path = "corpus/files/geo/places.kml"
+path = "corpus/files/data/geo/places.kml"
 
 [[file]]
-path = "corpus/files/geo/places.kmz"
+path = "corpus/files/data/geo/places.kmz"
 
 [[file]]
-path = "corpus/files/geo/run.gpx"
+path = "corpus/files/data/geo/run.gpx"
 
 [[file]]
-path = "corpus/files/geo/rivers.gml"
+path = "corpus/files/data/geo/rivers.gml"
 
 [[file]]
-path = "corpus/files/geo/street.osm"
+path = "corpus/files/data/geo/street.osm"
 
 [[file]]
-path = "corpus/files/geo/shapes.wkt"
+path = "corpus/files/data/geo/shapes.wkt"
 
 [[file]]
-path = "corpus/files/geo/drive.nmea"
+path = "corpus/files/data/geo/drive.nmea"
 
 # ---------------------------------------------------------------- 3D
 

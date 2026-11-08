@@ -697,7 +697,7 @@ pub(crate) fn looks_like_nmea(header: &[u8]) -> bool {
 
 /// `ddmm.mmmm` with its hemisphere, as signed degrees.
 fn degrees(v: &str, hemisphere: &str, degree_digits: usize) -> Option<f64> {
-    if v.len() < degree_digits + 2 {
+    if v.len() < degree_digits + 2 || !v.is_ascii() {
         return None;
     }
     let d: f64 = v[..degree_digits].parse().ok()?;
@@ -708,7 +708,7 @@ fn degrees(v: &str, hemisphere: &str, degree_digits: usize) -> Option<f64> {
 
 /// `hhmmss.ss` as `hh:mm:ss.ss`.
 fn clock(v: &str) -> Option<String> {
-    (v.len() >= 6 && v[..6].bytes().all(|c| c.is_ascii_digit())).then(|| format!("{}:{}:{}", &v[..2], &v[2..4], &v[4..]))
+    (v.len() >= 6 && v.is_ascii() && v[..6].bytes().all(|c| c.is_ascii_digit())).then(|| format!("{}:{}:{}", &v[..2], &v[2..4], &v[4..]))
 }
 
 /// What one sentence says: (time, date, lat, lon, altitude, speed, course, satellites, fix).

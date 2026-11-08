@@ -6,6 +6,7 @@
 //! Statements are split on `;` outside strings, quoted names and comments, with
 //! PostgreSQL's dollar quotes, MySQL's `DELIMITER` and T-SQL's `GO`.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -63,8 +64,8 @@ fn statements(s: &[u8], cx: &ParseContext) -> Result<Vec<Statement>> {
             let line_end = memchr::memchr(b'\n', &s[i..]).map_or(s.len(), |p| i + p);
             let line = String::from_utf8_lossy(&s[i..line_end]);
             let line = line.trim();
-            if line.len() > 10 && line[..10].eq_ignore_ascii_case("DELIMITER ") {
-                delimiter = line[10..].trim().as_bytes().to_vec();
+            if let Some(d) = line.get(..10).filter(|p| p.eq_ignore_ascii_case("DELIMITER ")).and_then(|_| line.get(10..)) {
+                delimiter = d.trim().as_bytes().to_vec();
                 i = line_end;
                 continue;
             }
@@ -350,8 +351,11 @@ pub(crate) fn document(src: &FileSource, cx: &ParseContext) -> Result<Document> 
     }
     // The schema tree, and which statements hold each table's rows.
     let mut b = Builder::new(cx);
+    // Tables in the order their rows first appear, found by name (a dump can create
+    // tens of thousands of tables).
     let mut data: Vec<(String, Vec<usize>)> = Vec::new();
-    let mut created: Vec<(String, Vec<String>)> = Vec::new();
+    let mut data_at: HashMap<String, usize> = HashMap::new();
+    let mut created: HashMap<String, Vec<String>> = HashMap::new();
     let mut rows = Vec::with_capacity(stmts.len());
     for (n, st) in stmts.iter().enumerate() {
         let body = &text[st.bytes.clone()];
@@ -365,7 +369,7 @@ pub(crate) fn document(src: &FileSource, cx: &ParseContext) -> Result<Document> 
                 for (c, def) in &cols {
                     b.add(Some(id), 2, c.clone(), def.clone(), ValueKind::Text, line..st.lines.end as u32)?;
                 }
-                created.push((name.clone(), cols.into_iter().map(|c| c.0).collect()));
+                created.entry(name.clone()).or_insert_with(|| cols.into_iter().map(|c| c.0).collect());
             }
             (k, Some(name)) if k.starts_with("CREATE ") => {
                 b.add(None, 1, name.clone(), k.trim_start_matches("CREATE ").to_ascii_lowercase(), ValueKind::Group, line..st.lines.end as u32)?;
@@ -375,9 +379,12 @@ pub(crate) fn document(src: &FileSource, cx: &ParseContext) -> Result<Document> 
                     Some(r) => text[r.clone()].lines().count(),
                     None => insert_rows(body).1.len(),
                 } as i64);
-                match data.iter_mut().find(|d| d.0 == *name) {
-                    Some(d) => d.1.push(n),
-                    None => data.push((name.clone(), vec![n])),
+                match data_at.get(name) {
+                    Some(&i) => data[i].1.push(n),
+                    None => {
+                        data_at.insert(name.clone(), data.len());
+                        data.push((name.clone(), vec![n]));
+                    }
                 }
             }
             _ => {}
@@ -399,7 +406,7 @@ pub(crate) fn document(src: &FileSource, cx: &ParseContext) -> Result<Document> 
     let stmts = Arc::new(stmts);
     for (name, which) in data.into_iter().take(MAX_DATA_FACETS) {
         let (src2, stmts) = (src.clone(), stmts.clone());
-        let declared = created.iter().find(|c| c.0 == name).map(|c| c.1.clone());
+        let declared = created.get(&name).cloned();
         doc = doc.with_lazy_facet(FacetInfo::new(Role::Inspector, format!("Data: {name}"), Model::Table), move |cx| {
             let text = String::from_utf8_lossy(src2.bytes());
             let mut names: Vec<String> = declared.clone().unwrap_or_default();

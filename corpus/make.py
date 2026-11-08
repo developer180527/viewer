@@ -318,8 +318,8 @@ def docs():
 # ---------------------------------------------------------------- data
 
 def data():
-    write("data/people.tsv", "name\tage\tcity\nAda\t36\tLondon\nGrace\t85\tArlington\nLinus\t54\tPortland\n")
-    write("data/events.jsonl", "".join(json.dumps({"id": i, "kind": ["open", "close"][i % 2]}) + "\n" for i in range(5)))
+    write("data/delimited/people.tsv", "name\tage\tcity\nAda\t36\tLondon\nGrace\t85\tArlington\nLinus\t54\tPortland\n")
+    write("data/structured/events.jsonl", "".join(json.dumps({"id": i, "kind": ["open", "close"][i % 2]}) + "\n" for i in range(5)))
 
 
 # ---------------------------------------------------------------- hostile

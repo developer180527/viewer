@@ -373,11 +373,13 @@ pub(crate) fn kdl(src: &FileSource, cx: &ParseContext) -> Result<Document> {
                 while *i < s.len() && s[*i] != b'"' {
                     if s[*i] == b'\\' && *i + 1 < s.len() {
                         *i += 1;
-                        v.push(match s[*i] {
-                            b'n' => '\n',
-                            b't' => '\t',
-                            c => c as char,
+                        let ch = text[*i..].chars().next()?;
+                        v.push(match ch {
+                            'n' => '\n',
+                            't' => '\t',
+                            c => c,
                         });
+                        *i += ch.len_utf8() - 1;
                     } else {
                         let ch = text[*i..].chars().next()?;
                         v.push(ch);

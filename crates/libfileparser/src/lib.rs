@@ -143,7 +143,9 @@ impl Library {
     pub fn detect(&self, header: &[u8], name: &str) -> Vec<(&'static dyn Reader, Detection)> {
         let mut found = libfileparser_core::detect(&self.readers, header, name);
         // Stable: confidence order is kept within each group.
-        found.sort_by_key(|(r, _)| r.info().matches_also_reads(name));
+        // Ties go to the reader that owns the file's extension, over one guessing
+        // from content: `{}` named `.dhall` is Dhall, not JSON.
+        found.sort_by_key(|(r, d)| (r.info().matches_also_reads(name), std::cmp::Reverse(d.confidence), !r.info().matches_extension(name)));
         found
     }
 

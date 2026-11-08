@@ -1090,7 +1090,7 @@ static FASTQ: Data = Data {
 
 #[cfg(feature = "science")]
 static GENBANK: Data = Data {
-    info: ReaderInfo::new("genbank", "GenBank", Category::Data).extensions(&["gb", "gbk", "genbank", "gbff"]),
+    info: ReaderInfo::new("genbank", "GenBank", Category::Data).extensions(&["gb", "gbk", "genbank", "gbff", "gp", "gpff", "gbwithparts"]),
     language: "genbank",
     detect: |info, header, name| ext_or(info, header, name, header.starts_with(b"LOCUS ")),
     open: science::genbank,
@@ -1220,10 +1220,21 @@ static FIX: Data = Data {
 
 #[cfg(feature = "business")]
 static SWIFT: Data = Data {
-    info: ReaderInfo::new("swift", "SWIFT MT", Category::Data).extensions(&["fin", "swift", "mt940", "sta"]),
+    info: ReaderInfo::new("swift", "SWIFT MT", Category::Data).extensions(&["fin", "swift", "mt940", "940", "sta"]),
     language: "swift",
     // `.fin` is anything: only a `{1:` basic header is this.
-    detect: |info, header, name| if lead(header).starts_with(b"{1:") { ext_or(info, header, name, true) } else { Confidence::None },
+    // `{1:F01…`: the basic header, a letter after the colon (not JSON's `{1:2}`); or,
+    // named as a statement, its fields without the envelope.
+    detect: |info, header, name| {
+        let l = lead(header);
+        if l.starts_with(b"{1:") && l.get(3).is_some_and(u8::is_ascii_alphabetic) {
+            ext_or(info, header, name, true)
+        } else if info.matches_extension(name) && business::looks_like_bare_mt(header) {
+            Confidence::Extension
+        } else {
+            Confidence::None
+        }
+    },
     open: business::swift,
 };
 

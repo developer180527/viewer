@@ -15,8 +15,10 @@
 
 mod conformance;
 mod fakes;
+mod fuzz;
 mod summary;
 
 pub use conformance::{Sample, assert_conforms, check};
+pub use fuzz::{Failure, Fuzz, Rng, assert_bytes_fuzz_clean, assert_fuzz_clean, corpus_samples, exercise, read};
 pub use fakes::{CountingNotify, DenyFiles, MemFiles, QueueSpawn, RecordingFiles, tiny_limits};
 pub use summary::{content_summary, summarize};

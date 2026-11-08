@@ -47,6 +47,14 @@ impl Sample {
         self
     }
 
+    pub(crate) fn name(&self) -> &str {
+        &self.name
+    }
+
+    pub(crate) fn bytes(&self) -> &[u8] {
+        &self.bytes
+    }
+
     fn source(&self) -> FileSource {
         FileSource::from_bytes(self.name.clone(), self.bytes.clone())
     }

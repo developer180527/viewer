@@ -251,7 +251,7 @@ pub(crate) fn looks_like_ldif(header: &[u8]) -> bool {
 }
 
 pub(crate) fn ldif(src: &FileSource, cx: &ParseContext) -> Result<Document> {
-    let index = lines::index(src, "ldif", cx, |_, line| if line.len() >= 3 && line[..3].eq_ignore_ascii_case("dn:") { Line::Start } else { Line::Within })?;
+    let index = lines::index(src, "ldif", cx, |_, line| if line.get(..3).is_some_and(|p| p.eq_ignore_ascii_case("dn:")) { Line::Start } else { Line::Within })?;
     if index.starts.is_empty() {
         return Err(ParseError::corrupt("LDIF: no dn:"));
     }

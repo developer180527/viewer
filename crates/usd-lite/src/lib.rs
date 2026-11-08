@@ -50,6 +50,11 @@ pub struct Limits {
     pub max_elements: usize,
     /// Bytes any one compressed block may expand to.
     pub max_decompressed: usize,
+    /// Prims composition may make. References and payloads can bring the same layer
+    /// in many times, which is how USD reuses assets, and also how a small file (or a
+    /// folder of layers referring to each other) could ask for billions; composition
+    /// stops here, with a warning.
+    pub max_prims: usize,
 }
 
 impl Limits {
@@ -64,11 +69,17 @@ impl Limits {
         self.max_decompressed = n;
         self
     }
+
+    /// Prims composition may make.
+    pub fn with_max_prims(mut self, n: usize) -> Self {
+        self.max_prims = n;
+        self
+    }
 }
 
 impl Default for Limits {
     fn default() -> Self {
-        Self { max_elements: 1 << 27, max_decompressed: 1 << 30 }
+        Self { max_elements: 1 << 27, max_decompressed: 1 << 30, max_prims: 1_000_000 }
     }
 }
 

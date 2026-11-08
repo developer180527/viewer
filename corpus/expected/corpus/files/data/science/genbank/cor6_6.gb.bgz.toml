@@ -1,0 +1,11 @@
+loader = "gzip"
+format = "Gzip"
+model = "Container"
+
+[container]
+entries = 1
+paths = ["decompressed"]
+
+[metadata]
+Files = "1"
+"Uncompressed size" = "14967 bytes"

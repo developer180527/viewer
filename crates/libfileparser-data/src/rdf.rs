@@ -119,6 +119,12 @@ fn syntax_error(format: &str, e: &oxttl::TurtleSyntaxError) -> ParseError {
     ParseError::corrupt_at(format!("{format}: {}", e.message()), Position::line_column(at.line + 1, at.column + 1))
 }
 
+/// The base IRI a file's relative IRIs resolve against: the file itself.
+fn base_iri(src: &FileSource) -> String {
+    let name: String = src.name().chars().map(|c| if c.is_ascii_alphanumeric() || "-._~".contains(c) { c.to_string() } else { format!("%{:02X}", c as u32 & 0xff) }).collect();
+    format!("file:///{name}")
+}
+
 /// The statements of a Turtle-family file: Turtle and TriG (`trig`), N-Triples and
 /// N-Quads (`nquads`); and the prefixes it declared.
 fn turtle_family(src: &FileSource, quads_syntax: bool, cx: &ParseContext) -> Result<(Vec<Quad>, Prefixes)> {
@@ -139,7 +145,10 @@ fn turtle_family(src: &FileSource, quads_syntax: bool, cx: &ParseContext) -> Res
         out.extend(raw.iter().map(|q| to_quad(&p, &q.subject, q.predicate.as_str(), &q.object, &q.graph_name)));
         return Ok((out, p));
     }
-    let mut parser = oxttl::TriGParser::new().for_slice(src.bytes());
+    // Relative IRIs (`<#me>`) resolve against the file, as RDF tools do.
+    let parser = oxttl::TriGParser::new();
+    let parser = parser.clone().with_base_iri(base_iri(src)).unwrap_or(parser);
+    let mut parser = parser.for_slice(src.bytes());
     for q in parser.by_ref() {
         let q = q.map_err(|e| syntax_error(name, &e))?;
         raw.push(q);
@@ -160,12 +169,14 @@ fn rdf_xml(src: &FileSource, cx: &ParseContext) -> Result<Vec<Quad>> {
         let (p, rest) = d.split_once('=')?;
         let rest = rest.trim_start();
         let q = rest.chars().next()?;
-        let ns = rest[1..].split(q).next()?;
+        let ns = rest[q.len_utf8()..].split(q).next()?;
         Some((p.trim().to_string(), ns.to_string()))
     });
     let p = Prefixes::new(declared);
     let mut out = Vec::new();
-    for t in oxrdfxml::RdfXmlParser::new().for_slice(src.bytes()) {
+    let parser = oxrdfxml::RdfXmlParser::new();
+    let parser = parser.clone().with_base_iri(base_iri(src)).unwrap_or(parser);
+    for t in parser.for_slice(src.bytes()) {
         let t = t.map_err(|e| ParseError::corrupt(format!("RDF/XML: {e}")))?;
         out.push(to_quad(&p, &t.subject, t.predicate.as_str(), &t.object, &GraphName::DefaultGraph));
         if out.len() % 65536 == 0 {

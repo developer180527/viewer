@@ -144,3 +144,29 @@ fn every_reader_conforms() {
         assert_conforms(*reader, &samples);
     }
 }
+
+fn corpus_dir() -> std::path::PathBuf {
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files")
+}
+
+/// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), nothing panics or hangs:
+/// entries claiming huge sizes, broken directories, truncated streams.
+#[test]
+fn every_reader_survives_fuzzing() {
+    let mut tar = tar::Builder::new(Vec::new());
+    let mut h = tar::Header::new_gnu();
+    h.set_size(2);
+    h.set_cksum();
+    tar.append_data(&mut h, "hi.txt", &b"hi"[..]).unwrap();
+    let tar = tar.into_inner().unwrap();
+    libfileparser_testkit::assert_fuzz_clean(libfileparser_archives::readers(), move |id| {
+        let reader = libfileparser_archives::readers().iter().find(|r| r.info().id == id).copied().expect("a reader");
+        let mut s = match id {
+            "zip" => vec![Sample::new("a.zip", zip(&[("a.txt", b"a"), ("b/c.txt", b"cc")]))],
+            "tar" => vec![Sample::new("a.tar", tar.clone()), Sample::new("x.tar.gz", tar_gz())],
+            _ => vec![Sample::new("x.tar.gz", tar_gz())],
+        };
+        s.extend(libfileparser_testkit::corpus_samples(&corpus_dir(), reader));
+        s
+    });
+}

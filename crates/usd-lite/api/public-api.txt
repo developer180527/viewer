@@ -382,9 +382,11 @@ impl core::marker::StructuralPartialEq for usd_lite::compose::LayerArc
 #[non_exhaustive] pub struct usd_lite::Limits
 pub usd_lite::Limits::max_decompressed: usize
 pub usd_lite::Limits::max_elements: usize
+pub usd_lite::Limits::max_prims: usize
 impl usd_lite::Limits
 pub fn usd_lite::Limits::with_max_decompressed(self, usize) -> Self
 pub fn usd_lite::Limits::with_max_elements(self, usize) -> Self
+pub fn usd_lite::Limits::with_max_prims(self, usize) -> Self
 impl core::clone::Clone for usd_lite::Limits
 pub fn usd_lite::Limits::clone(&self) -> usd_lite::Limits
 impl core::cmp::Eq for usd_lite::Limits

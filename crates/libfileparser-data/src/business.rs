@@ -142,9 +142,10 @@ pub(crate) fn edifact(src: &FileSource, cx: &ParseContext) -> Result<Document> {
     let offset = text_all.len() - t.len();
     // `UNA:+.? '`: component, element, decimal, release, reserved, terminator.
     let (comp, elem, release, term, body_at) = match t.strip_prefix("UNA") {
-        Some(una) if una.len() >= 6 => {
+        Some(una) if una.chars().count() >= 6 => {
             let c: Vec<char> = una.chars().take(6).collect();
-            (c[0], c[1], Some(c[3]).filter(|r| *r != ' '), c[5], 9)
+            let len: usize = c.iter().map(|ch| ch.len_utf8()).sum();
+            (c[0], c[1], Some(c[3]).filter(|r| *r != ' '), c[5], 3 + len)
         }
         _ => (':', '+', Some('?'), '\'', 0),
     };
@@ -256,7 +257,8 @@ pub(crate) fn ofx(src: &FileSource, cx: &ParseContext) -> Result<Document> {
     let b = src.bytes();
     // 2.x is XML; 1.x is SGML with unclosed leaf tags.
     let xml = memchr::memmem::find(&b[..b.len().min(1024)], b"<?xml").is_some();
-    let tree = if xml { crate::xml::parse(b, cx)? } else { crate::markup::parse(b, cx, true)? };
+    // Some OFX 2 files leave their leaf tags unclosed, as 1.x does: read those leniently.
+    let tree = if xml { crate::xml::parse(b, cx).or_else(|_| crate::markup::parse(b, cx, true))? } else { crate::markup::parse(b, cx, true)? };
     let root = tree.roots().iter().copied().find(|&r| tree.label(r).eq_ignore_ascii_case("OFX")).ok_or_else(|| ParseError::corrupt("OFX: no <OFX>"))?;
     let trns = named(&tree, root, "STMTTRN");
     let currency = named(&tree, root, "CURDEF").first().map(|&c| tree.value(c).to_string());
@@ -331,8 +333,10 @@ pub(crate) fn qif(src: &FileSource, cx: &ParseContext) -> Result<Document> {
             if l == "^" {
                 break;
             }
-            let (code, v) = l.split_at(l.len().min(1));
-            match code {
+            let mut chars = l.chars();
+            let code = chars.next().map(String::from).unwrap_or_default();
+            let v = chars.as_str();
+            match code.as_str() {
                 "D" => out[0] = Cell::Date(v.trim().to_string()),
                 "T" | "U" => out[1] = num(&v.replace(',', "")),
                 "P" => out[2] = text(v),
@@ -491,6 +495,62 @@ fn mt_field(tag: &str) -> &'static str {
     }
 }
 
+/// The `:tag:value` fields of `t[range]`, a value running over the lines to the next
+/// tag, into `rows` as message `message`. Without the SWIFT envelope (an MT940
+/// statement as banks export them), each `:20:` starts the next message.
+#[allow(clippy::too_many_arguments)]
+fn mt_fields(t: &str, range: Range<usize>, mut message: i64, bare: bool, lines: &mut LineCounter, rows: &mut Vec<Vec<Cell>>, row_lines: &mut Vec<Range<u64>>) -> i64 {
+    let mut offset = range.start;
+    let mut current: Option<(String, String, usize, i64)> = None;
+    let mut flush = |cur: &mut Option<(String, String, usize, i64)>, end: usize, rows: &mut Vec<Vec<Cell>>, row_lines: &mut Vec<Range<u64>>| {
+        if let Some((tag, value, from, m)) = cur.take() {
+            let (a, z) = (lines.line(from), lines.line(end.saturating_sub(1).max(from)));
+            let name = mt_field(&tag);
+            rows.push(vec![Cell::Int(m), Cell::Text(tag), if name.is_empty() { Cell::Null } else { Cell::Text(name.into()) }, Cell::Text(value.trim_end().to_string())]);
+            row_lines.push(a as u64..z as u64 + 1);
+        }
+    };
+    for line in t[range.clone()].split_inclusive('\n') {
+        let l = line.trim_end_matches(['\r', '\n']);
+        if let Some(rest) = l.strip_prefix(':')
+            && let Some((tag, value)) = rest.split_once(':')
+            && (2..=4).contains(&tag.len())
+            && tag.starts_with(|c: char| c.is_ascii_digit())
+        {
+            flush(&mut current, offset, rows, row_lines);
+            if bare && tag == "20" {
+                message += 1;
+            }
+            current = Some((tag.to_string(), value.to_string(), offset, message.max(1)));
+        } else if l.trim() == "-" {
+            // The end of a statement.
+            flush(&mut current, offset, rows, row_lines);
+        } else if let Some((_, v, _, _)) = current.as_mut()
+            && !l.is_empty()
+        {
+            v.push('\n');
+            v.push_str(l);
+        }
+        offset += line.len();
+    }
+    flush(&mut current, range.end, rows, row_lines);
+    message
+}
+
+/// Whether text is an MT message without its envelope: a `:tag:` field among its
+/// first lines, as statements exported by banks start (with `:20:`).
+pub(crate) fn looks_like_bare_mt(header: &[u8]) -> bool {
+    let text = String::from_utf8_lossy(header);
+    // A field line: `:20:`, `:60F:`, `:86:`.
+    let field = |l: &str| {
+        let Some(rest) = l.strip_prefix(':') else { return false };
+        let tag = rest.split(':').next().unwrap_or("");
+        rest.len() > tag.len() && (2..=4).contains(&tag.len()) && tag[..2].bytes().all(|c| c.is_ascii_digit()) && tag[2..].bytes().all(|c| c.is_ascii_uppercase())
+    };
+    let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty()).take(6);
+    lines.any(field)
+}
+
 pub(crate) fn swift(src: &FileSource, cx: &ParseContext) -> Result<Document> {
     let t = String::from_utf8_lossy(src.bytes());
     let mut rows = Vec::new();
@@ -513,46 +573,26 @@ pub(crate) fn swift(src: &FileSource, cx: &ParseContext) -> Result<Document> {
         if let Some(b4) = msg.find("{4:") {
             let body_start = start + b4 + 3;
             let body_end = msg[b4..].find("\n-}").or_else(|| msg[b4..].find("-}")).map_or(next, |e| start + b4 + e);
-            let body = &t[body_start..body_end];
-            let mut offset = body_start;
-            let mut current: Option<(String, String, usize)> = None;
-            let flush = |cur: &mut Option<(String, String, usize)>, end: usize, lines: &mut LineCounter, rows: &mut Vec<Vec<Cell>>, row_lines: &mut Vec<Range<u64>>| {
-                if let Some((tag, value, from)) = cur.take() {
-                    let (a, z) = (lines.line(from), lines.line(end.saturating_sub(1).max(from)));
-                    let name = mt_field(&tag);
-                    rows.push(vec![Cell::Int(message), Cell::Text(tag), if name.is_empty() { Cell::Null } else { Cell::Text(name.into()) }, Cell::Text(value.trim_end().to_string())]);
-                    row_lines.push(a as u64..z as u64 + 1);
-                }
-            };
-            for line in body.split_inclusive('\n') {
-                let l = line.trim_end_matches(['\r', '\n']);
-                if let Some(rest) = l.strip_prefix(':')
-                    && let Some((tag, value)) = rest.split_once(':')
-                    && tag.len() <= 4
-                {
-                    flush(&mut current, offset, &mut lines, &mut rows, &mut row_lines);
-                    current = Some((tag.to_string(), value.to_string(), offset));
-                } else if let Some((_, v, _)) = current.as_mut()
-                    && !l.is_empty()
-                {
-                    v.push('\n');
-                    v.push_str(l);
-                }
-                offset += line.len();
-            }
-            flush(&mut current, body_end, &mut lines, &mut rows, &mut row_lines);
+            mt_fields(&t, body_start..body_end, message, false, &mut lines, &mut rows, &mut row_lines);
         }
         cx.limits.check(Limit::Rows, rows.len() as u64)?;
         at = next;
     }
-    if message == 0 {
-        return Err(ParseError::corrupt("SWIFT: no {1: block"));
+    let bare = message == 0;
+    if bare {
+        // No envelope: the fields alone, statement after statement.
+        if !looks_like_bare_mt(src.header()) {
+            return Err(ParseError::corrupt("SWIFT: no {1: block or :20: field"));
+        }
+        message = mt_fields(&t, 0..t.len(), 0, true, &mut lines, &mut rows, &mut row_lines).max(1);
+        cx.limits.check(Limit::Rows, rows.len() as u64)?;
+        types.push("MT940".into());
     }
     let n = rows.len();
     let table = OwnedTable::new(columns(&[("Message", Number), ("Tag", Text), ("Field", Text), ("Value", Text)]), rows);
     let mut kinds = types.clone();
     kinds.dedup();
-    Ok(Document::new(format("swift", "SWIFT MT"))
+    Ok(Document::new(format("swift", if bare { "SWIFT MT940 statement" } else { "SWIFT MT" }))
         .with_facet(Role::Primary, "Fields", Content::Table(Arc::new(table)))
         .with_meta("Messages", message)
         .with_meta("Message types", kinds.join(", "))

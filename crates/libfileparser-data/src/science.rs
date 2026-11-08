@@ -435,7 +435,10 @@ fn cif_tokens(text: &str) -> Vec<(String, u32, bool)> {
                     i = j + 1;
                 }
                 _ => {
-                    let end = line[i..].find(char::is_whitespace).map_or(b.len(), |p| i + p);
+                    // White space ends a value; at least one character is taken, so a
+                    // non-ASCII space (which `is_ascii_whitespace` above skips) can't stall.
+                    let first = line[i..].chars().next().map_or(1, char::len_utf8);
+                    let end = line[i + first..].find(|c: char| c.is_ascii_whitespace()).map_or(b.len(), |p| i + first + p);
                     out.push((line[i..end].to_string(), n as u32, false));
                     i = end;
                 }

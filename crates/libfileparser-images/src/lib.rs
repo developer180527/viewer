@@ -306,10 +306,13 @@ impl Reader for SvgReader {
 fn parse_svg(src: &FileSource) -> Result<resvg::usvg::Tree> {
     // No resources directory: an SVG reads nothing beside itself.
     let opt = resvg::usvg::Options { fontdb: system_fonts(), ..Default::default() };
-    resvg::usvg::Tree::from_data(src.bytes(), &opt).map_err(|e| match e {
-        resvg::usvg::Error::NotAnUtf8Str | resvg::usvg::Error::ParsingFailed(_) => ParseError::NotThisFormat,
-        other => corrupt(other),
-    })
+    // Parsed on whatever thread asks (Viewer's decoder too): a panic in usvg is damage.
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| resvg::usvg::Tree::from_data(src.bytes(), &opt)))
+        .map_err(|_| corrupt("the SVG couldn't be read"))?
+        .map_err(|e| match e {
+            resvg::usvg::Error::NotAnUtf8Str | resvg::usvg::Error::ParsingFailed(_) => ParseError::NotThisFormat,
+            other => corrupt(other),
+        })
 }
 
 /// An SVG rendered when asked for, then handed out in bands.
@@ -324,7 +327,11 @@ impl BandSource for SvgBands {
     fn bands(&self) -> Result<Bands> {
         let tree = parse_svg(&self.src)?;
         let mut pixmap = resvg::tiny_skia::Pixmap::new(self.width, self.height).ok_or_else(|| corrupt("SVG too large"))?;
-        resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(self.scale, self.scale), &mut pixmap.as_mut());
+        // tiny-skia asserts on some degenerate geometry a damaged file can hold: a
+        // drawing that fails is a damaged file, not a crash.
+        let scale = self.scale;
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| resvg::render(&tree, resvg::tiny_skia::Transform::from_scale(scale, scale), &mut pixmap.as_mut())))
+            .map_err(|_| corrupt("the SVG's shapes couldn't be drawn"))?;
         let rgba: Vec<u8> = pixmap
             .pixels()
             .iter()

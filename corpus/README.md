@@ -21,8 +21,25 @@ Every open runs on its own thread with a time limit, so a hang fails the test in
 ## Files
 
 - `samples/`, the app's own sample files.
-- `files/`, small synthetic files written by `make.py` (standard library only) and committed: images, a PDF, 3D models with and without their textures, data, and **hostile files** that must fail cleanly.
+- `files/`, committed, by libfileparser category, and for data by family:
+  - `3d/`, `images/`, `pdf/`: models (with and without their textures), images, a PDF, written by `make.py` (standard library only).
+  - `data/structured/`, `delimited/`, `config/`, `logs/`, `geo/`, `feeds/`, `l10n/`, `records/`, `sql/`, `schemas/`, `rdf/`, `graphs/`, `business/`, `science/`: a file or more per reader.
+  - `data/science/genbank/`: real GenBank, GenPept and FASTA files from Biopython's test suite (its README says so).
+  - `hostile/`: files that must fail cleanly.
 - Real-world files marked `optional`, kept out of git (`test_3d_files/`). They're skipped where absent, as on CI.
+
+## Real-world files
+
+`fetch-real.sh` shallow-clones public test suites (toml-test, JSONTestSuite, the W3C RDF tests, htslib, pydot, kdl, hcl, x12-parser, pydifact, ofxparse, mt940, Arelle and more: about 4,000 files, ~50 MB) into `real/`, sorted by the reader each file should open with; `<reader>-invalid/` holds test suites' negative cases, which must fail or fall back cleanly. They're kept out of git (each has its own licence) and checked by an opt-in test that fails on any crash or hang and reports, per folder, what opened as what:
+
+```bash
+corpus/fetch-real.sh
+LFP_REAL_CORPUS=corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
+```
+
+## Fuzzing
+
+Every reader, and usd-lite and gltf-lite through their own APIs, is fuzzed by each crate's tests (`libfileparser-testkit`'s fuzzer): its samples and the corpus files it reads, damaged thousands of ways, opened, every facet made and read. Nothing may panic or hang. `LFP_FUZZ_ITERATIONS` (default 64) and `LFP_FUZZ_SEED` go further; failing inputs are saved under `target/fuzz-failures/`.
 
 ## After a change
 

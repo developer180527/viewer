@@ -1,0 +1,10 @@
+loader = "text"
+format = "Plain text"
+model = "Text"
+
+[text]
+lines = 247
+
+[metadata]
+Lines = "247"
+Encoding = "UTF-8"

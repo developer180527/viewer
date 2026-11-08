@@ -172,3 +172,35 @@ fn owners_open_their_formats_and_other_categories_add_their_reading() {
     let broken = FileSource::from_bytes("a.json", b"{\"a\": ".to_vec());
     assert_eq!(libfileparser::open(&broken, &cx).unwrap().format().reader, "text");
 }
+
+/// Every corpus file, damaged, through the front door: detection across categories
+/// on broken bytes, the other readings, the generic facets. Nothing panics or hangs.
+#[test]
+fn the_front_door_survives_fuzzing() {
+    let mut seeds = Vec::new();
+    let mut stack = vec![corpus()];
+    while let Some(d) = stack.pop() {
+        let mut entries: Vec<_> = std::fs::read_dir(&d).unwrap().flatten().map(|e| e.path()).collect();
+        entries.sort();
+        for p in entries {
+            if p.is_dir() {
+                stack.push(p);
+            } else if let Ok(bytes) = std::fs::read(&p)
+                && bytes.len() <= 256 << 10
+            {
+                seeds.push((p.file_name().unwrap().to_string_lossy().into_owned(), bytes));
+            }
+        }
+    }
+    let fuzz = libfileparser_testkit::Fuzz::new();
+    // The categories are fuzzed on their own: a quarter as many here, across all of them.
+    let fuzz = fuzz.clone().iterations((fuzz.iterations / 4).max(4));
+    let limits = fuzz.limits.clone();
+    let failures = fuzz.run("front door", &seeds, move |name, bytes| {
+        let cx = ParseContext::new().with_limits(limits.clone());
+        if let Ok(doc) = libfileparser::open(&FileSource::from_bytes(name, bytes.to_vec()), &cx) {
+            libfileparser_testkit::exercise(&doc, &cx);
+        }
+    });
+    assert!(failures.is_empty(), "{} fuzz failures:\n{}", failures.len(), failures.iter().map(|f| format!("  {f}")).collect::<Vec<_>>().join("\n"));
+}

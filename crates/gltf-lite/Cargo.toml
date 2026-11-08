@@ -16,6 +16,7 @@ base64 = "0.22"
 thiserror = "2"
 
 [dev-dependencies]
+libfileparser-testkit.workspace = true
 rendererx = { workspace = true, features = ["controls"] }
 wgpu = "30"
 pollster = "1"

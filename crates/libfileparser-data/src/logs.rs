@@ -440,7 +440,8 @@ fn iso_len(s: &str) -> Option<usize> {
 /// `Nov  8 10:00:00` at the start of `s`: its length.
 fn bsd_time_len(s: &str) -> Option<usize> {
     let b = s.as_bytes();
-    if s.len() < 15 || !MONTHS.contains(&s.get(..3)?) || b[3] != b' ' {
+    // Every check is within the first 15 bytes, which must be ASCII.
+    if !s.get(..15).is_some_and(str::is_ascii) || !MONTHS.contains(&&s[..3]) || b[3] != b' ' {
         return None;
     }
     let day = s[4..6].trim_start();
