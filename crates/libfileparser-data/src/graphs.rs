@@ -3,12 +3,14 @@
 //! GML over their tree. (A drawn graph is a view for libviewer to add, on libgui's
 //! node graph.)
 
-use std::collections::{HashMap, HashSet};
+use std::borrow::Cow;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::ops::Range;
 use std::sync::Arc;
 
 use libfileparser_core::{
-    Cell, Column, Content, Document, FileSource, Limit, Links, OwnedTable, ParseContext, ParseError, Place, Position, Result, Role, ValueKind,
+    Cell, Column, Content, Count, Document, FileSource, Limit, Links, MemoryUse, ParseContext, ParseError, Place, Position, Result, Role,
+    TableInfo, TableSource, ValueKind,
 };
 
 use crate::nodes::{MAX_PROPERTIES, NodeTable, SAMPLE, child, format, local, named, value};
@@ -305,199 +307,257 @@ impl MaxKind for Cell {
 }
 
 // ---------------------------------------------------------------- DOT
+//
+// Memory: a DOT file can hold millions of edges, so ids are borrowed from the text
+// while parsing (only quoted ids with escapes are copied), each node's name is kept
+// once and edges refer to nodes by number, and the two tables build their rows only
+// for the range asked for.
 
 #[derive(Clone, Debug, PartialEq)]
-enum Tok {
-    Id(String),
+enum Tok<'a> {
+    Id(Cow<'a, str>),
     Sym(&'static str),
 }
 
-/// DOT's tokens and the byte each starts at.
-fn dot_tokens(s: &str) -> Result<Vec<(Tok, usize)>> {
-    let b = s.as_bytes();
-    let mut out = Vec::new();
-    let mut i = 0;
-    while i < b.len() {
-        let c = b[i];
-        if c.is_ascii_whitespace() {
-            i += 1;
-        } else if s[i..].starts_with("//") || (c == b'#' && (i == 0 || b[i - 1] == b'\n')) {
-            i = memchr::memchr(b'\n', &b[i..]).map_or(b.len(), |p| i + p);
-        } else if s[i..].starts_with("/*") {
-            i = memchr::memmem::find(&b[i + 2..], b"*/").map_or(b.len(), |p| i + 2 + p + 2);
-        } else if s[i..].starts_with("->") || s[i..].starts_with("--") {
-            out.push((Tok::Sym(if c == b'-' && b[i + 1] == b'>' { "->" } else { "--" }), i));
-            i += 2;
-        } else if let Some(sym) = ["{", "}", "[", "]", "=", ";", ",", ":"].iter().find(|s| c == s.as_bytes()[0]) {
-            out.push((Tok::Sym(sym), i));
-            i += 1;
-        } else if c == b'"' {
-            let mut v = String::new();
-            let mut j = i + 1;
-            while j < b.len() && b[j] != b'"' {
-                if b[j] == b'\\' && b.get(j + 1) == Some(&b'"') {
-                    v.push('"');
-                    j += 2;
-                } else if b[j] == b'\\' && b.get(j + 1) == Some(&b'\n') {
-                    j += 2;
-                } else {
-                    let ch = s[j..].chars().next().unwrap_or(' ');
-                    v.push(ch);
-                    j += ch.len_utf8();
-                }
+/// DOT's tokens, one at a time, with the byte each starts at: a big file's tokens
+/// are never all held at once.
+struct DotLexer<'a> {
+    s: &'a str,
+    i: usize,
+}
+
+impl<'a> DotLexer<'a> {
+    fn next(&mut self) -> Option<(Tok<'a>, usize)> {
+        let (s, b) = (self.s, self.s.as_bytes());
+        let mut i = self.i;
+        let tok = loop {
+            if i >= b.len() {
+                self.i = i;
+                return None;
             }
-            out.push((Tok::Id(v), i));
-            i = j + 1;
-            // `"a" + "b"`: concatenated.
-        } else if c == b'<' {
-            // An HTML label, nested `<…>`.
-            let mut depth = 0;
-            let mut j = i;
-            while j < b.len() {
-                match b[j] {
-                    b'<' => depth += 1,
-                    b'>' => {
-                        depth -= 1;
-                        if depth == 0 {
-                            break;
-                        }
+            let c = b[i];
+            if c.is_ascii_whitespace() {
+                i += 1;
+            } else if s[i..].starts_with("//") || (c == b'#' && (i == 0 || b[i - 1] == b'\n')) {
+                i = memchr::memchr(b'\n', &b[i..]).map_or(b.len(), |p| i + p);
+            } else if s[i..].starts_with("/*") {
+                i = memchr::memmem::find(&b[i + 2..], b"*/").map_or(b.len(), |p| i + 2 + p + 2);
+            } else if s[i..].starts_with("->") || s[i..].starts_with("--") {
+                let t = (Tok::Sym(if c == b'-' && b[i + 1] == b'>' { "->" } else { "--" }), i);
+                i += 2;
+                break t;
+            } else if let Some(sym) = ["{", "}", "[", "]", "=", ";", ",", ":"].iter().find(|s| c == s.as_bytes()[0]) {
+                let t = (Tok::Sym(sym), i);
+                i += 1;
+                break t;
+            } else if c == b'"' {
+                // Borrowed unless it has an escape to undo.
+                let end = memchr::memchr(b'"', &b[i + 1..]).map_or(b.len(), |p| i + 1 + p);
+                let plain = &s[i + 1..end];
+                if !plain.contains('\\') {
+                    let t = (Tok::Id(Cow::Borrowed(plain)), i);
+                    i = end + 1;
+                    break t;
+                }
+                let mut v = String::new();
+                let mut j = i + 1;
+                while j < b.len() && b[j] != b'"' {
+                    if b[j] == b'\\' && b.get(j + 1) == Some(&b'"') {
+                        v.push('"');
+                        j += 2;
+                    } else if b[j] == b'\\' && b.get(j + 1) == Some(&b'\n') {
+                        j += 2;
+                    } else {
+                        let ch = s[j..].chars().next().unwrap_or(' ');
+                        v.push(ch);
+                        j += ch.len_utf8();
                     }
-                    _ => {}
                 }
-                j += 1;
-            }
-            out.push((Tok::Id(s[i + 1..j.min(b.len())].to_string()), i));
-            i = j + 1;
-        } else {
-            let end = s[i..].find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.' || (ch == '-' && false) || (!ch.is_ascii() && !ch.is_whitespace()))).map_or(b.len(), |p| i + p);
-            let end = if end == i {
-                // A numeral like `-1.5`.
-                s[i..].find(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-')).map_or(b.len(), |p| i + p).max(i + s[i..].chars().next().map_or(1, char::len_utf8))
+                let t = (Tok::Id(Cow::Owned(v)), i);
+                i = j + 1;
+                break t;
+            } else if c == b'<' {
+                // An HTML label, nested `<…>`.
+                let mut depth = 0;
+                let mut j = i;
+                while j < b.len() {
+                    match b[j] {
+                        b'<' => depth += 1,
+                        b'>' => {
+                            depth -= 1;
+                            if depth == 0 {
+                                break;
+                            }
+                        }
+                        _ => {}
+                    }
+                    j += 1;
+                }
+                let t = (Tok::Id(Cow::Borrowed(&s[i + 1..j.min(b.len())])), i);
+                i = j + 1;
+                break t;
             } else {
-                end
-            };
-            out.push((Tok::Id(s[i..end].to_string()), i));
-            i = end;
-        }
+                let end = s[i..].find(|ch: char| !(ch.is_alphanumeric() || ch == '_' || ch == '.' || (!ch.is_ascii() && !ch.is_whitespace()))).map_or(b.len(), |p| i + p);
+                let end = if end == i {
+                    // A numeral like `-1.5`.
+                    s[i..].find(|ch: char| !(ch.is_ascii_digit() || ch == '.' || ch == '-')).map_or(b.len(), |p| i + p).max(i + s[i..].chars().next().map_or(1, char::len_utf8))
+                } else {
+                    end
+                };
+                let t = (Tok::Id(Cow::Borrowed(&s[i..end])), i);
+                i = end;
+                break t;
+            }
+        };
+        self.i = i;
+        Some(tok)
     }
-    Ok(out)
 }
 
 /// Attributes as written: `(name, value)`.
 type Attrs = Vec<(String, String)>;
 
+struct DotNode {
+    id: Box<str>,
+    attrs: Attrs,
+    lines: Range<u64>,
+}
+
+struct DotEdge {
+    /// Indices into [`Dot::nodes`].
+    from: u32,
+    to: u32,
+    attrs: Attrs,
+    lines: Range<u64>,
+}
+
 struct Dot {
-    /// Id, attributes, lines.
-    nodes: Vec<(String, Attrs, Range<u64>)>,
-    /// From, to, attributes, lines.
-    edges: Vec<(String, String, Attrs, Range<u64>)>,
+    nodes: Vec<DotNode>,
+    edges: Vec<DotEdge>,
     directed: bool,
     name: Option<String>,
 }
 
 struct DotParser<'a> {
-    toks: Vec<(Tok, usize)>,
-    i: usize,
+    lex: DotLexer<'a>,
+    /// Tokens read ahead of the parser: at most two.
+    ahead: VecDeque<(Tok<'a>, usize)>,
     lines: LineCounter<'a>,
     out: Dot,
-    /// Where each node id is in `out.nodes`: a graph can have a million nodes.
-    index: HashMap<String, usize>,
+    /// Where each node id is in `out.nodes`, keyed by the text's own bytes where it can.
+    index: HashMap<Cow<'a, str>, u32>,
     cx: &'a ParseContext,
 }
 
-impl DotParser<'_> {
-    fn peek(&self) -> Option<&Tok> {
-        self.toks.get(self.i).map(|t| &t.0)
+impl<'a> DotParser<'a> {
+    /// Token `k` ahead (0 is the next one).
+    fn look(&mut self, k: usize) -> Option<&(Tok<'a>, usize)> {
+        while self.ahead.len() <= k {
+            let t = self.lex.next()?;
+            self.ahead.push_back(t);
+        }
+        self.ahead.get(k)
     }
 
-    fn sym(&self, s: &str) -> bool {
-        self.peek() == Some(&Tok::Sym(match s {
-            "{" => "{",
-            "}" => "}",
-            "[" => "[",
-            "]" => "]",
-            "=" => "=",
-            ";" => ";",
-            "," => ",",
-            ":" => ":",
-            "->" => "->",
-            _ => "--",
-        }))
+    fn peek(&mut self) -> Option<&Tok<'a>> {
+        self.look(0).map(|t| &t.0)
     }
 
-    fn id(&mut self) -> Option<String> {
+    /// Moves past `n` tokens.
+    fn bump(&mut self, n: usize) {
+        for _ in 0..n {
+            if self.ahead.pop_front().is_none() {
+                self.lex.next();
+            }
+        }
+    }
+
+    fn sym(&mut self, s: &str) -> bool {
+        matches!(self.peek(), Some(Tok::Sym(t)) if *t == s)
+    }
+
+    fn id(&mut self) -> Option<Cow<'a, str>> {
         match self.peek() {
             Some(Tok::Id(v)) => {
                 let v = v.clone();
-                self.i += 1;
+                self.bump(1);
                 Some(v)
             }
             _ => None,
         }
     }
 
+    /// Whether token `k` ahead is an id `pred` accepts.
+    fn is_id(&mut self, k: usize, pred: impl Fn(&str) -> bool) -> bool {
+        matches!(self.look(k), Some((Tok::Id(v), _)) if pred(v))
+    }
+
+    fn is_sym_at(&mut self, k: usize, s: &str) -> bool {
+        matches!(self.look(k), Some((Tok::Sym(t), _)) if *t == s)
+    }
+
     fn line(&mut self) -> u64 {
-        let at = self.toks.get(self.i).map_or(0, |t| t.1);
+        let at = self.look(0).map_or(0, |t| t.1);
         self.lines.line(at) as u64
     }
 
     /// `[a=b, c=d][e=f]`.
-    fn attrs(&mut self) -> Vec<(String, String)> {
+    fn attrs(&mut self) -> Attrs {
         let mut out = Vec::new();
         while self.sym("[") {
-            self.i += 1;
+            self.bump(1);
             while !self.sym("]") && self.peek().is_some() {
                 let Some(k) = self.id() else {
-                    self.i += 1;
+                    self.bump(1);
                     continue;
                 };
                 let v = if self.sym("=") {
-                    self.i += 1;
+                    self.bump(1);
                     self.id().unwrap_or_default()
                 } else {
-                    "true".into()
+                    Cow::Borrowed("true")
                 };
-                out.push((k, v));
+                out.push((k.into_owned(), v.into_owned()));
                 if self.sym(",") || self.sym(";") {
-                    self.i += 1;
+                    self.bump(1);
                 }
             }
-            self.i += 1;
+            self.bump(1);
         }
         out
     }
 
-    fn node(&mut self, id: &str, attrs: Vec<(String, String)>, line: u64) {
-        match self.index.get(id) {
-            Some(&i) => self.out.nodes[i].1.extend(attrs),
-            None => {
-                self.index.insert(id.to_string(), self.out.nodes.len());
-                self.out.nodes.push((id.to_string(), attrs, line..line + 1));
-            }
+    /// The node named `id`, added the first time it's seen.
+    fn node(&mut self, id: Cow<'a, str>, line: u64) -> u32 {
+        if let Some(&n) = self.index.get(&id) {
+            return n;
         }
+        let n = self.out.nodes.len() as u32;
+        self.out.nodes.push(DotNode { id: id.as_ref().into(), attrs: Vec::new(), lines: line..line + 1 });
+        self.index.insert(id, n);
+        n
     }
 
-    /// A node id, `id:port`, or a subgraph: the node ids it stands for.
-    fn endpoint(&mut self, depth: usize) -> Result<Option<Vec<String>>> {
-        if self.sym("{") || matches!(self.peek(), Some(Tok::Id(k)) if k.eq_ignore_ascii_case("subgraph")) {
+    /// A node id, `id:port`, or a subgraph: the nodes it stands for.
+    fn endpoint(&mut self, depth: usize) -> Result<Option<Vec<u32>>> {
+        if self.sym("{") || self.is_id(0, |k| k.eq_ignore_ascii_case("subgraph")) {
             return self.subgraph(depth).map(Some);
         }
         let line = self.line();
         let Some(id) = self.id() else { return Ok(None) };
         // Ports: `a:n` or `a:port:n`.
         while self.sym(":") {
-            self.i += 1;
+            self.bump(1);
             self.id();
         }
-        self.node(&id, Vec::new(), line);
-        Ok(Some(vec![id]))
+        Ok(Some(vec![self.node(id, line)]))
     }
 
-    /// `subgraph name? { … }` or `{ … }`: the nodes in it.
-    fn subgraph(&mut self, depth: usize) -> Result<Vec<String>> {
+    /// `subgraph name? { … }` or `{ … }`: the nodes in it, each once.
+    fn subgraph(&mut self, depth: usize) -> Result<Vec<u32>> {
         self.cx.limits.check(Limit::Depth, depth as u64)?;
-        if matches!(self.peek(), Some(Tok::Id(k)) if k.eq_ignore_ascii_case("subgraph")) {
-            self.i += 1;
+        if self.is_id(0, |k| k.eq_ignore_ascii_case("subgraph")) {
+            self.bump(1);
             if !self.sym("{") {
                 self.id();
             }
@@ -505,53 +565,55 @@ impl DotParser<'_> {
         if !self.sym("{") {
             return Ok(Vec::new());
         }
-        self.i += 1;
-        let before = self.out.nodes.len();
-        let mentioned = self.statements(depth + 1)?;
+        self.bump(1);
+        let before = self.out.nodes.len() as u32;
+        let mentioned = self.statements(depth + 1, true)?;
         if self.sym("}") {
-            self.i += 1;
+            self.bump(1);
         }
         let mut seen = HashSet::new();
-        Ok(mentioned.into_iter().chain(self.out.nodes[before..].iter().map(|n| n.0.clone())).filter(|id| seen.insert(id.clone())).collect())
+        Ok(mentioned.into_iter().chain(before..self.out.nodes.len() as u32).filter(|n| seen.insert(*n)).collect())
     }
 
-    /// Statements to the closing `}`: the node ids they mention.
-    fn statements(&mut self, depth: usize) -> Result<Vec<String>> {
+    /// Statements to the closing `}`. With `collect`, the nodes they mention (for a
+    /// subgraph used as an edge's end); the graph's own body doesn't need them.
+    fn statements(&mut self, depth: usize, collect: bool) -> Result<Vec<u32>> {
         let mut mentioned = Vec::new();
         while self.peek().is_some() && !self.sym("}") {
             if self.sym(";") {
-                self.i += 1;
+                self.bump(1);
                 continue;
             }
             self.cx.limits.check(Limit::Rows, (self.out.nodes.len() + self.out.edges.len()) as u64)?;
             let line = self.line();
             // `graph|node|edge [attrs]`: defaults, not nodes.
-            if let Some(Tok::Id(k)) = self.peek()
-                && matches!(k.to_ascii_lowercase().as_str(), "graph" | "node" | "edge")
-                && self.toks.get(self.i + 1).is_some_and(|t| t.0 == Tok::Sym("["))
-            {
-                self.i += 1;
+            if self.is_id(0, |k| matches!(k.to_ascii_lowercase().as_str(), "graph" | "node" | "edge")) && self.is_sym_at(1, "[") {
+                self.bump(1);
                 self.attrs();
                 continue;
             }
             // `a = b`: a graph attribute.
-            if matches!(self.peek(), Some(Tok::Id(_))) && self.toks.get(self.i + 1).is_some_and(|t| t.0 == Tok::Sym("=")) {
-                self.i += 2;
+            if matches!(self.peek(), Some(Tok::Id(_))) && self.is_sym_at(1, "=") {
+                self.bump(2);
                 self.id();
                 continue;
             }
             let Some(first) = self.endpoint(depth)? else {
-                self.i += 1;
+                self.bump(1);
                 continue;
             };
-            mentioned.extend(first.iter().cloned());
+            if collect {
+                mentioned.extend_from_slice(&first);
+            }
             // An edge chain: `a -> b -> {c d} [attrs]`.
             let mut chain = vec![first];
             while self.sym("->") || self.sym("--") {
-                self.i += 1;
+                self.bump(1);
                 match self.endpoint(depth)? {
                     Some(next) => {
-                        mentioned.extend(next.iter().cloned());
+                        if collect {
+                            mentioned.extend_from_slice(&next);
+                        }
                         chain.push(next);
                     }
                     None => break,
@@ -560,15 +622,14 @@ impl DotParser<'_> {
             let attrs = self.attrs();
             let end = self.line();
             if chain.len() == 1 {
-                if let [id] = &chain[0][..] {
-                    let id = id.clone();
-                    self.node(&id, attrs, line);
+                if let [n] = chain[0][..] {
+                    self.out.nodes[n as usize].attrs.extend(attrs);
                 }
             } else {
                 for pair in chain.windows(2) {
-                    for from in &pair[0] {
-                        for to in &pair[1] {
-                            self.out.edges.push((from.clone(), to.clone(), attrs.clone(), line..end.max(line) + 1));
+                    for &from in &pair[0] {
+                        for &to in &pair[1] {
+                            self.out.edges.push(DotEdge { from, to, attrs: attrs.clone(), lines: line..end.max(line) + 1 });
                         }
                     }
                 }
@@ -579,11 +640,10 @@ impl DotParser<'_> {
 }
 
 fn dot(text: &str, cx: &ParseContext) -> Result<Dot> {
-    let toks = dot_tokens(text)?;
-    let mut p = DotParser { toks, i: 0, lines: LineCounter::new(text.as_bytes()), out: Dot { nodes: Vec::new(), edges: Vec::new(), directed: false, name: None }, index: HashMap::new(), cx };
+    let mut p = DotParser { lex: DotLexer { s: text, i: 0 }, ahead: VecDeque::new(), lines: LineCounter::new(text.as_bytes()), out: Dot { nodes: Vec::new(), edges: Vec::new(), directed: false, name: None }, index: HashMap::new(), cx };
     // `strict? (graph|digraph) name? {`.
-    if matches!(p.peek(), Some(Tok::Id(k)) if k.eq_ignore_ascii_case("strict")) {
-        p.i += 1;
+    if p.is_id(0, |k| k.eq_ignore_ascii_case("strict")) {
+        p.bump(1);
     }
     match p.id() {
         Some(k) if k.eq_ignore_ascii_case("digraph") => p.out.directed = true,
@@ -591,27 +651,78 @@ fn dot(text: &str, cx: &ParseContext) -> Result<Dot> {
         _ => return Err(ParseError::corrupt("DOT: expected `graph` or `digraph`")),
     }
     if !p.sym("{") {
-        p.out.name = p.id();
+        p.out.name = p.id().map(Cow::into_owned);
     }
     if !p.sym("{") {
         return Err(ParseError::corrupt("DOT: expected `{`"));
     }
-    p.i += 1;
-    p.statements(1)?;
+    p.bump(1);
+    p.statements(1, false)?;
     Ok(p.out)
 }
 
-/// Rows of two tables (facets 0 and 1) and their lines.
-struct TwoTables(Vec<Range<u64>>, Vec<Range<u64>>);
+/// The last value given for attribute `k`.
+fn attr(attrs: &[(String, String)], k: &str) -> Cell {
+    attrs.iter().rev().find(|(a, _)| a == k).map_or(Cell::Null, |(_, v)| Cell::Text(v.clone()))
+}
 
-impl Links for TwoTables {
+/// The Nodes or Edges table, its rows made from the parsed graph when asked for.
+struct DotTable {
+    graph: Arc<Dot>,
+    edges: bool,
+    columns: Vec<Column>,
+    /// Attribute columns after the fixed ones.
+    keys: Vec<String>,
+}
+
+impl TableSource for DotTable {
+    fn info(&self) -> TableInfo {
+        let rows = if self.edges { self.graph.edges.len() } else { self.graph.nodes.len() };
+        TableInfo::new(self.columns.clone(), Count::Exact(rows as u64))
+    }
+
+    fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
+        let g = &self.graph;
+        let len = if self.edges { g.edges.len() } else { g.nodes.len() } as u64;
+        let end = range.end.min(len);
+        let range = range.start.min(end) as usize..end as usize;
+        let row = |fixed: Vec<Cell>, attrs: &Attrs| fixed.into_iter().chain(self.keys.iter().map(|k| attr(attrs, k))).collect();
+        Ok(if self.edges {
+            g.edges[range]
+                .iter()
+                .map(|e| {
+                    let name = |n: u32| Cell::Text(g.nodes[n as usize].id.to_string());
+                    row(vec![name(e.from), name(e.to), attr(&e.attrs, "label")], &e.attrs)
+                })
+                .collect()
+        } else {
+            g.nodes[range].iter().map(|n| row(vec![Cell::Text(n.id.to_string()), attr(&n.attrs, "label")], &n.attrs)).collect()
+        })
+    }
+
+    fn memory(&self) -> MemoryUse {
+        // The graph is shared by both tables; each reports half.
+        let g = &self.graph;
+        let attrs = |a: &Attrs| a.iter().map(|(k, v)| k.len() + v.len() + 48).sum::<usize>();
+        let nodes: usize = g.nodes.iter().map(|n| size_of::<DotNode>() + n.id.len() + attrs(&n.attrs)).sum();
+        let edges: usize = g.edges.iter().map(|e| size_of::<DotEdge>() + attrs(&e.attrs)).sum();
+        MemoryUse::heap(((nodes + edges) / 2) as u64)
+    }
+}
+
+/// Rows of the two tables (facets 0 and 1) and their lines.
+struct DotLinks(Arc<Dot>);
+
+impl Links for DotLinks {
     fn links(&self, _: &Document, from: &Place, _: &ParseContext) -> Result<Vec<Place>> {
+        let g = &self.0;
         Ok(match *from {
-            Place::Row { facet: 0, row } => self.0.get(row as usize).map(|l| vec![Place::Lines(l.clone())]).unwrap_or_default(),
-            Place::Row { facet: 1, row } => self.1.get(row as usize).map(|l| vec![Place::Lines(l.clone())]).unwrap_or_default(),
+            Place::Row { facet: 0, row } => g.nodes.get(row as usize).map(|n| vec![Place::Lines(n.lines.clone())]).unwrap_or_default(),
+            Place::Row { facet: 1, row } => g.edges.get(row as usize).map(|e| vec![Place::Lines(e.lines.clone())]).unwrap_or_default(),
             Place::Lines(ref r) => {
-                let hit = |rows: &Vec<Range<u64>>, facet: usize| rows.iter().position(|l| l.contains(&r.start)).map(|row| Place::Row { facet, row: row as u64 });
-                hit(&self.0, 0).into_iter().chain(hit(&self.1, 1)).collect()
+                let node = g.nodes.iter().position(|n| n.lines.contains(&r.start)).map(|row| Place::Row { facet: 0, row: row as u64 });
+                let edge = g.edges.iter().position(|e| e.lines.contains(&r.start)).map(|row| Place::Row { facet: 1, row: row as u64 });
+                node.into_iter().chain(edge).collect()
             }
             _ => Vec::new(),
         })
@@ -620,9 +731,9 @@ impl Links for TwoTables {
 
 pub(crate) fn dot_document(src: &FileSource, cx: &ParseContext) -> Result<Document> {
     let text = String::from_utf8_lossy(src.bytes());
-    let g = dot(&text, cx)?;
+    let g = Arc::new(dot(&text, cx)?);
     // Attribute columns: label first, then the rest in the order first seen.
-    let keys = |attrs: &mut dyn Iterator<Item = &Vec<(String, String)>>| {
+    let keys = |attrs: &mut dyn Iterator<Item = &Attrs>| {
         let mut names: Vec<String> = Vec::new();
         for a in attrs {
             for (k, _) in a {
@@ -633,26 +744,23 @@ pub(crate) fn dot_document(src: &FileSource, cx: &ParseContext) -> Result<Docume
         }
         names
     };
-    let node_keys = keys(&mut g.nodes.iter().map(|n| &n.1));
-    let edge_keys = keys(&mut g.edges.iter().map(|e| &e.2));
-    let get = |attrs: &[(String, String)], k: &str| attrs.iter().rev().find(|(a, _)| a == k).map_or(Cell::Null, |(_, v)| Cell::Text(v.clone()));
-    let mut ncols = vec![Column::new("ID").with_kind(ValueKind::Text), Column::new("Label").with_kind(ValueKind::Text)];
-    ncols.extend(node_keys.iter().map(|k| Column::new(k.as_str()).with_kind(ValueKind::Text)));
-    let nrows = g.nodes.iter().map(|(id, a, _)| [Cell::Text(id.clone()), get(a, "label")].into_iter().chain(node_keys.iter().map(|k| get(a, k))).collect()).collect();
-    let mut ecols = vec![Column::new("From").with_kind(ValueKind::Text), Column::new("To").with_kind(ValueKind::Text), Column::new("Label").with_kind(ValueKind::Text)];
-    ecols.extend(edge_keys.iter().map(|k| Column::new(k.as_str()).with_kind(ValueKind::Text)));
-    let erows = g.edges.iter().map(|(f, t, a, _)| [Cell::Text(f.clone()), Cell::Text(t.clone()), get(a, "label")].into_iter().chain(edge_keys.iter().map(|k| get(a, k))).collect()).collect();
-    let links = TwoTables(g.nodes.iter().map(|n| n.2.clone()).collect(), g.edges.iter().map(|e| e.3.clone()).collect());
+    let text_col = |name: &str| Column::new(name).with_kind(ValueKind::Text);
+    let node_keys = keys(&mut g.nodes.iter().map(|n| &n.attrs));
+    let edge_keys = keys(&mut g.edges.iter().map(|e| &e.attrs));
+    let ncols = [text_col("ID"), text_col("Label")].into_iter().chain(node_keys.iter().map(|k| text_col(k))).collect();
+    let ecols = [text_col("From"), text_col("To"), text_col("Label")].into_iter().chain(edge_keys.iter().map(|k| text_col(k))).collect();
+    let nodes = DotTable { graph: g.clone(), edges: false, columns: ncols, keys: node_keys };
+    let edges = DotTable { graph: g.clone(), edges: true, columns: ecols, keys: edge_keys };
     let mut doc = Document::new(format("dot", "Graphviz DOT"))
         .with_meta("Nodes", g.nodes.len())
         .with_meta("Edges", g.edges.len())
         .with_meta("Directed", if g.directed { "yes" } else { "no" })
-        .with_facet(Role::Primary, "Nodes", Content::Table(Arc::new(OwnedTable::new(ncols, nrows))))
-        .with_facet(Role::Structure, "Edges", Content::Table(Arc::new(OwnedTable::new(ecols, erows))));
-    if let Some(n) = g.name {
+        .with_facet(Role::Primary, "Nodes", Content::Table(Arc::new(nodes)))
+        .with_facet(Role::Structure, "Edges", Content::Table(Arc::new(edges)));
+    if let Some(n) = &g.name {
         doc = doc.with_meta("Name", n);
     }
-    Ok(doc.with_links(links).with_file_facets(src, Some("dot")))
+    Ok(doc.with_links(DotLinks(g)).with_file_facets(src, Some("dot")))
 }
 
 pub(crate) fn looks_like_dot(header: &[u8]) -> bool {
@@ -676,11 +784,12 @@ mod tests {
         let cx = ParseContext::new();
         let g = dot("strict digraph G {\n  rankdir=LR; node [shape=box];\n  a [label=\"Start\"];\n  a -> b -> {c d} [color=red];\n  subgraph cluster_x { e; f -> e }\n  \"quoted id\":p1 -- g;\n}\n", &cx).unwrap();
         assert!(g.directed);
-        assert_eq!(g.nodes.iter().map(|n| n.0.as_str()).collect::<Vec<_>>(), ["a", "b", "c", "d", "e", "f", "quoted id", "g"]);
-        assert_eq!(g.nodes[0].1, [("label".to_string(), "Start".to_string())]);
-        let edges: Vec<(&str, &str)> = g.edges.iter().map(|e| (e.0.as_str(), e.1.as_str())).collect();
+        assert_eq!(g.nodes.iter().map(|n| &*n.id).collect::<Vec<_>>(), ["a", "b", "c", "d", "e", "f", "quoted id", "g"]);
+        assert_eq!(g.nodes[0].attrs, [("label".to_string(), "Start".to_string())]);
+        let name = |n: u32| &*g.nodes[n as usize].id;
+        let edges: Vec<(&str, &str)> = g.edges.iter().map(|e| (name(e.from), name(e.to))).collect();
         assert_eq!(edges, [("a", "b"), ("b", "c"), ("b", "d"), ("f", "e"), ("quoted id", "g")]);
-        assert_eq!(g.edges[1].2, [("color".to_string(), "red".to_string())]);
+        assert_eq!(g.edges[1].attrs, [("color".to_string(), "red".to_string())]);
         assert!(dot("graph { a -- ", &cx).is_ok());
         assert!(dot("hello", &cx).is_err());
     }
