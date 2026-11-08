@@ -60,6 +60,8 @@ impl Reader for GltfReader {
         let from = src.clone();
         SceneDocument::new(self, src, format, scene)
             .origins(origins, "glTF")
+            // It parsed as glTF, so its tree has something to show.
+            .nothing_to_draw_ok(true)
             .warnings(loaded.warnings)
             .textures(textures)
             .dependencies(deps)

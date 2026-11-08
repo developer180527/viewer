@@ -216,18 +216,19 @@ fn real_3d_files() {
                 if !scene.is_empty() {
                     if scene.contains(": 0 meshes") {
                         row.empty += 1;
-                        row.note("opened with no meshes".into(), &rel);
+                        let why = summary.lines().find(|l| l.starts_with("meta: Warning")).unwrap_or("no warning").chars().take(60).collect::<String>();
+                        row.note(format!("nothing to draw ({why})"), &rel);
                     }
                     let bounds = summary.lines().find(|l| l.trim_start().starts_with("bounds:")).unwrap_or("").to_ascii_lowercase();
                     if bounds.contains("nan") || bounds.contains("inf") {
                         row.bad_bounds += 1;
                         row.note("bounds not finite".into(), &rel);
                     }
-                    if let Some((d, t)) = textures(scene) {
-                        if d < t {
-                            row.undecoded += 1;
-                            row.note("textures not decoded".into(), &rel);
-                        }
+                    if let Some((d, t)) = textures(scene)
+                        && d < t
+                    {
+                        row.undecoded += 1;
+                        row.note("textures not decoded".into(), &rel);
                     }
                 }
                 let missing = summary.lines().filter(|l| l.starts_with("dependency:") && !l.ends_with(" Read")).count();

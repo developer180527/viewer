@@ -89,6 +89,7 @@ pub struct SceneDocument {
     deps: Dependencies,
     facets: Option<Box<dyn FnOnce(Document) -> Document>>,
     origins: Option<(SceneOrigins, &'static str)>,
+    nothing_to_draw_ok: bool,
 }
 
 impl SceneDocument {
@@ -106,6 +107,7 @@ impl SceneDocument {
             deps: Dependencies::new(),
             facets: None,
             origins: None,
+            nothing_to_draw_ok: false,
         }
     }
 
@@ -127,6 +129,15 @@ impl SceneDocument {
         self
     }
 
+    /// Whether a file with nothing to draw still opens as this format: true when the
+    /// reader found real content of the format (bones, cameras, a stage of references),
+    /// false (the default) for a file that holds nothing at all. Its Scene is then
+    /// empty, and its other facets show what the file does hold.
+    pub fn nothing_to_draw_ok(mut self, ok: bool) -> Self {
+        self.nothing_to_draw_ok = ok;
+        self
+    }
+
     /// The format's own facets (its structure, say), added right after the Scene.
     pub fn facets(mut self, add: impl FnOnce(Document) -> Document + 'static) -> Self {
         self.facets = Some(Box::new(add));
@@ -141,7 +152,7 @@ impl SceneDocument {
     }
 
     pub fn build(self) -> Result<Document> {
-        let Self { reader, src, language, format, scene, warnings, textures, deps, facets, origins } = self;
+        let Self { reader, src, language, format, scene, warnings, textures, deps, facets, origins, nothing_to_draw_ok } = self;
         let read = scene.read();
         let stats = Stats::of(&read);
         if stats.placed == 0 {
@@ -151,7 +162,9 @@ impl SceneDocument {
                     return Err(ParseError::Unreadable { reference, reason });
                 }
             }
-            return Err(ParseError::corrupt(format!("no geometry{}", warnings.first().map(|w| format!(" ({w})")).unwrap_or_default())));
+            if !nothing_to_draw_ok {
+                return Err(ParseError::corrupt(format!("no geometry{}", warnings.first().map(|w| format!(" ({w})")).unwrap_or_default())));
+            }
         }
         drop(read);
         let queued = textures.as_ref().map(Textures::len);
@@ -178,6 +191,9 @@ impl SceneDocument {
         if !table.all().is_empty() {
             let table = Arc::new(table);
             doc = doc.with_lazy_facet(FacetInfo::new(Role::Inspector, "Textures", Model::Table), move |_| Ok(Content::Table(table.clone())));
+        }
+        if stats.placed == 0 {
+            doc = doc.with_meta("Geometry", "none in this file: nothing to draw");
         }
         doc = doc
             .with_meta("Meshes", stats.meshes)

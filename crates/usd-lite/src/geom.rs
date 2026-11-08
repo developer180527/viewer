@@ -249,9 +249,14 @@ fn primvar<T: Clone>(layer: &Layer, prim: &str, name: &str, default: Interpolati
     Some(Primvar { values, indices: indices.map(|i: Arc<[i32]>| i.to_vec()), interpolation: interpolation(layer, prim, name, default) })
 }
 
-/// Reads a `Mesh` prim. `None` when it isn't one or has no points or faces.
+/// Reads a `Mesh` prim, or tessellates an implicit shape ([`is_implicit_shape`]).
+/// `None` when it's neither, or has no points or faces.
 pub fn mesh(layer: &Layer, prim: &str) -> Option<Mesh> {
-    if layer.type_name(prim) != Some("Mesh") {
+    let ty = layer.type_name(prim)?;
+    if is_implicit_shape(ty) {
+        return shape::tessellate(layer, prim, ty);
+    }
+    if ty != "Mesh" {
         return None;
     }
     let points = layer.attr(prim, "points")?.as_vec3_array()?.to_vec();
@@ -465,5 +470,172 @@ mod tests {
         let m = mul(&mul(&translation([1.0, 2.0, 3.0]), &rotation(1, 30.0)), &scale([2.0, 3.0, 4.0]));
         let back = apply(&inverse(&m), apply(&m, [0.3, -0.7, 5.0]));
         assert!(close(back, [0.3, -0.7, 5.0]));
+    }
+}
+
+/// Whether a prim type is one of UsdGeom's shapes defined by a few numbers, which
+/// [`mesh`] turns into polygons: `Sphere`, `Cube`, `Cylinder`, `Cone`, `Capsule`, `Plane`.
+pub fn is_implicit_shape(ty: &str) -> bool {
+    matches!(ty, "Sphere" | "Cube" | "Cylinder" | "Cone" | "Capsule" | "Plane")
+}
+
+mod shape {
+    //! UsdGeom's implicit shapes as polygons, with the schema's fallback sizes.
+
+    use std::f64::consts::{FRAC_PI_2, TAU};
+
+    use super::{Interpolation, Layer, Mesh, Primvar};
+
+    /// Around the axis.
+    const SEGMENTS: usize = 32;
+    /// From pole to pole of a sphere.
+    const RINGS: usize = 16;
+
+    /// (radius, height), and the normal there as (radial, axial).
+    type Point = ((f64, f64), (f64, f64));
+
+    #[derive(Default)]
+    struct Polys {
+        points: Vec<[f32; 3]>,
+        normals: Vec<[f32; 3]>,
+        counts: Vec<i64>,
+    }
+
+    impl Polys {
+        /// One polygon with its own corners, counter-clockwise from outside.
+        fn face(&mut self, corners: &[([f64; 3], [f64; 3])]) {
+            let f = |v: [f64; 3]| v.map(|c| c as f32);
+            self.counts.push(corners.len() as i64);
+            for &(p, n) in corners {
+                self.points.push(f(p));
+                self.normals.push(f(n));
+            }
+        }
+
+        /// A profile (bottom to top) swept around Z.
+        fn revolve(&mut self, profile: &[(Point, Point)]) {
+            let at = |((r, z), (nr, nz)): Point, j: usize| {
+                let (s, c) = (TAU * (j % SEGMENTS) as f64 / SEGMENTS as f64).sin_cos();
+                ([r * c, r * s, z], [nr * c, nr * s, nz])
+            };
+            for &(low, high) in profile {
+                for j in 0..SEGMENTS {
+                    let (a, b, c, d) = (at(low, j), at(low, j + 1), at(high, j + 1), at(high, j));
+                    // A profile touching the axis ends in a triangle.
+                    match (low.0.0 == 0.0, high.0.0 == 0.0) {
+                        (true, _) => self.face(&[a, c, d]),
+                        (_, true) => self.face(&[a, b, c]),
+                        _ => self.face(&[a, b, c, d]),
+                    }
+                }
+            }
+        }
+    }
+
+    /// A quarter or half of a circle of `radius` about height `z`: `from` to `to` radians
+    /// of latitude, as profile segments.
+    fn arc(radius: f64, z: f64, from: f64, to: f64, steps: usize) -> Vec<(Point, Point)> {
+        let at = |i: usize| {
+            let (s, c) = (from + (to - from) * i as f64 / steps as f64).sin_cos();
+            // Exactly on the axis at the poles, where the profile ends in a triangle.
+            let c = if c.abs() < 1e-12 { 0.0 } else { c };
+            ((radius * c, z + radius * s), (c, s))
+        };
+        (0..steps).map(|i| (at(i), at(i + 1))).collect()
+    }
+
+    fn cap(radius: f64, z: f64, up: bool) -> (Point, Point) {
+        let n = (0.0, if up { 1.0 } else { -1.0 });
+        let (centre, rim) = (((0.0, z), n), ((radius, z), n));
+        if up { (rim, centre) } else { (centre, rim) }
+    }
+
+    fn cube(p: &mut Polys, h: f64) {
+        for axis in 0..3 {
+            for sign in [1.0, -1.0] {
+                let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+                let corner = |a: f64, b: f64| {
+                    let (mut c, mut n) = ([0.0; 3], [0.0; 3]);
+                    c[axis] = sign * h;
+                    n[axis] = sign;
+                    c[u] = a * h;
+                    c[v] = b * h;
+                    (c, n)
+                };
+                let quad = [corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0)];
+                if sign > 0.0 {
+                    p.face(&quad);
+                } else {
+                    p.face(&[quad[3], quad[2], quad[1], quad[0]]);
+                }
+            }
+        }
+    }
+
+    pub(super) fn tessellate(layer: &Layer, prim: &str, ty: &str) -> Option<Mesh> {
+        // A size that's negative, zero or not a number has no shape to draw.
+        let size = |name: &str, fallback: f64| {
+            let v = layer.attr(prim, name).and_then(|v| v.as_f64()).unwrap_or(fallback);
+            (v.is_finite() && v > 0.0 && v < f32::MAX as f64).then_some(v)
+        };
+        let axis = layer.attr(prim, "axis").and_then(|v| v.as_str()).unwrap_or("Z").to_string();
+        let mut p = Polys::default();
+        match ty {
+            "Sphere" => p.revolve(&arc(size("radius", 1.0)?, 0.0, -FRAC_PI_2, FRAC_PI_2, RINGS)),
+            "Cube" => cube(&mut p, size("size", 2.0)? / 2.0),
+            "Cylinder" => {
+                let (r, h) = (size("radius", 1.0)?, size("height", 2.0)? / 2.0);
+                p.revolve(&[cap(r, -h, false), (((r, -h), (1.0, 0.0)), ((r, h), (1.0, 0.0))), cap(r, h, true)]);
+            }
+            "Cone" => {
+                let (r, h) = (size("radius", 1.0)?, size("height", 2.0)? / 2.0);
+                let len = (4.0 * h * h + r * r).sqrt();
+                let n = (2.0 * h / len, r / len);
+                p.revolve(&[cap(r, -h, false), (((r, -h), n), ((0.0, h), n))]);
+            }
+            "Capsule" => {
+                let (r, h) = (size("radius", 0.5)?, size("height", 1.0)? / 2.0);
+                let mut profile = arc(r, -h, -FRAC_PI_2, 0.0, RINGS / 2);
+                profile.push((((r, -h), (1.0, 0.0)), ((r, h), (1.0, 0.0))));
+                profile.extend(arc(r, h, 0.0, FRAC_PI_2, RINGS / 2));
+                p.revolve(&profile);
+            }
+            "Plane" => {
+                let (mut w, mut l) = (size("width", 2.0)? / 2.0, size("length", 2.0)? / 2.0);
+                // The width runs along X for axes Y and Z; the rotation below moves it.
+                if axis == "Y" {
+                    std::mem::swap(&mut w, &mut l);
+                }
+                let n = [0.0, 0.0, 1.0];
+                p.face(&[([-w, -l, 0.0], n), ([w, -l, 0.0], n), ([w, l, 0.0], n), ([-w, l, 0.0], n)]);
+            }
+            _ => return None,
+        }
+        // Built around Z; a cyclic swap keeps the winding.
+        let turn = |[x, y, z]: [f32; 3]| match (ty, axis.as_str()) {
+            ("Sphere" | "Cube", _) => [x, y, z],
+            (_, "X") => [z, x, y],
+            (_, "Y") => [y, z, x],
+            _ => [x, y, z],
+        };
+        let points: Vec<[f32; 3]> = p.points.into_iter().map(turn).collect();
+        let normals: Vec<[f32; 3]> = p.normals.into_iter().map(turn).collect();
+        let display_color = layer.attr(prim, "primvars:displayColor").and_then(|v| v.as_vec3_array()).map(|c| c.to_vec()).map(|values| Primvar {
+            values,
+            indices: None,
+            interpolation: Interpolation::Constant,
+        });
+        Some(Mesh {
+            face_vertex_indices: (0..points.len() as i64).collect(),
+            face_vertex_counts: p.counts,
+            normals: Some(Primvar { values: normals, indices: None, interpolation: Interpolation::Vertex }),
+            points,
+            uvs: None,
+            display_color,
+            left_handed: layer.attr(prim, "orientation").and_then(|v| v.as_str()) == Some("leftHanded"),
+            // A plane has no back to cull.
+            double_sided: ty == "Plane" || layer.attr(prim, "doubleSided").and_then(|v| v.as_bool()).unwrap_or(false),
+            subsets: Vec::new(),
+        })
     }
 }

@@ -198,6 +198,7 @@ pub const usd_lite::geom::IDENTITY: usd_lite::geom::Matrix
 pub fn usd_lite::geom::bound_material(&usd_lite::Layer, &str, bool) -> core::option::Option<alloc::string::String>
 pub fn usd_lite::geom::inverse(&usd_lite::geom::Matrix) -> usd_lite::geom::Matrix
 pub fn usd_lite::geom::is_drawn(&usd_lite::Layer, &str) -> bool
+pub fn usd_lite::geom::is_implicit_shape(&str) -> bool
 pub fn usd_lite::geom::local_transform(&usd_lite::Layer, &str) -> (usd_lite::geom::Matrix, bool)
 pub fn usd_lite::geom::mesh(&usd_lite::Layer, &str) -> core::option::Option<usd_lite::geom::Mesh>
 pub fn usd_lite::geom::meters_per_unit(&usd_lite::Layer) -> f64

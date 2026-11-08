@@ -39,6 +39,8 @@ pub struct Loaded {
     pub variant_sets: Vec<usd_lite::VariantSet>,
     /// Scene items by the prim they came from.
     pub origins: crate::build::SceneOrigins,
+    /// Whether the composed stage holds any prim.
+    pub has_prims: bool,
     /// A USDZ's files: (name, where its bytes are in the package).
     pub package: Option<Vec<(String, std::ops::Range<usize>)>>,
 }
@@ -175,6 +177,7 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
     let extra_layers = layers.len() - 1;
     let root = layers.into_iter().next().unwrap_or_default();
     let (scene, mut builder) = crate::build::new_scene(cx);
+    let has_prims = !layer.root_prims().is_empty();
     let mut c = Converter {
         layer: &layer,
         files: &files,
@@ -202,7 +205,7 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
     };
     builder.finish();
     let textures = textures::spawn(builder.texture_sink(), jobs, cx);
-    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers, root, arcs, variant_sets, origins, package })
+    Ok(Loaded { scene, warnings, textures, format: label, layers: extra_layers, root, arcs, variant_sets, origins, has_prims, package })
 }
 
 struct Converter<'a, 'f> {
@@ -254,7 +257,7 @@ impl Converter<'_, '_> {
             let (local, reset) = geom::local_transform(self.layer, &prim);
             let local = DMat4::from_cols_array(&local);
             let world = if reset { root * local } else { parent * local };
-            if ty == "Mesh" {
+            if ty == "Mesh" || geom::is_implicit_shape(ty) {
                 self.mesh(&prim, world);
             }
             for child in self.layer.children(&prim).into_iter().rev() {
@@ -629,6 +632,7 @@ impl Reader for UsdReader {
         let package = loaded.package.clone().map(|files| libfileparser_core::FileParts::new(src, files));
         let doc = SceneDocument::new(self, src, loaded.format, loaded.scene)
             .origins(loaded.origins, "Stage")
+            .nothing_to_draw_ok(loaded.has_prims)
             .warnings(loaded.warnings)
             .textures(loaded.textures)
             .dependencies(deps)

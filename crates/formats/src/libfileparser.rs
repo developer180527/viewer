@@ -49,7 +49,17 @@ impl FormatLoader for ReaderLoader {
     fn open(&self, src: &FileSource) -> Result<Document> {
         let cx = context();
         let doc = library().open_with(self.0.info().id, src, &cx).map_err(|e| anyhow!("{e}"))?;
-        viewer_document(Arc::new(doc), 0, src, &cx)
+        let start = starting_facet(&doc, &cx);
+        viewer_document(Arc::new(doc), start, src, &cx)
+    }
+}
+
+/// Which facet a file opens on: the first, unless that's a 3D scene with nothing in it
+/// (a file of bones or references), whose structure says more than an empty viewport.
+fn starting_facet(doc: &libfileparser::Document, cx: &ParseContext) -> usize {
+    match doc.facet(0, cx) {
+        Ok(Content::Scene(s)) if s.scene().read().bounds().is_none() => doc.facets().position(|f| f.role == Role::Structure).unwrap_or(0),
+        _ => 0,
     }
 }
 
@@ -166,4 +176,22 @@ fn context() -> ParseContext {
         .with_spawn(TexturePool)
         .with_notify(AppNotify)
         .with_limits(limits)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn opened_on(text: &'static [u8]) -> String {
+        let src = FileSource::from_bytes("a.usda", text.to_vec());
+        let doc = crate::registry().get("usd").unwrap().open(&src).unwrap();
+        let facets = doc.facets.unwrap();
+        facets.doc.facets().nth(facets.shown).unwrap().name.clone()
+    }
+
+    #[test]
+    fn a_file_with_nothing_to_draw_opens_on_its_structure() {
+        assert_eq!(opened_on(b"#usda 1.0\ndef Camera \"c\" {}\n"), "Stage");
+        assert_eq!(opened_on(b"#usda 1.0\ndef Sphere \"s\" {}\n"), "Scene");
+    }
 }

@@ -601,3 +601,38 @@ fn a_usdz_lists_its_files_and_they_open_in_place() {
     assert!(doc.facet_index("Source").is_none());
     assert_eq!(doc.facet_index("Raw"), Some(doc.facets().count() - 1));
 }
+
+#[test]
+fn usd_implicit_shapes_are_drawn_and_sized() {
+    let open = |body: &str| {
+        let text = format!("#usda 1.0\n(\n    upAxis = \"Z\"\n    metersPerUnit = 1\n)\n{body}\n");
+        let src = FileSource::from_bytes("a.usda", text.into_bytes());
+        let cx = ParseContext::new();
+        let doc = UsdReader.open(&src, &cx).expect("opens");
+        let Content::Scene(s) = doc.facet(0, &cx).unwrap() else { panic!("not a scene") };
+        let b = s.scene().read().bounds().expect("something to draw");
+        (b.min, b.max)
+    };
+    let close = |a: f32, b: f32| (a - b).abs() < 1e-3;
+    let (_, max) = open("def Sphere \"s\" { double radius = 3 }");
+    assert!(close(max.x, 3.0) && close(max.y, 3.0) && close(max.z, 3.0), "{max}");
+    let (min, max) = open("def Cube \"c\" { double size = 4 }");
+    assert!(close(min.x, -2.0) && close(max.y, 2.0) && close(max.z, 2.0), "{min} {max}");
+    // Along the file's Z by default, which is up: Y once converted to Y up.
+    let (min, max) = open("def Cylinder \"c\" { double radius = 1 double height = 6 }");
+    assert!(close(min.y, -3.0) && close(max.y, 3.0) && close(max.x, 1.0), "{min} {max}");
+    let (_, max) = open("def Capsule \"c\" { double radius = 1 double height = 2 }");
+    assert!(close(max.y, 2.0), "{max}");
+}
+
+#[test]
+fn a_file_with_nothing_to_draw_still_opens_as_itself() {
+    let cx = ParseContext::new();
+    let src = FileSource::from_bytes("a.usda", b"#usda 1.0\ndef Camera \"cam\" {}\n".to_vec());
+    let doc = UsdReader.open(&src, &cx).expect("a camera is a real USD file");
+    assert_eq!(doc.format().reader, "usd");
+    assert!(doc.facets().any(|f| f.name == "Stage"));
+    // No prims at all: nothing here is USD content.
+    let empty = FileSource::from_bytes("b.usda", b"#usda 1.0\n".to_vec());
+    assert!(UsdReader.open(&empty, &cx).is_err());
+}

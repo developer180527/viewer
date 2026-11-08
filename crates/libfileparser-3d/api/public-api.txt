@@ -17,6 +17,7 @@ pub fn libfileparser_3d::build::SceneDocument::build(self) -> libfileparser_core
 pub fn libfileparser_3d::build::SceneDocument::dependencies(self, libfileparser_core::dependency::Dependencies) -> Self
 pub fn libfileparser_3d::build::SceneDocument::facets(self, impl core::ops::function::FnOnce(libfileparser_core::document::Document) -> libfileparser_core::document::Document + 'static) -> Self
 pub fn libfileparser_3d::build::SceneDocument::new(&dyn libfileparser_core::reader::Reader, &libfileparser_core::source::FileSource, impl core::convert::Into<alloc::string::String>, scene_data::scene::CpuScene) -> Self
+pub fn libfileparser_3d::build::SceneDocument::nothing_to_draw_ok(self, bool) -> Self
 pub fn libfileparser_3d::build::SceneDocument::origins(self, libfileparser_3d::build::SceneOrigins, &'static str) -> Self
 pub fn libfileparser_3d::build::SceneDocument::textures(self, libfileparser_3d::build::Textures) -> Self
 pub fn libfileparser_3d::build::SceneDocument::warnings(self, impl core::iter::traits::collect::IntoIterator<Item = impl core::convert::Into<alloc::string::String>>) -> Self

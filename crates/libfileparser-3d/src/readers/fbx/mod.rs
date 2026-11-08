@@ -26,6 +26,8 @@ pub struct Loaded {
     pub origins: crate::build::SceneOrigins,
     /// Base colour maps queued for decoding.
     pub textures: Textures,
+    /// Whether the file has anything under its root (bones, cameras, curves).
+    pub has_nodes: bool,
 }
 
 /// Reads `src`; other files (an OBJ's `.mtl`, textures) only through `cx.files`, each
@@ -56,7 +58,7 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps:
     convert(&root, format, &mut builder, &mut images, &mut warnings, &mut origins).context("building the scene")?;
     builder.finish();
     let textures = textures::spawn(builder.texture_sink(), images.jobs, cx);
-    Ok(Loaded { scene, warnings, textures, origins })
+    Ok(Loaded { scene, warnings, textures, origins, has_nodes: root.nodes.len() > 1 })
 }
 
 /// The `.mtl` files an OBJ names (`mtllib`), read through the files hook and joined:
@@ -461,6 +463,7 @@ fn open_with_ufbx(reader: &dyn Reader, format: ufbx::FileFormat, name: &str, src
     let structure = if format == ufbx::FileFormat::Obj { "Objects" } else { "Records" };
     let doc = SceneDocument::new(reader, src, name, loaded.scene)
         .origins(loaded.origins, structure)
+        .nothing_to_draw_ok(loaded.has_nodes)
         .warnings(loaded.warnings)
         .textures(loaded.textures)
         .dependencies(deps)
