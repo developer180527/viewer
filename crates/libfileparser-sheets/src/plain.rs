@@ -38,7 +38,7 @@ fn ods_cell(v: ods_lite::Value) -> Cell {
 
 fn ods_limits(cx: &ParseContext) -> ods_lite::Limits {
     let l = &cx.limits;
-    ods_lite::Limits::default().with_cells(l.memory / 64).with_part_bytes(l.allocation).with_unpack(l.unpack_ratio, l.unpack_always)
+    ods_lite::Limits::default().with_cells(l.memory / 64).with_text(l.memory).with_part_bytes(l.allocation).with_unpack(l.unpack_ratio, l.unpack_always)
 }
 
 fn ods_error(e: ods_lite::Error) -> ParseError {

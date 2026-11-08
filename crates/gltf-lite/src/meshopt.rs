@@ -32,12 +32,14 @@ fn decode(ext: &Value, source: &[u8]) -> Result<Vec<u8>, String> {
     use meshopt::ffi;
     let mode = ext.get("mode").and_then(Value::as_str).unwrap_or("ATTRIBUTES");
     // Safety: `dest` holds `count * stride` bytes, and the decoders check `source`'s bounds.
+    // What they don't check, they assert (debug) or trust (release, writing past `dest`):
+    // a vertex stride of 4s, and triangles in threes. Those are checked here.
     let status = unsafe {
         match mode {
-            "ATTRIBUTES" => ffi::meshopt_decodeVertexBuffer(dest, count, stride, source.as_ptr(), source.len()),
-            "TRIANGLES" if matches!(stride, 2 | 4) => ffi::meshopt_decodeIndexBuffer(dest, count, stride, source.as_ptr(), source.len()),
+            "ATTRIBUTES" if stride.is_multiple_of(4) => ffi::meshopt_decodeVertexBuffer(dest, count, stride, source.as_ptr(), source.len()),
+            "TRIANGLES" if matches!(stride, 2 | 4) && count.is_multiple_of(3) => ffi::meshopt_decodeIndexBuffer(dest, count, stride, source.as_ptr(), source.len()),
             "INDICES" if matches!(stride, 2 | 4) => ffi::meshopt_decodeIndexSequence(dest, count, stride, source.as_ptr(), source.len()),
-            _ => return Err(format!("mode {mode} with stride {stride}")),
+            _ => return Err(format!("mode {mode} with stride {stride} and count {count}")),
         }
     };
     if status != 0 {

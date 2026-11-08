@@ -48,11 +48,13 @@ impl core::marker::StructuralPartialEq for ods_lite::Cell
 #[non_exhaustive] pub struct ods_lite::Limits
 pub ods_lite::Limits::cells: u64
 pub ods_lite::Limits::part_bytes: u64
+pub ods_lite::Limits::text: u64
 pub ods_lite::Limits::unpack_always: u64
 pub ods_lite::Limits::unpack_ratio: u64
 impl ods_lite::Limits
 pub fn ods_lite::Limits::with_cells(self, u64) -> Self
 pub fn ods_lite::Limits::with_part_bytes(self, u64) -> Self
+pub fn ods_lite::Limits::with_text(self, u64) -> Self
 pub fn ods_lite::Limits::with_unpack(self, u64, u64) -> Self
 impl core::clone::Clone for ods_lite::Limits
 pub fn ods_lite::Limits::clone(&self) -> ods_lite::Limits

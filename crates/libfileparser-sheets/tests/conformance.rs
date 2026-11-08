@@ -76,3 +76,28 @@ fn a_zip_bomb_is_refused_before_it_unpacks() {
     let e = XlsxReader.open(&FileSource::from_bytes("a.xlsx", xlsx(&body)), &cx).err().unwrap();
     assert!(matches!(e, ParseError::TooLarge { .. }), "{e}");
 }
+
+#[test]
+fn a_cell_past_the_last_column_is_refused() {
+    // One cell four billion columns right: laid out, every row would be gigabytes.
+    let cx = ParseContext::new();
+    let e = SylkReader.open(&FileSource::from_bytes("a.slk", b"ID;P\nC;Y1;X4000000000;K1\nE\n".to_vec()), &cx).err().unwrap();
+    assert!(matches!(e, ParseError::Corrupt { .. }), "{e}");
+    let ok = SylkReader.open(&FileSource::from_bytes("a.slk", b"ID;P\nC;Y1;X16384;K1\nE\n".to_vec()), &cx).unwrap();
+    let Content::Table(t) = ok.facet(0, &cx).unwrap() else { panic!("a table") };
+    assert_eq!(t.info().columns.len(), 16_384);
+}
+
+/// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), every workbook opens or
+/// fails cleanly, every sheet and the formulas included: no panic, no hang, no abort.
+#[test]
+fn every_reader_survives_fuzzing() {
+    let all = ["sample.xlsx", "sample.xlsb", "sample.xls", "sample.ods", "sample.fods", "sample.slk", "sample.dif"];
+    libfileparser_testkit::assert_fuzz_clean(readers(), |id| {
+        let ext = match id {
+            "sylk" => "slk",
+            id => id,
+        };
+        all.iter().filter(|f| f.ends_with(&format!(".{ext}"))).map(|f| Sample::new(*f, sample(f))).collect()
+    });
+}

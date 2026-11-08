@@ -47,3 +47,16 @@ fn comments_and_nesting_arent_the_cells_text() {
     assert_eq!(b.sheets[0].cells[0].value, Some(Value::Text("shown".into())));
     assert_eq!(read_flat(b"<a/>", &Limits::default()).err(), Some(Error::NotOds));
 }
+
+#[test]
+fn a_few_bytes_cant_spell_gigabytes_of_spaces() {
+    // Each element is 26 bytes and 64 KiB of spaces; 2,000 of them, 128 MiB.
+    let spaces = r#"<text:s text:c="65536"/>"#.repeat(2_000);
+    let xml = book(&format!(r#"<table:table table:name="A"><table:table-row><table:table-cell office:value-type="string"><text:p>{spaces}</text:p></table:table-cell></table:table-row></table:table>"#));
+    let e = read_flat(xml.as_bytes(), &Limits::default().with_text(16 << 20)).unwrap_err();
+    assert!(matches!(e, Error::TooLarge { what: "bytes of cell text", .. }), "{e}");
+    // And repeated, the same text counts each time it's laid out.
+    let xml = book(r#"<table:table table:name="A"><table:table-row table:number-rows-repeated="1000"><table:table-cell table:number-columns-repeated="1000" office:value-type="string"><text:p>0123456789</text:p></table:table-cell></table:table-row></table:table>"#);
+    let e = read_flat(xml.as_bytes(), &Limits::default().with_text(1 << 20)).unwrap_err();
+    assert!(matches!(e, Error::TooLarge { what: "bytes of cell text", .. }), "{e}");
+}

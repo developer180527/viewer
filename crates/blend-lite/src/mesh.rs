@@ -205,9 +205,11 @@ fn faces(file: &File<'_>, me: &View<'_, '_>) -> Option<(Vec<u32>, Vec<u32>, Vec<
             return Some((sizes, corners, slots));
         }
         let block = me.target(&["mpoly"])?;
-        let mut sizes = Vec::with_capacity(polys);
-        let mut slots = Vec::with_capacity(polys);
-        let mut ordered = Vec::with_capacity(loops);
+        // Counts are the file's word; a block can't hold more structs than bytes.
+        let room = polys.min(block.data.len());
+        let mut sizes = Vec::with_capacity(room);
+        let mut slots = Vec::with_capacity(room);
+        let mut ordered = Vec::with_capacity(loops.min(corners.len()));
         for p in me.array(block).take(polys) {
             let (start, n) = (p.int(&["loopstart"])?, p.int(&["totloop"])?);
             let n32 = size(start, start.checked_add(n)?)?;
@@ -224,7 +226,8 @@ fn faces(file: &File<'_>, me: &View<'_, '_>) -> Option<(Vec<u32>, Vec<u32>, Vec<
         return Some(Default::default());
     }
     let block = me.target(&["mface"])?;
-    let (mut sizes, mut corners, mut slots) = (Vec::with_capacity(count), Vec::with_capacity(count * 4), Vec::with_capacity(count));
+    let room = count.min(block.data.len());
+    let (mut sizes, mut corners, mut slots) = (Vec::with_capacity(room), Vec::with_capacity(room * 4), Vec::with_capacity(room));
     for f in me.array(block).take(count) {
         let v = [f.int(&["v1"])?, f.int(&["v2"])?, f.int(&["v3"])?, f.int(&["v4"])?];
         let n = if v[3] == 0 { 3 } else { 4 };

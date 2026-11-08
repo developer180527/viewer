@@ -89,7 +89,7 @@ impl Reader for OffReader {
             let Some(line) = lines.next() else { break };
             let Some(f) = numbers(line) else { continue };
             let Some(&n) = f.first() else { continue };
-            let Some(corners) = f.get(1..1 + n as usize) else { continue };
+            let Some(corners) = (n as usize).checked_add(1).and_then(|end| f.get(1..end)) else { continue };
             let corners: Vec<u32> = corners.iter().map(|&c| c as u32).collect();
             if corners.iter().any(|&c| c as u64 >= vertices) {
                 continue;

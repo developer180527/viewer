@@ -350,7 +350,7 @@ impl Dna {
             let pointer = raw.starts_with('*') || raw.starts_with("(*");
             let bare: String = raw.trim_start_matches(['(', '*']).chars().take_while(|c| *c != '[' && *c != ')').collect();
             // Array dimensions: `name[66]`, `mat[4][4]`.
-            let dims: usize = raw.split('[').skip(1).filter_map(|d| d.split(']').next()?.parse::<usize>().ok()).product();
+            let dims = raw.split('[').skip(1).filter_map(|d| d.split(']').next()?.parse::<usize>().ok()).try_fold(1usize, usize::checked_mul)?;
             let one = if pointer { self.pointer } else { self.sizes[ty] as usize };
             let size = one.checked_mul(dims.max(1))?;
             if bare == name {

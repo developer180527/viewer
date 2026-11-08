@@ -91,11 +91,18 @@ pub struct Sheet {
     heap: u64,
 }
 
+/// Columns A to XFD: as wide as Excel, LibreOffice and Numbers go. A file naming a cell
+/// further right is damaged, and every row read is laid out this wide.
+pub(crate) const MAX_COLUMNS: u32 = 16_384;
+
 impl Sheet {
     pub fn new(mut cells: Vec<(u32, u32, Cell)>, cx: &ParseContext) -> Result<Self> {
         cells.sort_by_key(|c| (c.0, c.1));
         let rows = cells.last().map_or(0, |c| c.0 as u64 + 1);
-        let width = cells.iter().map(|c| c.1).max().map_or(0, |c| c + 1);
+        let width = cells.iter().map(|c| c.1).max().map_or(0, |c| c.saturating_add(1));
+        if width > MAX_COLUMNS {
+            return Err(ParseError::corrupt(format!("a cell in column {}, past the last column ({})", width, column_name(MAX_COLUMNS - 1))));
+        }
         cx.limits.check(Limit::Rows, rows)?;
         let text: u64 = cells.iter().map(|c| if let Cell::Text(s) = &c.2 { s.len() as u64 } else { 0 }).sum();
         let heap = cells.len() as u64 * size_of::<(u32, u32, Cell)>() as u64 + text;
@@ -214,10 +221,16 @@ fn read_formulas(book: &mut Book, name: &str, out: &mut Vec<Vec<Cell>>, cx: &Par
     Ok(())
 }
 
-/// Opens a workbook whose bytes passed `guard`'s checks. calamine indexes without
-/// checking on some damaged files; a panic there is that file being damaged.
+/// Runs calamine. It indexes and subtracts without checking on some damaged files; a
+/// panic there is that file being damaged. Sheets and formulas read later, for a lazy
+/// facet, go through here too.
+fn calm<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
+    std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| Err(ParseError::corrupt("the workbook's structure is damaged")))
+}
+
+/// Opens a workbook whose bytes passed `guard`'s checks.
 pub fn open(src: &FileSource, bytes: Shared, reader: &'static str, format: &'static str, cx: &ParseContext) -> Result<Document> {
-    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| open_workbook(src, bytes, reader, format, cx))).unwrap_or_else(|_| Err(ParseError::corrupt("the workbook's structure is damaged")))
+    calm(|| open_workbook(src, bytes, reader, format, cx))
 }
 
 fn open_workbook(src: &FileSource, bytes: Shared, reader: &'static str, format: &'static str, cx: &ParseContext) -> Result<Document> {
@@ -245,7 +258,7 @@ fn open_workbook(src: &FileSource, bytes: Shared, reader: &'static str, format: 
         let label = if *visible { name.clone() } else { format!("{name} (hidden)") };
         let (book, name) = (book.clone(), name.clone());
         doc = doc.with_lazy_facet(FacetInfo::new(Role::Structure, label, Model::Table), move |cx| {
-            let cells = read_cells(&mut book.lock().unwrap_or_else(|e| e.into_inner()), &name, cx)?;
+            let cells = calm(|| read_cells(&mut book.lock().unwrap_or_else(|e| e.into_inner()), &name, cx))?;
             Ok(Content::Table(Arc::new(Sheet::new(cells, cx)?)))
         });
     }
@@ -256,7 +269,7 @@ fn open_workbook(src: &FileSource, bytes: Shared, reader: &'static str, format: 
         for name in &all {
             cx.cancel.check()?;
             // A sheet whose formulas can't be read shouldn't cost the others.
-            let _ = read_formulas(&mut from.lock().unwrap_or_else(|e| e.into_inner()), name, &mut rows, cx);
+            let _ = calm(|| read_formulas(&mut from.lock().unwrap_or_else(|e| e.into_inner()), name, &mut rows, cx));
         }
         Ok(Content::Table(Arc::new(OwnedTable::text(vec!["Sheet".into(), "Cell".into(), "Formula".into()], Vec::new()).with_cells(rows))))
     });
