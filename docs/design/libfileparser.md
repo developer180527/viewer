@@ -66,7 +66,8 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 
 **The rule.**
 
-1. **One owner per format:** the category that matches what the file is *for*. HTML is a document, SVG an image, subtitles media. In the front door, the owner's reading is the document and its primary facet.
+0. **Parsers parse; viewing isn't their job** (2026-11-08). A parser says what is in a file, as content models and facets, and gives hooks to read it; how anything looks or plays is a viewer's (libviewer, an app). So a category is decided by **what parsing produces**, never by how a file is shown: `-data` produces structures of values (trees, tables), `-text` lines with a language, `-docs` structures of prose (headings, paragraphs, lists, tables, emphasis, links) or fixed pages. Which category owns a format is still a judgement call, because any file can be parsed into more than one shape; that's why a format has one owner and others may also read it (items 1–2), and why its document has several facets.
+1. **One owner per format:** the category whose kind of result matches what the file is *for*. HTML is data (2026-11-08: parsing it gives a DOM tree, as XML does; showing it as a web page is a viewer's layout engine, never the parser's, so a parser never runs its scripts or fetches anything); SVG an image; subtitles media; Markdown a document (parsing gives prose structure; fonts and spacing are the viewer's). In the front door, the owner's reading is the document and its primary facet.
 2. **Others may also read it,** from their own angle, when their model says something useful: `-data` reads an SVG as an XML tree. Used alone, that category opens the file that way, so "reads any file of its kind" means every format it owns plus every format its model fits. In the front door it doesn't compete: the Library asks it as a facet provider, and its facets come after the owner's, before Source and Raw, made only when asked for.
 3. **No owner enabled or built yet:** the best other reading opens the file instead. Subtitles open as `-data`'s cue table until `-media` exists; then the media facet goes in front and the cue table stays. Adding an owner later is a minor version (§5).
 4. **Text needs no claim:** `-core` gives every text file Source and Raw (§2, boundary 2), so `-text` owns plain text and code only, never JSON, SQL or logs.
@@ -113,11 +114,25 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 | **`-sheets`** | `.ods` `.fods` `.slk` `.dif`; later `.xlsx` `.xlsm` `.xls` `.numbers` | Workbooks: several sheets, typed cells, formulas and their values, merged cells; zip and XML underneath |
 | **`-datasets`** | `.h5` `.hdf5` `.nc` `.fits` `.fit` `.mat` `.rds` `.rda` `.sas7bdat` `.dta` `.sav` `.parquet` `.orc` `.feather` `.sqlite` `.sqlite3` `.db` | Binary arrays and column stores; large readers, some in C, each a feature |
 
+**Every way a file can be parsed is offered, not only its owner's** (2026-11-08). Categorising is judgement, so a format's document gives each honest shape of its content as a facet, made on demand. PDF is the example: it is a page description, so
+
+| PDF facet | Role | Content | State |
+|---|---|---|---|
+| Pages | Primary | Pages rendered from the page description (the one exception to "parsers don't draw": a PDF's content *is* drawing instructions, as an image's is pixels) | ✅ |
+| Document | Structure | The prose: headings, paragraphs, lists, tables, links, recovered from the text layer and tags, in the formatted-text model | ⬜ with that model |
+| Objects | Structure | The object tree: catalog, page tree, fonts, images, annotations, outline, attachments | ⬜ |
+| Instructions | Source | Each page's content stream, decoded: the drawing operators as text | ⬜ |
+| Text | Source | The plain text of each page, in reading order | ⬜ |
+
+The same rule gives HTML a DOM tree (owner), its source, and later prose; DOCX its prose (owner), its XML parts and the zip.
+
+**The formatted-text model** (planned, `-core`): the parsed structure of prose (blocks: headings, paragraphs, lists, tables, quotes, code, images; inlines: emphasis, code, links), never a layout. Markdown moves onto it from today's line-based facet, then reStructuredText, AsciiDoc, Org, DOCX, ODT, RTF, EPUB, and PDF's Document facet; libviewer gives it one view.
+
 **Owned elsewhere; `-data` also reads:**
 
 | Formats | Owner | `-data` adds |
 |---|---|---|
-| `.html` `.htm` `.xhtml` | `-docs` | DOM tree |
+| `.html` `.htm` `.xhtml` | `-data` (owner since 2026-11-08), not `-docs` | — (`-data` owns it: DOM tree; `-docs` may also read it as prose, a "reader mode" Structure facet, later) |
 | `.md` `.markdown` | `-docs` (`-text` until then) | Front matter as a Tree |
 | `.rst` `.adoc` `.org` `.textile` `.rtf` | `-docs` | Nothing |
 | `.svg` | `-images` | XML tree |
