@@ -1,0 +1,12 @@
+loader = "xlsb"
+format = "Excel binary workbook"
+model = "Table"
+
+[table]
+rows = 6
+columns = 1
+headers = ["A"]
+kinds = ["Unknown"]
+
+[metadata]
+Sheets = "6"

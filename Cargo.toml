@@ -30,11 +30,15 @@ gltf-lite = { path = "crates/gltf-lite" }
 usd-lite = { path = "crates/usd-lite" }
 blend-lite = { path = "crates/blend-lite" }
 rtf-lite = { path = "crates/rtf-lite" }
+ods-lite = { path = "crates/ods-lite" }
+sylk-lite = { path = "crates/sylk-lite" }
+dif-lite = { path = "crates/dif-lite" }
 docx-lite = { path = "crates/docx-lite" }
 odt-lite = { path = "crates/odt-lite" }
 libfileparser-mupdf = { path = "crates/libfileparser-mupdf" }
 libfileparser-pdfkit = { path = "crates/libfileparser-pdfkit" }
 libfileparser-docs = { path = "crates/libfileparser-docs" }
+libfileparser-sheets = { path = "crates/libfileparser-sheets" }
 
 anyhow = "1"
 memmap2 = "0.9"

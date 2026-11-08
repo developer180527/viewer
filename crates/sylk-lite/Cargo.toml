@@ -1,0 +1,9 @@
+[package]
+name = "sylk-lite"
+description = "Reads the SYLK spreadsheet format into cells. No dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]

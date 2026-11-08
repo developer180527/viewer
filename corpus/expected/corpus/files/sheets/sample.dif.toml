@@ -1,0 +1,12 @@
+loader = "dif"
+format = "DIF spreadsheet"
+model = "Table"
+
+[table]
+rows = 1
+columns = 2
+headers = ["A", "B"]
+kinds = ["Unknown", "Unknown"]
+
+[metadata]
+Sheets = "1"

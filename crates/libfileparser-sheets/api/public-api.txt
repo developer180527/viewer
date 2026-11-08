@@ -1,0 +1,37 @@
+pub mod libfileparser_sheets
+pub struct libfileparser_sheets::DifReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::DifReader
+pub fn libfileparser_sheets::DifReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::DifReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::DifReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::FodsReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::FodsReader
+pub fn libfileparser_sheets::FodsReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::FodsReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::FodsReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::OdsReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::OdsReader
+pub fn libfileparser_sheets::OdsReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::OdsReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::OdsReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::SylkReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::SylkReader
+pub fn libfileparser_sheets::SylkReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::SylkReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::SylkReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::XlsReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::XlsReader
+pub fn libfileparser_sheets::XlsReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::XlsReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::XlsReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::XlsbReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::XlsbReader
+pub fn libfileparser_sheets::XlsbReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::XlsbReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::XlsbReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::XlsxReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::XlsxReader
+pub fn libfileparser_sheets::XlsxReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::XlsxReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::XlsxReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_sheets::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

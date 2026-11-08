@@ -1,0 +1,22 @@
+[package]
+name = "libfileparser-sheets"
+description = "Workbooks as tables, sheet by sheet, with their formulas: XLSX, XLSM, XLSB, XLS, ODS, FODS, SYLK, DIF (docs/design/libfileparser.md §2)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libfileparser-core.workspace = true
+# The mature reader of these formats. MIT.
+calamine = { version = "0.38", features = ["dates"] }
+# Checks made before calamine sees a file (guard.rs).
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+cfb = "0.10"
+# Our own crates: calamine failed on 46 of 399 real ODS files and reads no FODS.
+ods-lite.workspace = true
+sylk-lite.workspace = true
+dif-lite.workspace = true
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }

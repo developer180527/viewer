@@ -63,4 +63,12 @@ fetch w3c/epubcheck '/src/test/resources/**/*.epub'
 # Pandoc's tests: documents in many formats (GPL tests, kept out of git like the rest).
 fetch jgm/pandoc '/test/'
 
+# Spreadsheets (libfileparser-sheets).
+fetch apache/poi '/test-data/spreadsheet/*.xlsx' '/test-data/spreadsheet/*.xlsm' '/test-data/spreadsheet/*.xlsb' '/test-data/spreadsheet/*.xls'
+fetch pandas-dev/pandas '/pandas/tests/io/data/excel/'
+fetch jmcnamara/XlsxWriter '/test/comparison/xlsx_files/'
+fetch python-excel/xlrd '/tests/samples/'
+fetch tafia/calamine '/tests/'
+fetch LibreOffice/core '/sc/qa/unit/data/ods/' '/sc/qa/unit/data/xlsx/' '/sc/qa/unit/data/xls/' '/sc/qa/unit/data/fods/' '/sc/qa/unit/data/slk/' '/sc/qa/unit/data/dif/'
+
 for d in real/*/; do printf '%-24s %s\n' "$(basename "$d")" "$(ls "$d" | wc -l | tr -d ' ')"; done

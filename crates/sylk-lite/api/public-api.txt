@@ -1,0 +1,42 @@
+pub mod sylk_lite
+#[non_exhaustive] pub enum sylk_lite::Error
+pub sylk_lite::Error::NotSylk
+pub sylk_lite::Error::TooManyCells(u64)
+impl core::clone::Clone for sylk_lite::Error
+pub fn sylk_lite::Error::clone(&self) -> sylk_lite::Error
+impl core::cmp::Eq for sylk_lite::Error
+impl core::cmp::PartialEq for sylk_lite::Error
+pub fn sylk_lite::Error::eq(&self, &sylk_lite::Error) -> bool
+impl core::error::Error for sylk_lite::Error
+impl core::fmt::Debug for sylk_lite::Error
+pub fn sylk_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for sylk_lite::Error
+pub fn sylk_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for sylk_lite::Error
+impl core::marker::StructuralPartialEq for sylk_lite::Error
+#[non_exhaustive] pub enum sylk_lite::Value
+pub sylk_lite::Value::Bool(bool)
+pub sylk_lite::Value::Error(alloc::string::String)
+pub sylk_lite::Value::Number(f64)
+pub sylk_lite::Value::Text(alloc::string::String)
+impl core::clone::Clone for sylk_lite::Value
+pub fn sylk_lite::Value::clone(&self) -> sylk_lite::Value
+impl core::cmp::PartialEq for sylk_lite::Value
+pub fn sylk_lite::Value::eq(&self, &sylk_lite::Value) -> bool
+impl core::fmt::Debug for sylk_lite::Value
+pub fn sylk_lite::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for sylk_lite::Value
+#[non_exhaustive] pub struct sylk_lite::Cell
+pub sylk_lite::Cell::col: u32
+pub sylk_lite::Cell::formula: core::option::Option<alloc::string::String>
+pub sylk_lite::Cell::row: u32
+pub sylk_lite::Cell::value: core::option::Option<sylk_lite::Value>
+impl core::clone::Clone for sylk_lite::Cell
+pub fn sylk_lite::Cell::clone(&self) -> sylk_lite::Cell
+impl core::cmp::PartialEq for sylk_lite::Cell
+pub fn sylk_lite::Cell::eq(&self, &sylk_lite::Cell) -> bool
+impl core::fmt::Debug for sylk_lite::Cell
+pub fn sylk_lite::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for sylk_lite::Cell
+pub fn sylk_lite::detect(&[u8]) -> bool
+pub fn sylk_lite::read(&[u8], u64) -> core::result::Result<alloc::vec::Vec<sylk_lite::Cell>, sylk_lite::Error>

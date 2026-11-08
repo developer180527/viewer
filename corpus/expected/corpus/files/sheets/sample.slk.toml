@@ -1,0 +1,12 @@
+loader = "sylk"
+format = "SYLK spreadsheet"
+model = "Table"
+
+[table]
+rows = 2
+columns = 2
+headers = ["A", "B"]
+kinds = ["Unknown", "Unknown"]
+
+[metadata]
+Sheets = "1"

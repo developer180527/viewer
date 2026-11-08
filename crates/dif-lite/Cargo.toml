@@ -1,0 +1,9 @@
+[package]
+name = "dif-lite"
+description = "Reads the DIF spreadsheet format into cells. No dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]

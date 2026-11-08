@@ -1,0 +1,41 @@
+pub mod dif_lite
+#[non_exhaustive] pub enum dif_lite::Error
+pub dif_lite::Error::NotDif
+pub dif_lite::Error::TooManyCells(u64)
+impl core::clone::Clone for dif_lite::Error
+pub fn dif_lite::Error::clone(&self) -> dif_lite::Error
+impl core::cmp::Eq for dif_lite::Error
+impl core::cmp::PartialEq for dif_lite::Error
+pub fn dif_lite::Error::eq(&self, &dif_lite::Error) -> bool
+impl core::error::Error for dif_lite::Error
+impl core::fmt::Debug for dif_lite::Error
+pub fn dif_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for dif_lite::Error
+pub fn dif_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for dif_lite::Error
+impl core::marker::StructuralPartialEq for dif_lite::Error
+#[non_exhaustive] pub enum dif_lite::Value
+pub dif_lite::Value::Bool(bool)
+pub dif_lite::Value::Error(alloc::string::String)
+pub dif_lite::Value::Number(f64)
+pub dif_lite::Value::Text(alloc::string::String)
+impl core::clone::Clone for dif_lite::Value
+pub fn dif_lite::Value::clone(&self) -> dif_lite::Value
+impl core::cmp::PartialEq for dif_lite::Value
+pub fn dif_lite::Value::eq(&self, &dif_lite::Value) -> bool
+impl core::fmt::Debug for dif_lite::Value
+pub fn dif_lite::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for dif_lite::Value
+#[non_exhaustive] pub struct dif_lite::Cell
+pub dif_lite::Cell::col: u32
+pub dif_lite::Cell::row: u32
+pub dif_lite::Cell::value: dif_lite::Value
+impl core::clone::Clone for dif_lite::Cell
+pub fn dif_lite::Cell::clone(&self) -> dif_lite::Cell
+impl core::cmp::PartialEq for dif_lite::Cell
+pub fn dif_lite::Cell::eq(&self, &dif_lite::Cell) -> bool
+impl core::fmt::Debug for dif_lite::Cell
+pub fn dif_lite::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for dif_lite::Cell
+pub fn dif_lite::detect(&[u8]) -> bool
+pub fn dif_lite::read(&[u8], u64) -> core::result::Result<alloc::vec::Vec<dif_lite::Cell>, dif_lite::Error>

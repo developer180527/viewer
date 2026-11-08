@@ -99,6 +99,28 @@ path = "corpus/files/docs/sample.xps"
 # No MuPDF on Windows yet (docs/design/pdf.md §10 step 7).
 skip_on = ["windows"]
 
+# Spreadsheets. The binary samples are from tafia/calamine's tests (MIT).
+[[file]]
+path = "corpus/files/sheets/sample.xlsx"
+
+[[file]]
+path = "corpus/files/sheets/sample.xlsb"
+
+[[file]]
+path = "corpus/files/sheets/sample.xls"
+
+[[file]]
+path = "corpus/files/sheets/sample.ods"
+
+[[file]]
+path = "corpus/files/sheets/sample.fods"
+
+[[file]]
+path = "corpus/files/sheets/sample.slk"
+
+[[file]]
+path = "corpus/files/sheets/sample.dif"
+
 # ---------------------------------------------------------------- data
 
 [[file]]

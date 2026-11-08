@@ -1,0 +1,11 @@
+[package]
+name = "ods-lite"
+description = "Reads OpenDocument spreadsheets (ODS, and flat FODS): sheets of typed cells with their formulas, kept sparse, however far a file repeats its rows."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+quick-xml = "0.41"

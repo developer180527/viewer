@@ -596,6 +596,12 @@ impl OwnedTable {
         Self { columns, rows }
     }
 
+    /// These rows in place of the table's, for cells that are already built.
+    pub fn with_cells(mut self, rows: Vec<Vec<Cell>>) -> Self {
+        self.rows = rows;
+        self
+    }
+
     /// A table of text: every column [`ValueKind::Text`].
     pub fn text(columns: Vec<String>, rows: Vec<Vec<String>>) -> Self {
         let columns = columns.into_iter().map(|c| Column::new(c).with_kind(ValueKind::Text)).collect();

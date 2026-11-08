@@ -15,7 +15,7 @@
 //!
 //! It has no policy of its own: it takes the app's [`ParseContext`] like any category,
 //! with `-core`'s defaults unless the app gives its own. Categories are features
-//! (`images`, `3d`, `data`, `text`, `archives`, `docs`, all on by default; `docs-mupdf`, AGPL, only when named); an app that wants one kind of file
+//! (`images`, `3d`, `data`, `text`, `archives`, `docs`, `sheets`, all on by default; `docs-mupdf`, AGPL, only when named); an app that wants one kind of file
 //! takes that category alone.
 //!
 //! ```ignore
@@ -101,6 +101,8 @@ impl Library {
         all.extend(libfileparser_3d::readers());
         #[cfg(feature = "docs")]
         all.extend(libfileparser_docs::readers());
+        #[cfg(feature = "sheets")]
+        all.extend(libfileparser_sheets::readers());
         #[cfg(feature = "archives")]
         all.extend(libfileparser_archives::readers());
         #[cfg(feature = "data")]

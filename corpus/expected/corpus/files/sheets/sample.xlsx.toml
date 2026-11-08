@@ -1,0 +1,12 @@
+loader = "xlsx"
+format = "Excel workbook"
+model = "Table"
+
+[table]
+rows = 3
+columns = 2
+headers = ["A", "B"]
+kinds = ["Unknown", "Unknown"]
+
+[metadata]
+Sheets = "1"

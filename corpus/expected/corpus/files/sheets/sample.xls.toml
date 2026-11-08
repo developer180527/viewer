@@ -1,0 +1,12 @@
+loader = "xls"
+format = "Excel 97–2003 workbook"
+model = "Table"
+
+[table]
+rows = 6
+columns = 1
+headers = ["A"]
+kinds = ["Unknown"]
+
+[metadata]
+Sheets = "5"

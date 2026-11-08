@@ -31,6 +31,7 @@ pub fn registry() -> &'static Registry {
             adapt(::libfileparser::Category::Archives),
             adapt(::libfileparser::Category::Data),
             adapt(::libfileparser::Category::Docs),
+            adapt(::libfileparser::Category::Sheets),
             viewer_fmt_doc::LOADERS,
             adapt(::libfileparser::Category::ThreeD),
         ])

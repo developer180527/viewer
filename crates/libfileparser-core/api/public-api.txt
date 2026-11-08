@@ -776,6 +776,7 @@ pub struct libfileparser_core::OwnedTable
 impl libfileparser_core::OwnedTable
 pub fn libfileparser_core::OwnedTable::new(alloc::vec::Vec<libfileparser_core::Column>, alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>) -> Self
 pub fn libfileparser_core::OwnedTable::text(alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>) -> Self
+pub fn libfileparser_core::OwnedTable::with_cells(self, alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>) -> Self
 impl libfileparser_core::TableSource for libfileparser_core::OwnedTable
 pub fn libfileparser_core::OwnedTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::OwnedTable::memory(&self) -> libfileparser_core::MemoryUse

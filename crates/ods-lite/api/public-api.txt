@@ -1,0 +1,84 @@
+pub mod ods_lite
+#[non_exhaustive] pub enum ods_lite::Error
+pub ods_lite::Error::Encrypted
+pub ods_lite::Error::NotOds
+pub ods_lite::Error::TooLarge
+pub ods_lite::Error::TooLarge::max: u64
+pub ods_lite::Error::TooLarge::value: u64
+pub ods_lite::Error::TooLarge::what: &'static str
+pub ods_lite::Error::Xml(alloc::string::String)
+pub ods_lite::Error::Zip(alloc::string::String)
+impl core::clone::Clone for ods_lite::Error
+pub fn ods_lite::Error::clone(&self) -> ods_lite::Error
+impl core::cmp::Eq for ods_lite::Error
+impl core::cmp::PartialEq for ods_lite::Error
+pub fn ods_lite::Error::eq(&self, &ods_lite::Error) -> bool
+impl core::error::Error for ods_lite::Error
+impl core::fmt::Debug for ods_lite::Error
+pub fn ods_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for ods_lite::Error
+pub fn ods_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for ods_lite::Error
+#[non_exhaustive] pub enum ods_lite::Value
+pub ods_lite::Value::Bool(bool)
+pub ods_lite::Value::Date(alloc::string::String)
+pub ods_lite::Value::Error(alloc::string::String)
+pub ods_lite::Value::Number(f64)
+pub ods_lite::Value::Text(alloc::string::String)
+pub ods_lite::Value::Time(alloc::string::String)
+impl core::clone::Clone for ods_lite::Value
+pub fn ods_lite::Value::clone(&self) -> ods_lite::Value
+impl core::cmp::PartialEq for ods_lite::Value
+pub fn ods_lite::Value::eq(&self, &ods_lite::Value) -> bool
+impl core::fmt::Debug for ods_lite::Value
+pub fn ods_lite::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for ods_lite::Value
+#[non_exhaustive] pub struct ods_lite::Cell
+pub ods_lite::Cell::col: u32
+pub ods_lite::Cell::formula: core::option::Option<alloc::string::String>
+pub ods_lite::Cell::row: u32
+pub ods_lite::Cell::value: core::option::Option<ods_lite::Value>
+impl core::clone::Clone for ods_lite::Cell
+pub fn ods_lite::Cell::clone(&self) -> ods_lite::Cell
+impl core::cmp::PartialEq for ods_lite::Cell
+pub fn ods_lite::Cell::eq(&self, &ods_lite::Cell) -> bool
+impl core::fmt::Debug for ods_lite::Cell
+pub fn ods_lite::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for ods_lite::Cell
+#[non_exhaustive] pub struct ods_lite::Limits
+pub ods_lite::Limits::cells: u64
+pub ods_lite::Limits::part_bytes: u64
+pub ods_lite::Limits::unpack_always: u64
+pub ods_lite::Limits::unpack_ratio: u64
+impl ods_lite::Limits
+pub fn ods_lite::Limits::with_cells(self, u64) -> Self
+pub fn ods_lite::Limits::with_part_bytes(self, u64) -> Self
+pub fn ods_lite::Limits::with_unpack(self, u64, u64) -> Self
+impl core::clone::Clone for ods_lite::Limits
+pub fn ods_lite::Limits::clone(&self) -> ods_lite::Limits
+impl core::default::Default for ods_lite::Limits
+pub fn ods_lite::Limits::default() -> Self
+impl core::fmt::Debug for ods_lite::Limits
+pub fn ods_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for ods_lite::Limits
+#[non_exhaustive] pub struct ods_lite::Sheet
+pub ods_lite::Sheet::cells: alloc::vec::Vec<ods_lite::Cell>
+pub ods_lite::Sheet::name: alloc::string::String
+impl core::clone::Clone for ods_lite::Sheet
+pub fn ods_lite::Sheet::clone(&self) -> ods_lite::Sheet
+impl core::default::Default for ods_lite::Sheet
+pub fn ods_lite::Sheet::default() -> ods_lite::Sheet
+impl core::fmt::Debug for ods_lite::Sheet
+pub fn ods_lite::Sheet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct ods_lite::Workbook
+pub ods_lite::Workbook::names: alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
+pub ods_lite::Workbook::sheets: alloc::vec::Vec<ods_lite::Sheet>
+impl core::clone::Clone for ods_lite::Workbook
+pub fn ods_lite::Workbook::clone(&self) -> ods_lite::Workbook
+impl core::default::Default for ods_lite::Workbook
+pub fn ods_lite::Workbook::default() -> ods_lite::Workbook
+impl core::fmt::Debug for ods_lite::Workbook
+pub fn ods_lite::Workbook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn ods_lite::read(&[u8], &ods_lite::Limits) -> ods_lite::Result<ods_lite::Workbook>
+pub fn ods_lite::read_flat(&[u8], &ods_lite::Limits) -> ods_lite::Result<ods_lite::Workbook>
+pub type ods_lite::Result<T> = core::result::Result<T, ods_lite::Error>
