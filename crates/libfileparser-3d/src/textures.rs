@@ -273,6 +273,10 @@ fn load(source: &ImageSource, color_space: ColorSpace, max_alloc: u64) -> Option
         return Some(image);
     }
     let mut reader = image::ImageReader::new(std::io::Cursor::new(bytes)).with_guessed_format().ok()?;
+    // TGA has no signature to guess from.
+    if reader.format().is_none() {
+        reader.set_format(image::ImageFormat::Tga);
+    }
     reader.limits(image_limits(max_alloc));
     let image = reader.decode().ok()?;
     if image.width().max(image.height()) <= MAX_SIDE {

@@ -193,17 +193,25 @@ pub fn load(bytes: &[u8], cx: &ParseContext) -> Result<Loaded> {
                 };
                 let mut dropped = 0usize;
                 let mut corners = Vec::new();
-                for _ in 0..el.count {
+                'faces: for read in 0..el.count {
                     for (i, p) in el.props.iter().enumerate() {
                         match p {
                             Property::List(ct, it, _) => {
-                                let n = body.value(*ct)? as usize;
+                                // A file cut short still has the faces before the cut.
+                                let Ok(n) = body.value(*ct).map(|n| n as usize) else {
+                                    warnings.push(format!("the file ends after {read} of its {} faces", el.count));
+                                    break 'faces;
+                                };
                                 if n > MAX_FACE_CORNERS {
                                     bail!("a face with {n} corners");
                                 }
                                 corners.clear();
                                 for _ in 0..n {
-                                    corners.push(body.value(*it)?);
+                                    let Ok(c) = body.value(*it) else {
+                                        warnings.push(format!("the file ends after {read} of its {} faces", el.count));
+                                        break 'faces;
+                                    };
+                                    corners.push(c);
                                 }
                                 if i != list {
                                     continue;
@@ -550,7 +558,8 @@ property float f_dc_0\nproperty float f_dc_1\nproperty float f_dc_2\nproperty fl
         // Truncated binary.
         let mut b = binary(false);
         b.truncate(b.len() - 3);
-        assert!(load(&b).is_err());
+        let l = load(&b);
+        assert!(l.is_err() || !l.unwrap().warnings.is_empty(), "a cut file says so");
         // Not PLY, no format, bad types.
         assert!(load(b"plyx").is_err());
         assert!(load(b"ply\nelement vertex 1\nproperty float x\nend_header\n0\n").is_err());

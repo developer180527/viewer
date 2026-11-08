@@ -70,6 +70,11 @@ impl libfileparser_core::reader::Reader for libfileparser_3d::ObjReader
 pub fn libfileparser_3d::ObjReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_3d::ObjReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_3d::ObjReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::OffReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::OffReader
+pub fn libfileparser_3d::OffReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::OffReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::OffReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_3d::PlyReader
 impl libfileparser_core::reader::Reader for libfileparser_3d::PlyReader
 pub fn libfileparser_3d::PlyReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection

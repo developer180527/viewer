@@ -73,6 +73,8 @@ pub struct Opened {
     pub summary: Table,
     /// For `golden` entries: the image, or the first page, scaled to [`GOLDEN_SIDE`].
     pub render: Option<RgbaImage>,
+    /// A golden render was skipped because this machine has no GPU adapter.
+    pub no_gpu: bool,
 }
 
 /// Opens `entry` on its own thread, so a hang shows as a timeout and not a stuck test.
@@ -118,7 +120,8 @@ fn open_here(path: &Path, golden: bool, deadline: Instant) -> Result<Opened, Str
         summary.insert("metadata".into(), meta.into());
     }
     unreadable(&doc, &mut summary);
-    Ok(Opened { summary, render })
+    let no_gpu = golden && render.is_none() && doc.content.model_name() == "3D scene" && gpu().is_none();
+    Ok(Opened { summary, render, no_gpu })
 }
 
 /// The content model's own numbers, under a table named after it, and the render.
@@ -174,6 +177,9 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
                     std::thread::sleep(Duration::from_millis(5));
                 }
                 scene_summary(scene.scene(), &mut t);
+                if golden && let Some(gpu) = gpu() {
+                    render = silhouette(gpu, scene.scene());
+                }
                 "scene"
             }
             Model::Flow(flow) => {
@@ -291,4 +297,56 @@ fn list(items: impl Iterator<Item = String>, total: usize) -> Value {
         v.push(format!("… and {} more", total - LIST_MAX).into());
     }
     Value::Array(v)
+}
+
+struct Gpu {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    renderer: rendererx::Renderer,
+}
+
+/// The machine's GPU, once; `None` with no adapter. One at a time: renders share it.
+fn gpu() -> Option<&'static std::sync::Mutex<Gpu>> {
+    static GPU: std::sync::OnceLock<Option<std::sync::Mutex<Gpu>>> = std::sync::OnceLock::new();
+    GPU.get_or_init(|| {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let adapter = pollster::block_on(instance.request_adapter(&Default::default())).ok()?;
+        let (device, queue) = pollster::block_on(adapter.request_device(&Default::default())).ok()?;
+        let renderer = rendererx::Renderer::new(&device, &queue, rendererx::RendererDesc::default());
+        Some(std::sync::Mutex::new(Gpu { device, queue, renderer }))
+    })
+    .as_ref()
+}
+
+/// A scene's silhouette from the default camera, as how much of each cell is covered.
+/// Shading differs between GPUs and drivers; what's where doesn't.
+fn silhouette(gpu: &std::sync::Mutex<Gpu>, scene: &scene_data::CpuScene) -> Option<RgbaImage> {
+    const CELL: u32 = 4;
+    let side = GOLDEN_SIDE * CELL;
+    let gpu = gpu.lock().unwrap_or_else(|e| e.into_inner());
+    let Gpu { device, queue, renderer } = &*gpu;
+    let mut attached = renderer.attach(scene);
+    renderer.sync(&mut attached);
+    let mut view = renderer.create_view(rendererx::ViewDesc { width: side, height: side });
+    let camera = rendererx::Camera::framing(attached.bounds()?, 1.0);
+    renderer.prepare(&attached);
+    let mut encoder = device.create_command_encoder(&Default::default());
+    renderer.render(&mut encoder, &attached, &mut view, &camera, &rendererx::RenderOptions::default());
+    queue.submit([encoder.finish()]);
+    let pixels = view.read_pixels(device, queue)?;
+    // The background's colour: a corner, which the framing leaves empty.
+    let background = [pixels[0], pixels[1], pixels[2]];
+    let mut out = RgbaImage::new(GOLDEN_SIDE, GOLDEN_SIDE);
+    for (x, y, p) in out.enumerate_pixels_mut() {
+        let mut covered = 0u32;
+        for sy in 0..CELL {
+            for sx in 0..CELL {
+                let i = (((y * CELL + sy) * side + x * CELL + sx) * 4) as usize;
+                covered += (0..3).any(|c| pixels[i + c].abs_diff(background[c]) > 8) as u32;
+            }
+        }
+        let v = (covered * 255 / (CELL * CELL)) as u8;
+        *p = image::Rgba([v, v, v, 255]);
+    }
+    Some(out)
 }

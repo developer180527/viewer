@@ -13,4 +13,7 @@ viewer-formats.workspace = true
 scene-data.workspace = true
 anyhow.workspace = true
 toml = { version = "1", default-features = false, features = ["parse", "display", "serde", "preserve_order"] }
+rendererx.workspace = true
+wgpu = "30"
+pollster = "1"
 image = { version = "0.25", default-features = false, features = ["png"] }

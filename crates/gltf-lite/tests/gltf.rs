@@ -208,18 +208,13 @@ fn hostile_files_fail_cleanly_or_load_what_they_can() {
     let loaded = load(file, &NoResolver, &mut b).unwrap();
     assert!(loaded.warnings.iter().any(|w| w.contains("sparse indices")), "{:?}", loaded.warnings);
 
-    // Compressed geometry can't be read: refused up front.
-    let draco = text(json!({"asset": {"version": "2.0"}, "extensionsRequired": ["EXT_meshopt_compression"]}));
-    let (_s, mut b) = CpuScene::new();
-    assert_eq!(load(draco, &NoResolver, &mut b).err(), Some(Error::Unsupported("EXT_meshopt_compression".into())));
-
     // Truncated GLB and garbage.
     let (_s, mut b) = CpuScene::new();
     assert!(matches!(load(Arc::new(b"glTF\x02\0\0\0\xff\0\0\0\x10\0\0\0JSON".to_vec()), &NoResolver, &mut b), Err(Error::Format(_))));
     let (_s, mut b) = CpuScene::new();
     assert!(matches!(load(Arc::new(b"\0\x01garbage".to_vec()), &NoResolver, &mut b), Err(Error::Format(_))));
     let (_s, mut b) = CpuScene::new();
-    assert!(matches!(load(text(json!({"asset": {"version": "1.0"}})), &NoResolver, &mut b), Err(Error::Unsupported(_))));
+    assert!(matches!(load(text(json!({"asset": {"version": "3.0"}})), &NoResolver, &mut b), Err(Error::Unsupported(_))));
 }
 
 #[test]
@@ -326,4 +321,38 @@ fn external_files_that_cant_be_read_are_reported_by_kind() {
         assert!(loaded.unreadable.contains(&("locked/mesh.bin".into(), NotPermitted)), "{:?}", loaded.unreadable);
     }
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn gltf_1_is_read_through_its_ids() {
+    // A triangle, every object keyed by id, as 1.0 has them.
+    let mut bin = Vec::new();
+    for v in [0.0f32, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 2.0, 0.0] {
+        bin.extend_from_slice(&v.to_le_bytes());
+    }
+    for i in [0u16, 1, 2] {
+        bin.extend_from_slice(&i.to_le_bytes());
+    }
+    use base64::Engine;
+    let uri = format!("data:application/octet-stream;base64,{}", base64::engine::general_purpose::STANDARD.encode(&bin));
+    let file = text(json!({
+        "asset": {"version": "1.0"},
+        "buffers": {"b": {"uri": uri, "byteLength": 42}},
+        "bufferViews": {"v": {"buffer": "b", "byteLength": 42}},
+        "accessors": {
+            "p": {"bufferView": "v", "componentType": 5126, "count": 3, "type": "VEC3", "byteStride": 12, "min": [0, 0, 0], "max": [1, 2, 0]},
+            "i": {"bufferView": "v", "byteOffset": 36, "componentType": 5123, "count": 3, "type": "SCALAR"}
+        },
+        "materials": {"m": {"values": {"diffuse": [1, 0, 0, 1]}}},
+        "meshes": {"tri": {"primitives": [{"attributes": {"POSITION": "p"}, "indices": "i", "material": "m"}]}},
+        "nodes": {"n": {"meshes": ["tri"]}},
+        "scenes": {"s": {"nodes": ["n"]}},
+        "scene": "s"
+    }));
+    let (scene, mut b) = CpuScene::new();
+    let loaded = load(file, &NoResolver, &mut b).unwrap();
+    assert!(loaded.warnings.iter().any(|w| w.contains("glTF 1.0")), "{:?}", loaded.warnings);
+    let read = scene.read();
+    assert_eq!((read.meshes().len(), read.materials().len()), (1, 1));
+    assert_eq!(read.meshes()[0].info.elements, 3);
 }

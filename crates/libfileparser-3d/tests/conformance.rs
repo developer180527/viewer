@@ -29,6 +29,7 @@ fn samples(reader: &str) -> Vec<Sample> {
             sample("3d/tri-obj/tri.obj").with_neighbour("tri.mtl", corpus("3d/tri-obj/tri.mtl")).fits_tiny_limits(),
             sample("3d/spaced-mtl/tri.obj").with_neighbour("My Paint.mtl", corpus("3d/spaced-mtl/My Paint.mtl")).fits_tiny_limits(),
         ],
+        "off" => vec![sample("3d/tetra.off").fits_tiny_limits()],
         "stl" => vec![sample("3d/cube.stl"), sample("3d/tetra.stl").fits_tiny_limits()],
         "ply" => vec![sample("3d/spiral.ply")],
         "usd" => {

@@ -22,7 +22,7 @@ impl BufferData {
         Self { bytes, start: 0, len }
     }
 
-    fn slice(&self) -> &[u8] {
+    pub(crate) fn slice(&self) -> &[u8] {
         &(*self.bytes).as_ref()[self.start..self.start + self.len]
     }
 }

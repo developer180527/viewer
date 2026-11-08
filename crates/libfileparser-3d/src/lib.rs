@@ -24,11 +24,11 @@ mod textures;
 
 use libfileparser_core::{Detection, Document, FileSource, ParseContext, Reader, Result};
 
-pub use readers::{BlendReader, FbxReader, GltfReader, ObjReader, PlyReader, StlReader, UsdReader};
+pub use readers::{BlendReader, FbxReader, GltfReader, ObjReader, OffReader, PlyReader, StlReader, UsdReader};
 
 /// Every format this category reads, in the order ties are broken.
 pub fn readers() -> &'static [&'static dyn Reader] {
-    &[&GltfReader, &FbxReader, &ObjReader, &StlReader, &PlyReader, &UsdReader, &BlendReader]
+    &[&GltfReader, &FbxReader, &ObjReader, &StlReader, &PlyReader, &OffReader, &UsdReader, &BlendReader]
 }
 
 /// The readers that fit a file, best first.

@@ -56,6 +56,7 @@ fn check(entry: &Entry, update: bool, out: &Path) -> Option<String> {
             }
             Err(_) => problems.push(format!("no {} (run with UPDATE_CORPUS=1)", render_path.display())),
         },
+        (None, true) if opened.no_gpu => {}
         (None, true) => problems.push("golden is set, but this content draws no render".into()),
         (None, false) => {}
     }
@@ -122,7 +123,7 @@ fn corpus() {
 
 /// Loaders whose only corpus files are optional (too big, or no small file we can
 /// write ourselves yet), so CI doesn't exercise them. Shrink this list.
-const LOCAL_ONLY: &[&str] = &["fbx", "blend"];
+const LOCAL_ONLY: &[&str] = &[];
 
 /// The corpus checks the app's own registry: every loader it ships opens at least one
 /// committed corpus file, so a new loader without one shows up as a failure.

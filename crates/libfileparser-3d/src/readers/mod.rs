@@ -5,6 +5,7 @@
 mod blend;
 mod fbx;
 mod gltf;
+mod off;
 mod ply;
 mod stl;
 mod usd;
@@ -12,6 +13,7 @@ mod usd;
 pub use blend::BlendReader;
 pub use fbx::{FbxReader, ObjReader};
 pub use gltf::GltfReader;
+pub use off::OffReader;
 pub use ply::PlyReader;
 pub use stl::StlReader;
 pub use usd::UsdReader;

@@ -4,21 +4,22 @@ model = "3D scene"
 
 [scene]
 geometry = "Done"
-meshes = 4
-vertices = 121119
-elements = 578955
-topologies = ["Triangles"]
+meshes = 5
+vertices = 121120
+elements = 578956
+topologies = ["Points", "Triangles"]
 materials = 4
-nodes = 4
+nodes = 5
 textures = 0
 textures_decoded = []
 bounds = ["0.564 0.098 -6.892", "3.009 2.078 -0.965"]
 
 [metadata]
-Meshes = "4"
-"Placed meshes" = "4"
+Meshes = "5"
+"Placed meshes" = "5"
 Triangles = "192985"
-Vertices = "121119"
+Points = "1"
+Vertices = "121120"
 Materials = "4"
 Textures = "none"
 

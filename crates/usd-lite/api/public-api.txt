@@ -132,6 +132,17 @@ impl core::fmt::Debug for usd_lite::geom::UpAxis
 pub fn usd_lite::geom::UpAxis::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::Copy for usd_lite::geom::UpAxis
 impl core::marker::StructuralPartialEq for usd_lite::geom::UpAxis
+#[non_exhaustive] pub struct usd_lite::geom::Curves
+pub usd_lite::geom::Curves::color: core::option::Option<[f32; 3]>
+pub usd_lite::geom::Curves::points: alloc::vec::Vec<[f32; 3]>
+pub usd_lite::geom::Curves::segments: alloc::vec::Vec<u32>
+impl core::clone::Clone for usd_lite::geom::Curves
+pub fn usd_lite::geom::Curves::clone(&self) -> usd_lite::geom::Curves
+impl core::cmp::PartialEq for usd_lite::geom::Curves
+pub fn usd_lite::geom::Curves::eq(&self, &usd_lite::geom::Curves) -> bool
+impl core::fmt::Debug for usd_lite::geom::Curves
+pub fn usd_lite::geom::Curves::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for usd_lite::geom::Curves
 #[non_exhaustive] pub struct usd_lite::geom::Mesh
 pub usd_lite::geom::Mesh::display_color: core::option::Option<usd_lite::geom::Primvar<[f32; 3]>>
 pub usd_lite::geom::Mesh::double_sided: bool
@@ -196,6 +207,7 @@ pub fn usd_lite::geom::TextureInput::fmt(&self, &mut core::fmt::Formatter<'_>) -
 impl core::marker::StructuralPartialEq for usd_lite::geom::TextureInput
 pub const usd_lite::geom::IDENTITY: usd_lite::geom::Matrix
 pub fn usd_lite::geom::bound_material(&usd_lite::Layer, &str, bool) -> core::option::Option<alloc::string::String>
+pub fn usd_lite::geom::curves(&usd_lite::Layer, &str) -> core::option::Option<usd_lite::geom::Curves>
 pub fn usd_lite::geom::inverse(&usd_lite::geom::Matrix) -> usd_lite::geom::Matrix
 pub fn usd_lite::geom::is_drawn(&usd_lite::Layer, &str) -> bool
 pub fn usd_lite::geom::is_implicit_shape(&str) -> bool

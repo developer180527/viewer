@@ -10,6 +10,8 @@ license.workspace = true
 [dependencies]
 scene-data.workspace = true
 draco-core = "2"
+# Compressed buffer views. zeux's meshoptimizer, built from C++.
+meshopt = "0.7"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 bytemuck = "1"

@@ -1,0 +1,22 @@
+loader = "off"
+format = "OFF model"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 1
+vertices = 12
+elements = 12
+topologies = ["Triangles"]
+materials = 0
+nodes = 1
+textures = 0
+textures_decoded = []
+bounds = ["0.000 0.000 0.000", "1.000 1.000 1.000"]
+
+[metadata]
+Meshes = "1"
+"Placed meshes" = "1"
+Triangles = "4"
+Vertices = "12"
+Materials = "0"

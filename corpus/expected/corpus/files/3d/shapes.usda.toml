@@ -1,0 +1,25 @@
+loader = "usd"
+format = "USD (text)"
+model = "3D scene"
+
+[scene]
+geometry = "Done"
+meshes = 6
+vertices = 4317
+elements = 6186
+topologies = ["Lines", "Points", "Triangles"]
+materials = 0
+nodes = 6
+textures = 0
+textures_decoded = []
+bounds = ["-4.000 -3.000 -1.000", "4.000 4.000 1.000"]
+
+[metadata]
+Meshes = "6"
+"Placed meshes" = "6"
+Triangles = "2060"
+Lines = "2"
+Points = "2"
+Vertices = "4317"
+Materials = "0"
+Textures = "none"

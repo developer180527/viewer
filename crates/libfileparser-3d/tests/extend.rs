@@ -1,5 +1,5 @@
-//! A format added from outside the crate, with only its public API: an OFF reader
-//! (Object File Format) built from `libfileparser_3d::build`, joined to the crate's
+//! A format added from outside the crate, with only its public API: a reader of a small
+//! made-up format (`SQR`, laid out like OFF) built from `libfileparser_3d::build`, joined to the crate's
 //! readers by passing its own list to `-core`, passing the same conformance suite.
 //!
 //! It is the whole recipe for a 3D format (docs/design/libfileparser-3d.md §4): parse,
@@ -16,22 +16,22 @@ use scene_data::{Indices, MeshData, Node};
 
 struct OffReader;
 
-static OFF: ReaderInfo = ReaderInfo::new("off", "OFF model", Category::ThreeD).extensions(&["off"]);
+static SQR: ReaderInfo = ReaderInfo::new("sqr", "SQR model", Category::ThreeD).extensions(&["sqr"]);
 
 impl Reader for OffReader {
     fn info(&self) -> &ReaderInfo {
-        &OFF
+        &SQR
     }
 
     fn detect(&self, header: &[u8], name: &str) -> Detection {
-        build::detect_by(&OFF, header.starts_with(b"OFF"), name).with_language("off")
+        build::detect_by(&SQR, header.starts_with(b"SQR"), name).with_language("sqr")
     }
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
         cx.cancel.check()?;
         let text = std::str::from_utf8(src.bytes()).map_err(|_| ParseError::NotThisFormat)?;
         let mut words = text.split_ascii_whitespace();
-        if words.next() != Some("OFF") {
+        if words.next() != Some("SQR") {
             return Err(ParseError::NotThisFormat);
         }
         let mut number = || words.next().and_then(|w| w.parse::<f32>().ok()).ok_or_else(|| ParseError::corrupt("truncated"));
@@ -60,30 +60,30 @@ impl Reader for OffReader {
         let mut origins = build::SceneOrigins::new();
         origins.mesh("/faces", mesh);
         origins.node("/faces", node);
-        SceneDocument::new(self, src, "OFF model", scene)
+        SceneDocument::new(self, src, "SQR model", scene)
             .facets(move |doc| doc.with_facet(Role::Structure, "Elements", Content::Tree(std::sync::Arc::new(elements))))
             .origins(origins, "Elements")
             .build()
     }
 }
 
-const SQUARE: &str = "OFF\n4 1 0\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n4 0 1 2 3\n";
+const SQUARE: &str = "SQR\n4 1 0\n0 0 0\n1 0 0\n1 1 0\n0 1 0\n4 0 1 2 3\n";
 
 #[test]
 fn an_outside_reader_conforms_and_joins_the_category() {
-    assert_conforms(&OffReader, &[Sample::new("square.off", SQUARE.as_bytes().to_vec()).fits_tiny_limits()]);
+    assert_conforms(&OffReader, &[Sample::new("square.sqr", SQUARE.as_bytes().to_vec()).fits_tiny_limits()]);
 
     let mut list = libfileparser_3d::readers().to_vec();
     list.push(&OffReader);
-    let doc = libfileparser_core::open(&list, &FileSource::from_bytes("square.off", SQUARE.as_bytes().to_vec()), &ParseContext::new()).unwrap();
-    assert_eq!(doc.format().reader, "off");
+    let doc = libfileparser_core::open(&list, &FileSource::from_bytes("square.sqr", SQUARE.as_bytes().to_vec()), &ParseContext::new()).unwrap();
+    assert_eq!(doc.format().reader, "sqr");
     assert!(doc.metadata().iter().any(|(k, v)| k == "Triangles" && v == "2"), "{:?}", doc.metadata());
 
     // Everything a built-in reader has: its structure, its Source in its language, Raw…
     let cx = ParseContext::new();
     assert_eq!(doc.facets().map(|f| f.name.as_str()).collect::<Vec<_>>(), ["Scene", "Elements", "Source", "Raw"]);
     let Ok(Content::Text(t)) = doc.facet(2, &cx) else { panic!() };
-    assert_eq!(t.info().language.as_deref(), Some("off"));
+    assert_eq!(t.info().language.as_deref(), Some("sqr"));
     // …and links: the Faces node and the scene's mesh and node.
     let Ok(Content::Tree(tree)) = doc.facet(1, &cx) else { panic!() };
     let faces = libfileparser_core::Place::Node { facet: 1, node: tree.find("/faces").unwrap().unwrap() };

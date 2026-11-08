@@ -15,6 +15,8 @@
 //! - **Show what can be shown.** A broken primitive, texture or external file is a
 //!   warning; only an unreadable container or JSON fails the load.
 
+mod meshopt;
+mod v1;
 mod accessor;
 mod json;
 
@@ -200,20 +202,23 @@ pub struct Loaded {
 }
 
 /// Extensions that change what the data means and can't be skipped.
-const FATAL_EXTENSIONS: &[&str] = &["EXT_meshopt_compression"];
+const FATAL_EXTENSIONS: &[&str] = &[];
 /// Extensions read here (or harmless to ignore when required).
 const KNOWN_EXTENSIONS: &[&str] =
-    &["KHR_draco_mesh_compression", "KHR_materials_unlit", "KHR_mesh_quantization", "KHR_texture_basisu", "EXT_texture_webp", "EXT_texture_avif", "VRMC_materials_mtoon", "VRM"];
+    &["KHR_draco_mesh_compression", "EXT_meshopt_compression", "KHR_meshopt_compression", "KHR_materials_unlit", "KHR_mesh_quantization", "KHR_texture_basisu", "EXT_texture_webp", "EXT_texture_avif", "VRMC_materials_mtoon", "VRM"];
 
 /// Parses `file` into `builder` and finishes its geometry. `file` is kept alive by the
 /// scene for as long as borrowed streams point into it.
 pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) -> Result<Loaded, Error> {
     let (json, bin) = split_container(&file)?;
-    let root: json::Root = serde_json::from_slice(&(*file).as_ref()[json]).map_err(|e| Error::Format(e.to_string()))?;
+    let (mut root, from_v1) = parse_root(&(*file).as_ref()[json])?;
     if !root.asset.version.starts_with('2') {
         return Err(Error::Unsupported(format!("glTF version {:?}", root.asset.version)));
     }
     let mut warnings = Vec::new();
+    if from_v1 {
+        warnings.push("glTF 1.0: materials are read as their diffuse colour or texture; shaders aren't run".to_string());
+    }
     for ext in &root.extensions_required {
         if FATAL_EXTENSIONS.contains(&ext.as_str()) {
             return Err(Error::Unsupported(ext.clone()));
@@ -224,19 +229,21 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
     }
 
     let mut unreadable = Vec::new();
-    let buffers: Vec<Option<BufferData>> = root
+    let mut buffers: Vec<Option<BufferData>> = root
         .buffers
         .iter()
         .enumerate()
         .map(|(i, b)| {
             let loaded = match (&b.uri, i, &bin) {
                 (None, 0, Some(range)) => Ok(BufferData { bytes: file.clone(), start: range.start, len: range.len() }),
+                (None, _, _) if meshopt::is_placeholder(&b.extensions) => return None,
                 (None, _, _) => Err(ResolveError::new(ResolveErrorKind::Other, "has no data")),
                 (Some(uri), _, _) => load_uri(uri, resolver).map(BufferData::whole).inspect_err(|e| note(&mut unreadable, uri, e)),
             };
             loaded.map_err(|e| warnings.push(format!("buffer {i}: {e}"))).ok()
         })
         .collect();
+    meshopt::decompress(&mut root, &mut buffers, &mut warnings);
 
     let mut loader = Loader {
         reader: Reader { root: &root, buffers: &buffers },
@@ -298,6 +305,12 @@ pub fn glb_chunks(bytes: &[u8]) -> Result<Option<Vec<GlbChunk>>, Error> {
     }
     let u32_at = |at: usize| bytes.get(at..at + 4).map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
     let bad = |what: &str| Error::Format(format!("GLB {what}"));
+    // Binary glTF 1.0: a header, the JSON, then the body with no chunk headers.
+    if u32_at(4) == Some(1) {
+        let total = u32_at(8).ok_or_else(|| bad("header is truncated"))?.min(bytes.len());
+        let end = u32_at(12).and_then(|n| n.checked_add(20)).filter(|&e| e <= total).ok_or_else(|| bad("JSON runs past the end"))?;
+        return Ok(Some(vec![GlbChunk { kind: GlbChunk::JSON, range: 20..end }, GlbChunk { kind: GlbChunk::BIN, range: end..total }]));
+    }
     if u32_at(4) != Some(2) {
         return Err(Error::Unsupported("GLB container version other than 2".into()));
     }
@@ -313,6 +326,20 @@ pub fn glb_chunks(bytes: &[u8]) -> Result<Option<Vec<GlbChunk>>, Error> {
         at = end.next_multiple_of(4);
     }
     Ok(Some(chunks))
+}
+
+/// The file's JSON as a 2.0 root, and whether it was converted from 1.0.
+fn parse_root(bytes: &[u8]) -> Result<(json::Root, bool), Error> {
+    let parsed = serde_json::from_slice::<json::Root>(bytes);
+    if parsed.as_ref().is_ok_and(|r| !r.asset.version.starts_with('1')) {
+        return Ok((parsed.unwrap_or_default(), false));
+    }
+    let format = |e: serde_json::Error| Error::Format(e.to_string());
+    let value: serde_json::Value = serde_json::from_slice(bytes).map_err(format)?;
+    if v1::is_v1(&value) {
+        return Ok((serde_json::from_value(v1::upgrade(&value)).map_err(format)?, true));
+    }
+    Ok((parsed.map_err(format)?, false))
 }
 
 /// JSON range, and the BIN chunk's range for GLB.

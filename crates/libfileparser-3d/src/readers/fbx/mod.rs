@@ -34,17 +34,38 @@ pub struct Loaded {
 /// recorded in `deps`. ufbx itself opens nothing: the `.mtl` data is handed to it.
 pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps: &Dependencies) -> Result<Loaded> {
     let mtl = if format == ufbx::FileFormat::Obj { mtl_libraries(src, cx, deps) } else { Vec::new() };
-    let opts = ufbx::LoadOpts {
+    let opts = |mtl: &[u8]| ufbx::LoadOpts {
         file_format: format,
         target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
         target_unit_meters: 1.0,
         load_external_files: false,
         ignore_missing_external_files: true,
         obj_search_mtl_by_filename: false,
-        obj_mtl_data: if mtl.is_empty() { ufbx::BlobOpt::Unset } else { mtl.as_slice().into() },
+        obj_mtl_data: if mtl.is_empty() { ufbx::BlobOpt::Unset } else { mtl.to_vec().into() },
         ..Default::default()
     };
-    let root = ufbx::load_memory(src.bytes(), opts).map_err(|e| anyhow!("{}", e.description))?;
+    // Some exporters write OBJ as UTF-16, which ufbx doesn't read.
+    let utf8 = if format == ufbx::FileFormat::Obj { from_utf16(src.bytes()) } else { None };
+    let bytes = utf8.as_ref().map_or(src.bytes(), |s| s.as_bytes());
+    let describe = |e: &ufbx::Error| if e.info().is_empty() { anyhow!("{}", e.description) } else { anyhow!("{}: {}", e.description, e.info()) };
+    let (root, mut note) = match ufbx::load_memory(bytes, opts(&mtl)) {
+        Ok(root) => (root, None),
+        Err(e) if format == ufbx::FileFormat::Obj => match (!mtl.is_empty()).then(|| ufbx::load_memory(bytes, opts(&[])).ok()).flatten() {
+            Some(root) => (root, Some("its material file couldn't be read".to_string())),
+            None => {
+                let Some(mut data) = plain_obj(bytes) else { return Err(describe(&e)) };
+                let (scene, mut builder) = crate::build::new_scene(cx);
+                let warnings = vec!["read without normals, UVs or materials: the file breaks OBJ's rules".to_string()];
+                data.normals = None;
+                let id = builder.add_mesh(data).context("the mesh")?;
+                builder.add_node(Node::mesh(id, None, Mat4::IDENTITY, None)).context("the mesh")?;
+                builder.finish();
+                let textures = textures::spawn(builder.texture_sink(), Vec::new(), cx);
+                return Ok(Loaded { scene, warnings, textures, origins: crate::build::SceneOrigins::new(), has_nodes: true });
+            }
+        },
+        Err(e) => return Err(describe(&e)),
+    };
     let (scene, mut builder) = crate::build::new_scene(cx);
     // ufbx's own notes (repaired indices…), deduplicated by its count.
     let mut warnings: Vec<String> = root
@@ -53,9 +74,20 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps:
         .iter()
         .map(|w| if w.count > 1 { format!("{} (×{})", w.description, w.count) } else { w.description.to_string() })
         .collect();
+    warnings.extend(note.take());
     let mut images = Images { from: src.clone(), cx: cx.clone(), deps: deps.clone(), seen: HashMap::new(), packed: HashMap::new(), jobs: Vec::new() };
     let mut origins = crate::build::SceneOrigins::new();
     convert(&root, format, &mut builder, &mut images, &mut warnings, &mut origins).context("building the scene")?;
+    if format == ufbx::FileFormat::Obj && scene.read().nodes().is_empty() {
+        // Only vertices: ufbx makes no mesh of them, but they're a point cloud.
+        let points = vertex_lines(bytes);
+        if !points.is_empty() {
+            let mut data = MeshData::new(points);
+            data.topology = scene_data::Topology::Points;
+            let id = builder.add_mesh(data).context("the points")?;
+            builder.add_node(Node::mesh(id, None, Mat4::IDENTITY, None)).context("the points")?;
+        }
+    }
     builder.finish();
     let textures = textures::spawn(builder.texture_sink(), images.jobs, cx);
     Ok(Loaded { scene, warnings, textures, origins, has_nodes: root.nodes.len() > 1 })
@@ -251,12 +283,44 @@ fn convert(root: &ufbx::Scene, format: ufbx::FileFormat, b: &mut SceneBuilder, i
         root.materials.iter().map(|m| (m.element.typed_id, material_keys.next(if obj { format!("usemtl {}", m.element.name) } else { format!("Objects/Material/{}", m.element.name) }))).collect();
     let mut meshes: HashMap<u32, Parts> = HashMap::new();
     let mut materials: HashMap<u32, Option<MaterialId>> = HashMap::new();
+    let mut curves: HashMap<u32, Vec<MeshId>> = HashMap::new();
     for node in root.nodes.iter() {
         if node.is_root || node.is_geometry_transform_helper || node.is_scale_helper {
             continue;
         }
         let key = node_keys.next(if obj { node.element.name.to_string() } else { format!("Objects/Model/{}", node.element.name) });
-        let Some(mesh) = node.mesh.as_ref() else { continue };
+        let Some(mesh) = node.mesh.as_ref() else {
+            if node.visible && let Some(attrib) = node.attrib.as_ref() {
+                let id = attrib.element_id;
+                let drawn = curves
+                    .entry(id)
+                    .or_insert_with(|| {
+                        let mut parts = Vec::new();
+                        if let Some(line) = root.line_curves.iter().find(|c| c.element.element_id == id) {
+                            parts.extend(line_part(line, b, warnings));
+                        } else if let Some(curve) = root.nurbs_curves.iter().find(|c| c.element.element_id == id) {
+                            match ufbx::tessellate_nurbs_curve(curve, ufbx::TessellateCurveOpts { span_subdivision: 16, ..Default::default() }) {
+                                Ok(line) => parts.extend(line_part(&line, b, warnings)),
+                                Err(e) => warnings.push(format!("curve {}: {}", curve.element.name, e.description)),
+                            }
+                        } else if let Some(surface) = root.nurbs_surfaces.iter().find(|c| c.element.element_id == id) {
+                            match ufbx::tessellate_nurbs_surface(surface, ufbx::TessellateSurfaceOpts { span_subdivision_u: 16, span_subdivision_v: 16, ..Default::default() }) {
+                                Ok(mesh) => parts.extend(mesh_parts(&mesh, b, warnings).into_iter().map(|(id, _)| id)),
+                                Err(e) => warnings.push(format!("surface {}: {}", surface.element.name, e.description)),
+                            }
+                        }
+                        parts
+                    })
+                    .clone();
+                let world = mat4(&node.geometry_to_world);
+                for id in drawn {
+                    if let Err(e) = b.add_node(Node::mesh(id, None, world, None)) {
+                        warnings.push(format!("node {}: {e}", node.element.name));
+                    }
+                }
+            }
+            continue;
+        };
         if !node.visible {
             continue;
         }
@@ -325,6 +389,28 @@ fn mesh_parts(mesh: &ufbx::Mesh, b: &mut SceneBuilder, warnings: &mut Vec<String
     };
     let mut tri = vec![0u32; mesh.max_face_triangles * 3];
     let mut out = Vec::new();
+    // Faces of one or two corners are points and lines, in their own meshes.
+    let (mut points, mut lines) = (Vec::new(), Vec::new());
+    for face in mesh.faces.iter().filter(|f| f.num_indices < 3) {
+        let corner = |i: u32| mesh.vertex_position[(face.index_begin + i) as usize];
+        let v = |p: ufbx::Vec3| Vec3::new(p.x as f32, p.y as f32, p.z as f32);
+        match face.num_indices {
+            1 => points.push(v(corner(0))),
+            2 => lines.extend([v(corner(0)), v(corner(1))]),
+            _ => {}
+        }
+    }
+    for (positions, topology) in [(points, scene_data::Topology::Points), (lines, scene_data::Topology::Lines)] {
+        if positions.is_empty() {
+            continue;
+        }
+        let mut data = MeshData::new(positions);
+        data.topology = topology;
+        match b.add_mesh(data) {
+            Ok(id) => out.push((id, 0)),
+            Err(e) => warnings.push(format!("mesh {name}: {e}")),
+        }
+    }
     for (slot, faces) in parts {
         // Keyed by position index and the other attributes' values: FBX stores normals
         // (and often uvs) per corner, so their indices are unique even where values match.
@@ -388,6 +474,77 @@ fn mesh_parts(mesh: &ufbx::Mesh, b: &mut SceneBuilder, warnings: &mut Vec<String
         }
     }
     out
+}
+
+/// A line curve, each of its polylines as segments.
+fn line_part(line: &ufbx::LineCurve, b: &mut SceneBuilder, warnings: &mut Vec<String>) -> Option<MeshId> {
+    let points: Vec<Vec3> = line.control_points.iter().map(|p| Vec3::new(p.x as f32, p.y as f32, p.z as f32)).collect();
+    let mut indices = Vec::new();
+    for s in line.segments.iter() {
+        let run = line.point_indices.get(s.index_begin as usize..(s.index_begin + s.num_indices) as usize)?;
+        run.windows(2).for_each(|w| indices.extend_from_slice(w));
+    }
+    if indices.is_empty() {
+        return None;
+    }
+    let mut data = MeshData::new(points).with_indices(Indices::U32(indices.into()));
+    data.topology = scene_data::Topology::Lines;
+    b.add_mesh(data).map_err(|e| warnings.push(format!("curve {}: {e}", line.element.name))).ok()
+}
+
+/// An OBJ's vertices and faces alone, for a file ufbx won't load: a number it can't read
+/// is zero and a face naming a vertex that isn't there is left out. `None` with no faces.
+fn plain_obj(bytes: &[u8]) -> Option<MeshData> {
+    let text = String::from_utf8_lossy(bytes);
+    let mut positions: Vec<Vec3> = Vec::new();
+    let mut indices: Vec<u32> = Vec::new();
+    for line in text.lines() {
+        let mut words = line.split_ascii_whitespace();
+        match words.next() {
+            Some("v") => {
+                let mut n = words.map(|w| w.parse::<f32>().ok().filter(|v| v.is_finite()).unwrap_or(0.0));
+                positions.push(Vec3::new(n.next().unwrap_or(0.0), n.next().unwrap_or(0.0), n.next().unwrap_or(0.0)));
+            }
+            Some("f") => {
+                let corner = |w: &str| {
+                    let i: i64 = w.split('/').next()?.parse().ok()?;
+                    let at = if i < 0 { positions.len() as i64 + i } else { i - 1 };
+                    u32::try_from(at).ok().filter(|&a| (a as usize) < positions.len())
+                };
+                let Some(face) = words.map(corner).collect::<Option<Vec<u32>>>() else { continue };
+                for k in 1..face.len().saturating_sub(1) {
+                    indices.extend([face[0], face[k], face[k + 1]]);
+                }
+            }
+            _ => {}
+        }
+    }
+    (!indices.is_empty()).then(|| MeshData::new(positions).with_indices(Indices::U32(indices.into())))
+}
+
+/// Every `v x y z` line of an OBJ.
+fn vertex_lines(bytes: &[u8]) -> Vec<Vec3> {
+    bytes
+        .split(|&c| c == b'\n')
+        .filter_map(|line| {
+            let line = std::str::from_utf8(line).ok()?.trim().strip_prefix("v ")?;
+            let mut n = line.split_ascii_whitespace().map(str::parse::<f32>);
+            Some(Vec3::new(n.next()?.ok()?, n.next()?.ok()?, n.next()?.ok()?))
+        })
+        .collect()
+}
+
+/// UTF-16 text (by its byte-order mark) as UTF-8.
+fn from_utf16(bytes: &[u8]) -> Option<String> {
+    let units = |of: fn([u8; 2]) -> u16| {
+        let units: Vec<u16> = bytes[2..].as_chunks::<2>().0.iter().map(|c| of(*c)).collect();
+        Some(String::from_utf16_lossy(&units))
+    };
+    match bytes.get(..2)? {
+        [0xff, 0xfe] => units(u16::from_le_bytes),
+        [0xfe, 0xff] => units(u16::from_be_bytes),
+        _ => None,
+    }
 }
 
 /// The material's look as authored, as far as clay can show it: shading model and base

@@ -12,7 +12,7 @@
 //!     let mesh = builder.add_mesh(MeshData::new(positions)).map_err(|e| build::scene_error(&e))?;
 //!     builder.add_node(Node::mesh(mesh, None, Mat4::IDENTITY, None)).map_err(|e| build::scene_error(&e))?;
 //!     builder.finish();
-//!     build::SceneDocument::new(self, src, "OFF model", scene).build()
+//!     build::SceneDocument::new(self, src, "My model", scene).build()
 //! }
 //! ```
 
@@ -156,7 +156,10 @@ impl SceneDocument {
         let read = scene.read();
         let stats = Stats::of(&read);
         if stats.placed == 0 {
-            for status in [DependencyStatus::Blocked, DependencyStatus::Missing] {
+            // With a structure to show, only a file the user could unblock stops the open: a
+            // reference that's simply gone is listed under Dependencies instead.
+            let statuses: &[DependencyStatus] = if nothing_to_draw_ok { &[DependencyStatus::Blocked] } else { &[DependencyStatus::Blocked, DependencyStatus::Missing] };
+            for &status in statuses {
                 if let Some(reference) = deps.with_status(status).into_iter().next() {
                     let reason = if status == DependencyStatus::Blocked { Unreadable::Blocked } else { Unreadable::Missing };
                     return Err(ParseError::Unreadable { reference, reason });

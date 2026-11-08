@@ -259,6 +259,8 @@ impl Converter<'_, '_> {
             let world = if reset { root * local } else { parent * local };
             if ty == "Mesh" || geom::is_implicit_shape(ty) {
                 self.mesh(&prim, world);
+            } else if let Some(curves) = geom::curves(self.layer, &prim) {
+                self.curves(&prim, curves, world);
             }
             for child in self.layer.children(&prim).into_iter().rev() {
                 stack.push((child, world));
@@ -290,6 +292,28 @@ impl Converter<'_, '_> {
             key.push(material_key(self, m));
         }
         key
+    }
+
+    fn curves(&mut self, prim: &str, curves: geom::Curves, world: DMat4) {
+        let transform = Mat4::from_cols_array(&world.to_cols_array().map(|v| v as f32));
+        let transform = if transform.is_finite() { transform } else { Mat4::IDENTITY };
+        let n = curves.points.len();
+        let mut data = MeshData::new(curves.points.into_iter().map(Vec3::from).collect::<Vec<_>>());
+        if curves.segments.is_empty() {
+            data.topology = scene_data::Topology::Points;
+        } else {
+            data.topology = scene_data::Topology::Lines;
+            data = data.with_indices(scene_data::Indices::U32(curves.segments.into()));
+        }
+        if let Some([r, g, b]) = curves.color {
+            data.colors = Some(vec![scene_data::glam::Vec4::new(r, g, b, 1.0); n].into());
+        }
+        let material = geom::bound_material(self.layer, prim, true).and_then(|m| self.material(&m));
+        let added = self.b.add_mesh(data).and_then(|id| self.b.add_node(Node::mesh(id, material, transform, None)));
+        match added {
+            Ok(node) => self.origins.node(prim, node),
+            Err(e) => self.warnings.push(format!("{prim}: {e}")),
+        }
     }
 
     fn mesh(&mut self, prim: &str, world: DMat4) {

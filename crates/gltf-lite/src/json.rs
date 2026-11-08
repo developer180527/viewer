@@ -109,6 +109,7 @@ pub struct BufferView {
     pub byte_offset: usize,
     pub byte_length: usize,
     pub byte_stride: Option<usize>,
+    pub extensions: Map<String, Value>,
 }
 
 #[derive(Deserialize, Default)]
@@ -116,6 +117,7 @@ pub struct BufferView {
 pub struct Buffer {
     pub uri: Option<String>,
     pub byte_length: usize,
+    pub extensions: Map<String, Value>,
 }
 
 #[derive(Deserialize, Default)]

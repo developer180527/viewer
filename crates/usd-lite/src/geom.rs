@@ -473,6 +473,47 @@ mod tests {
     }
 }
 
+/// Line work and points, as a viewer can draw them.
+#[derive(Debug, Clone, PartialEq)]
+#[non_exhaustive]
+pub struct Curves {
+    pub points: Vec<[f32; 3]>,
+    /// Pairs of `points` indices, one pair per segment; empty for a `Points` prim.
+    pub segments: Vec<u32>,
+    pub color: Option<[f32; 3]>,
+}
+
+/// Reads a curve prim (`BasisCurves`, `NurbsCurves`, `HermiteCurves`), each curve as a
+/// line through its points (a cubic's control points aren't evaluated), or a `Points`
+/// prim. `None` when it's none of them or has no points.
+pub fn curves(layer: &Layer, prim: &str) -> Option<Curves> {
+    let ty = layer.type_name(prim)?;
+    if !matches!(ty, "BasisCurves" | "NurbsCurves" | "HermiteCurves" | "Points") {
+        return None;
+    }
+    let points = layer.attr(prim, "points")?.as_vec3_array()?.to_vec();
+    if points.is_empty() {
+        return None;
+    }
+    let mut segments = Vec::new();
+    if ty != "Points" {
+        let mut at = 0u32;
+        for &n in &layer.attr(prim, "curveVertexCounts")?.as_ints()? {
+            let n = u32::try_from(n).ok()?;
+            let end = at.checked_add(n)?;
+            if end as usize > points.len() {
+                return None;
+            }
+            for i in at..end.saturating_sub(1) {
+                segments.extend([i, i + 1]);
+            }
+            at = end;
+        }
+    }
+    let color = layer.attr(prim, "primvars:displayColor").and_then(|v| v.as_vec3_array()).and_then(|c| c.first().copied());
+    Some(Curves { points, segments, color })
+}
+
 /// Whether a prim type is one of UsdGeom's shapes defined by a few numbers, which
 /// [`mesh`] turns into polygons: `Sphere`, `Cube`, `Cylinder`, `Cone`, `Capsule`, `Plane`.
 pub fn is_implicit_shape(ty: &str) -> bool {
