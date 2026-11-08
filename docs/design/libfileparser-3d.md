@@ -20,7 +20,7 @@ Status: design agreed 2026-11-06. Built (2026-11-06): `crates/libfileparser-3d` 
 | **OBJ** | Scene ✅ | **Objects**: objects, groups, materials used ✅ | OBJ text, language `obj` (front door) | — | `.mtl` files, textures ✅ | Textures ✅ · Materials ✅ |
 | **STL** | Scene ✅ | — | ASCII STL as text (front door) | — | — | Solids, facet count ⬜ |
 | **PLY** | Scene ✅ | **Header**: elements and properties ✅ | ASCII PLY as text (front door) | — | — | Splat attributes, if any ⬜ |
-| **`.blend`** | Preview image ✅ (later Scene) | **Blocks**: datablocks by type ✅ | — | **Packed files** ✅ | Linked libraries, external images ⬜ | — |
+| **`.blend`** | Scene ✅ (meshes, objects, viewport colours, as saved: modifiers not applied), or the Preview image when there's no mesh | **Blocks**: datablocks by type ✅ | — | **Packed files** ✅ | Linked libraries, external images ⬜ | Preview ✅ |
 | Later: **STEP/IGES**, **3MF**, **LAS/LAZ**, **Gaussian splats**, **DAE** | Scene | Their own trees | STEP and DAE are text | 3MF is a zip | — | — |
 
 Every file also gets **Raw** (hex) from the front door. A **MTL** opened on its own is a Source (text, language `mtl`) with a Materials inspector.

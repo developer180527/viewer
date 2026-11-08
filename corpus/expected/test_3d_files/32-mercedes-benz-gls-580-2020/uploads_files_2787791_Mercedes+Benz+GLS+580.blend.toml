@@ -1,10 +1,23 @@
 loader = "blend"
 format = "Blender file"
-model = "Raster"
+model = "3D scene"
 
-[raster]
-size = "128x128"
+[scene]
+geometry = "Done"
+meshes = 19
+vertices = 295248
+elements = 1087890
+topologies = ["Triangles"]
+materials = 26
+nodes = 19
+textures = 0
+textures_decoded = []
+bounds = ["-16.187 -6.747 -16.187", "16.187 13.253 16.187"]
 
 [metadata]
+Meshes = "19"
+"Placed meshes" = "19"
+Triangles = "362630"
+Vertices = "295248"
+Materials = "26"
 "Saved by" = "Blender 2.83"
-Shown = "the preview image saved in the file; its 3D data isn't read yet"

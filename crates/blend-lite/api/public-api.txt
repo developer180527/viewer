@@ -1,0 +1,141 @@
+pub mod blend_lite
+#[non_exhaustive] pub enum blend_lite::Error
+pub blend_lite::Error::Inflate(alloc::string::String)
+pub blend_lite::Error::NotBlend
+pub blend_lite::Error::TooLarge
+pub blend_lite::Error::TooLarge::max: u64
+pub blend_lite::Error::TooLarge::value: u64
+pub blend_lite::Error::TooLarge::what: &'static str
+pub blend_lite::Error::Truncated
+impl core::clone::Clone for blend_lite::Error
+pub fn blend_lite::Error::clone(&self) -> blend_lite::Error
+impl core::cmp::Eq for blend_lite::Error
+impl core::cmp::PartialEq for blend_lite::Error
+pub fn blend_lite::Error::eq(&self, &blend_lite::Error) -> bool
+impl core::error::Error for blend_lite::Error
+impl core::fmt::Debug for blend_lite::Error
+pub fn blend_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for blend_lite::Error
+pub fn blend_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for blend_lite::Error
+#[non_exhaustive] pub struct blend_lite::Block
+pub blend_lite::Block::code: [u8; 4]
+pub blend_lite::Block::data: core::ops::range::Range<usize>
+pub blend_lite::Block::old: u64
+pub blend_lite::Block::sdna: usize
+impl core::clone::Clone for blend_lite::Block
+pub fn blend_lite::Block::clone(&self) -> blend_lite::Block
+impl core::fmt::Debug for blend_lite::Block
+pub fn blend_lite::Block::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub struct blend_lite::Dna
+impl blend_lite::Dna
+pub fn blend_lite::Dna::field(&self, usize, &str) -> core::option::Option<blend_lite::Field>
+pub fn blend_lite::Dna::is_id(&self, usize) -> bool
+pub fn blend_lite::Dna::struct_name(&self, usize) -> core::option::Option<&str>
+pub fn blend_lite::Dna::struct_size(&self, usize) -> core::option::Option<usize>
+pub struct blend_lite::Field
+pub blend_lite::Field::offset: usize
+pub blend_lite::Field::pointer: bool
+pub blend_lite::Field::size: usize
+pub blend_lite::Field::ty: usize
+impl core::clone::Clone for blend_lite::Field
+pub fn blend_lite::Field::clone(&self) -> blend_lite::Field
+impl core::fmt::Debug for blend_lite::Field
+pub fn blend_lite::Field::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for blend_lite::Field
+pub struct blend_lite::File<'a>
+pub blend_lite::File::blocks: alloc::vec::Vec<blend_lite::Block>
+pub blend_lite::File::dna: core::option::Option<blend_lite::Dna>
+pub blend_lite::File::dna_error: core::option::Option<alloc::string::String>
+pub blend_lite::File::header: blend_lite::Header
+impl<'a> blend_lite::File<'a>
+pub fn blend_lite::File<'a>::block_at(&self, usize, u64) -> core::option::Option<&blend_lite::Block>
+pub fn blend_lite::File<'a>::data(&self, &blend_lite::Block) -> &'a [u8]
+pub fn blend_lite::File<'a>::id_name(&self, &blend_lite::Block) -> core::option::Option<alloc::string::String>
+pub fn blend_lite::File<'a>::pointer(&self, &[u8], &blend_lite::Field) -> core::option::Option<u64>
+pub fn blend_lite::File<'a>::preview(&self) -> blend_lite::Result<core::option::Option<blend_lite::Preview>>
+pub fn blend_lite::File<'a>::read(&'a [u8], &blend_lite::Limits) -> blend_lite::Result<Self>
+#[non_exhaustive] pub struct blend_lite::Header
+pub blend_lite::Header::large_blocks: bool
+pub blend_lite::Header::len: usize
+pub blend_lite::Header::little: bool
+pub blend_lite::Header::pointer: usize
+pub blend_lite::Header::version: alloc::string::String
+impl blend_lite::Header
+pub fn blend_lite::Header::parse(&[u8]) -> core::option::Option<Self>
+pub fn blend_lite::Header::u32_at(&self, &[u8], usize) -> core::option::Option<u32>
+pub fn blend_lite::Header::u64_at(&self, &[u8], usize) -> core::option::Option<u64>
+impl core::clone::Clone for blend_lite::Header
+pub fn blend_lite::Header::clone(&self) -> blend_lite::Header
+impl core::fmt::Debug for blend_lite::Header
+pub fn blend_lite::Header::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct blend_lite::Limits
+pub blend_lite::Limits::blocks: u64
+pub blend_lite::Limits::inflated: u64
+pub blend_lite::Limits::preview_pixels: u64
+pub blend_lite::Limits::unpack_always: u64
+pub blend_lite::Limits::unpack_ratio: u64
+impl blend_lite::Limits
+pub fn blend_lite::Limits::with_blocks(self, u64) -> Self
+pub fn blend_lite::Limits::with_inflated(self, u64) -> Self
+pub fn blend_lite::Limits::with_preview_pixels(self, u64) -> Self
+pub fn blend_lite::Limits::with_unpack(self, u64, u64) -> Self
+impl core::clone::Clone for blend_lite::Limits
+pub fn blend_lite::Limits::clone(&self) -> blend_lite::Limits
+impl core::default::Default for blend_lite::Limits
+pub fn blend_lite::Limits::default() -> Self
+impl core::fmt::Debug for blend_lite::Limits
+pub fn blend_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for blend_lite::Limits
+#[non_exhaustive] pub struct blend_lite::Material
+pub blend_lite::Material::color: [f32; 3]
+pub blend_lite::Material::name: alloc::string::String
+impl core::clone::Clone for blend_lite::Material
+pub fn blend_lite::Material::clone(&self) -> blend_lite::Material
+impl core::fmt::Debug for blend_lite::Material
+pub fn blend_lite::Material::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct blend_lite::Mesh
+pub blend_lite::Mesh::corners: alloc::vec::Vec<u32>
+pub blend_lite::Mesh::face_sizes: alloc::vec::Vec<u32>
+pub blend_lite::Mesh::face_slots: alloc::vec::Vec<u16>
+pub blend_lite::Mesh::name: alloc::string::String
+pub blend_lite::Mesh::positions: alloc::vec::Vec<[f32; 3]>
+pub blend_lite::Mesh::slots: alloc::vec::Vec<core::option::Option<usize>>
+impl core::default::Default for blend_lite::Mesh
+pub fn blend_lite::Mesh::default() -> blend_lite::Mesh
+impl core::fmt::Debug for blend_lite::Mesh
+pub fn blend_lite::Mesh::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct blend_lite::Object
+pub blend_lite::Object::matrix: [f32; 16]
+pub blend_lite::Object::mesh: usize
+pub blend_lite::Object::name: alloc::string::String
+impl core::clone::Clone for blend_lite::Object
+pub fn blend_lite::Object::clone(&self) -> blend_lite::Object
+impl core::fmt::Debug for blend_lite::Object
+pub fn blend_lite::Object::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+#[non_exhaustive] pub struct blend_lite::Preview
+pub blend_lite::Preview::height: u32
+pub blend_lite::Preview::rgba: alloc::vec::Vec<u8>
+pub blend_lite::Preview::width: u32
+impl core::clone::Clone for blend_lite::Preview
+pub fn blend_lite::Preview::clone(&self) -> blend_lite::Preview
+impl core::cmp::Eq for blend_lite::Preview
+impl core::cmp::PartialEq for blend_lite::Preview
+pub fn blend_lite::Preview::eq(&self, &blend_lite::Preview) -> bool
+impl core::fmt::Debug for blend_lite::Preview
+pub fn blend_lite::Preview::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for blend_lite::Preview
+#[non_exhaustive] pub struct blend_lite::Scene
+pub blend_lite::Scene::materials: alloc::vec::Vec<blend_lite::Material>
+pub blend_lite::Scene::meshes: alloc::vec::Vec<blend_lite::Mesh>
+pub blend_lite::Scene::objects: alloc::vec::Vec<blend_lite::Object>
+pub blend_lite::Scene::warnings: alloc::vec::Vec<alloc::string::String>
+impl core::default::Default for blend_lite::Scene
+pub fn blend_lite::Scene::default() -> blend_lite::Scene
+impl core::fmt::Debug for blend_lite::Scene
+pub fn blend_lite::Scene::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+pub fn blend_lite::inflate(&[u8], &blend_lite::Limits) -> blend_lite::Result<core::option::Option<alloc::vec::Vec<u8>>>
+pub fn blend_lite::is_compressed(&[u8]) -> bool
+pub fn blend_lite::scene(&blend_lite::File<'_>) -> blend_lite::Scene
+pub fn blend_lite::text(&[u8], &blend_lite::Field) -> core::option::Option<alloc::string::String>
+pub type blend_lite::Result<T> = core::result::Result<T, blend_lite::Error>

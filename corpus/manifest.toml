@@ -621,6 +621,15 @@ path = "corpus/files/3d/tri-binary.fbx"
 [[file]]
 path = "corpus/files/3d/preview.blend"
 
+# Draco-compressed glTF: the Box from Khronos's glTF-Sample-Models (Cesium, CC-BY 4.0).
+[[file]]
+path = "corpus/files/3d/draco-box/Box.gltf"
+
+# Blender 5.2, whose attribute storage and addresses differ from every version before:
+# from lukebitts/blend (MIT).
+[[file]]
+path = "corpus/files/3d/blender-5.2.blend"
+
 [[file]]
 path = "corpus/files/3d/packed.blend"
 

@@ -58,3 +58,11 @@ A failing render leaves what was drawn and a diff in `target/tmp/corpus/`.
 3. Run with `UPDATE_CORPUS=1`, and check the new summary is right before committing it.
 
 `every_loader_has_a_corpus_file` fails while a loader opens no committed corpus file. `LOCAL_ONLY` in `crates/corpus/tests/corpus.rs` lists the loaders that so far have only optional files.
+
+## Real-world 3D
+
+`fetch-real-3d.sh` works the same way but keeps each repository's folders, since a model finds its buffers and textures by relative path. `real-3d/` (about 1.5 GB, ignored by git) holds Khronos's glTF samples, the USD Working Group's assets, Pixar's OpenUSD examples, Assimp's and ufbx's test models, the Blender glTF exporter's test scenes and more. An opt-in test goes beyond "did it open": it counts models that opened with nothing to draw, with broken bounds, with files they couldn't find, or under another reader, and says why:
+
+```bash
+LFP_REAL_3D=$PWD/corpus/real-3d cargo test --release -p libfileparser --features docs-mupdf --test real_3d -- --ignored --nocapture
+```

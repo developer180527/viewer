@@ -1,0 +1,12 @@
+[package]
+name = "blend-lite"
+description = "Reads Blender's .blend files of every version: blocks through the file's own SDNA, the preview image, and meshes, objects and materials."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+# Blender compresses saves with gzip (before 3.0) or multi-frame zstd. Both pure Rust.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+ruzstd = "0.8"

@@ -13,6 +13,7 @@ anyhow.workspace = true
 scene-data.workspace = true
 gltf-lite.workspace = true
 usd-lite.workspace = true
+blend-lite.workspace = true
 # The glTF facet's tree, keys in the file's order.
 serde_json = { version = "1", features = ["preserve_order"] }
 # Official bindings to ufbx, a single-file C loader for FBX (and OBJ/MTL).

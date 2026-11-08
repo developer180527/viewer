@@ -200,10 +200,10 @@ pub struct Loaded {
 }
 
 /// Extensions that change what the data means and can't be skipped.
-const FATAL_EXTENSIONS: &[&str] = &["KHR_draco_mesh_compression", "EXT_meshopt_compression"];
+const FATAL_EXTENSIONS: &[&str] = &["EXT_meshopt_compression"];
 /// Extensions read here (or harmless to ignore when required).
 const KNOWN_EXTENSIONS: &[&str] =
-    &["KHR_materials_unlit", "KHR_mesh_quantization", "KHR_texture_basisu", "EXT_texture_webp", "EXT_texture_avif", "VRMC_materials_mtoon", "VRM"];
+    &["KHR_draco_mesh_compression", "KHR_materials_unlit", "KHR_mesh_quantization", "KHR_texture_basisu", "EXT_texture_webp", "EXT_texture_avif", "VRMC_materials_mtoon", "VRM"];
 
 /// Parses `file` into `builder` and finishes its geometry. `file` is kept alive by the
 /// scene for as long as borrowed streams point into it.
@@ -532,16 +532,22 @@ impl<'a> Loader<'a> {
         if let Some(ext) = FATAL_EXTENSIONS.iter().find(|e| prim.extensions.contains_key(**e)) {
             return Err(Error::Unsupported(ext.to_string()));
         }
-        let attr = |name: &str| prim.attributes.get(name).copied();
-        let position = attr("POSITION").ok_or_else(|| Error::Format("no POSITION".into()))?;
-        let mut mesh = MeshData::new(self.reader.vec3(position)?);
-        mesh.normals = attr("NORMAL").map(|a| self.reader.vec3(a)).transpose()?;
-        mesh.uvs = attr("TEXCOORD_0").map(|a| self.reader.vec2(a)).transpose()?;
-        mesh.tangents = attr("TANGENT").map(|a| self.reader.vec4(a, 1.0)).transpose()?;
-        mesh.colors = attr("COLOR_0").map(|a| self.reader.vec4(a, 1.0)).transpose()?;
-        if let Some(i) = prim.indices {
-            mesh.indices = self.reader.indices(i)?;
-        }
+        let mut mesh = match prim.extensions.get("KHR_draco_mesh_compression") {
+            Some(draco) => self.draco(prim, draco)?,
+            None => {
+                let attr = |name: &str| prim.attributes.get(name).copied();
+                let position = attr("POSITION").ok_or_else(|| Error::Format("no POSITION".into()))?;
+                let mut mesh = MeshData::new(self.reader.vec3(position)?);
+                mesh.normals = attr("NORMAL").map(|a| self.reader.vec3(a)).transpose()?;
+                mesh.uvs = attr("TEXCOORD_0").map(|a| self.reader.vec2(a)).transpose()?;
+                mesh.tangents = attr("TANGENT").map(|a| self.reader.vec4(a, 1.0)).transpose()?;
+                mesh.colors = attr("COLOR_0").map(|a| self.reader.vec4(a, 1.0)).transpose()?;
+                if let Some(i) = prim.indices {
+                    mesh.indices = self.reader.indices(i)?;
+                }
+                mesh
+            }
+        };
         let (topology, convert): (Topology, Option<Convert>) = match prim.mode.unwrap_or(4) {
             0 => (Topology::Points, None),
             1 => (Topology::Lines, None),
@@ -564,6 +570,50 @@ impl<'a> Loader<'a> {
         let id = self.builder.add_mesh(mesh)?;
         let material = prim.material.and_then(|m| self.material(m));
         Ok((id, material))
+    }
+
+    /// A primitive compressed with Draco: its attributes and indices are in one Draco
+    /// stream, each glTF attribute naming its Draco attribute by id.
+    fn draco(&self, prim: &json::Primitive, ext: &serde_json::Value) -> Result<MeshData, Error> {
+        let bad = |what: &str| Error::Format(format!("KHR_draco_mesh_compression: {what}"));
+        let view = ext.get("bufferView").and_then(|v| v.as_u64()).ok_or_else(|| bad("no bufferView"))? as usize;
+        let ids = ext.get("attributes").ok_or_else(|| bad("no attributes"))?;
+        let bytes = self.reader.view_bytes(view)?;
+        let (mut stream, mut decoded) = (draco_core::DecoderBuffer::new(bytes.as_slice()), draco_core::Mesh::new());
+        draco_core::MeshDecoder::new().decode(&mut stream, &mut decoded).map_err(|e| bad(&format!("{e:?}")))?;
+        let points = decoded.num_points();
+        let read = |name: &str, components: usize| -> Option<Vec<f32>> {
+            let id = ids.get(name)?.as_u64()?;
+            let a = decoded.attribute_by_unique_id(u32::try_from(id).ok()?)?;
+            let mut values = a.read_f32s(points, components);
+            let accessor = prim.attributes.get(name).and_then(|&i| self.root().accessors.get(i));
+            if a.normalized() || accessor.is_some_and(|x| x.normalized) {
+                use draco_core::draco_types::DataType as T;
+                let scale = match a.data_type() {
+                    T::Int8 => 127.0,
+                    T::Uint8 => 255.0,
+                    T::Int16 => 32767.0,
+                    T::Uint16 => 65535.0,
+                    _ => 1.0,
+                };
+                values.iter_mut().for_each(|v| *v /= scale);
+            }
+            // A three-component colour is opaque.
+            if components == 4 && a.num_components() == 3 {
+                values.as_chunks_mut::<4>().0.iter_mut().for_each(|c| c[3] = 1.0);
+            }
+            Some(values)
+        };
+        let vec3 = |v: Vec<f32>| v.as_chunks::<3>().0.iter().copied().map(Vec3::from_array).collect::<Vec<_>>();
+        let vec4 = |v: Vec<f32>| v.as_chunks::<4>().0.iter().copied().map(scene_data::glam::Vec4::from_array).collect::<Vec<_>>();
+        let mut mesh = MeshData::new(Stream::from(vec3(read("POSITION", 3).ok_or_else(|| bad("no POSITION"))?)));
+        mesh.normals = read("NORMAL", 3).map(|v| vec3(v).into());
+        mesh.uvs = read("TEXCOORD_0", 2).map(|v| v.as_chunks::<2>().0.iter().copied().map(scene_data::glam::Vec2::from_array).collect::<Vec<_>>().into());
+        mesh.tangents = read("TANGENT", 4).map(|v| vec4(v).into());
+        mesh.colors = read("COLOR_0", 4).map(|v| vec4(v).into());
+        let indices: Vec<u32> = decoded.faces().iter().flat_map(|f| f.iter().map(|i| i.0)).collect();
+        mesh.indices = scene_data::Indices::U32(indices.into());
+        Ok(mesh)
     }
 
     fn material(&mut self, index: usize) -> Option<MaterialId> {

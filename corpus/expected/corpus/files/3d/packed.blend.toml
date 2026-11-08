@@ -7,5 +7,5 @@ size = "4x4"
 
 [metadata]
 "Saved by" = "Blender 4.5"
-Shown = "the preview image saved in the file; its 3D data isn't read yet"
+Shown = "the preview image saved in the file: it has no mesh to draw"
 "Packed files" = "1"

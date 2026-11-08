@@ -39,5 +39,7 @@ fetch assimp/assimp '/test/models/' '/test/models-nonbsd/'
 fetch ufbx/ufbx '/data/'
 fetch tinyobjloader/tinyobjloader '/models/'
 fetch alecjacobson/common-3d-test-models '/data/'
+fetch KhronosGroup/glTF-Blender-IO '/tests/scenes/**/*.blend'
+fetch lukebitts/blend '/examples/blend_files/'
 fetch mrdoob/three.js '/examples/models/fbx/' '/examples/models/obj/' '/examples/models/stl/' '/examples/models/ply/' '/examples/models/usdz/'
 du -sh real-3d

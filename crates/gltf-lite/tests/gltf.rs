@@ -209,9 +209,9 @@ fn hostile_files_fail_cleanly_or_load_what_they_can() {
     assert!(loaded.warnings.iter().any(|w| w.contains("sparse indices")), "{:?}", loaded.warnings);
 
     // Compressed geometry can't be read: refused up front.
-    let draco = text(json!({"asset": {"version": "2.0"}, "extensionsRequired": ["KHR_draco_mesh_compression"]}));
+    let draco = text(json!({"asset": {"version": "2.0"}, "extensionsRequired": ["EXT_meshopt_compression"]}));
     let (_s, mut b) = CpuScene::new();
-    assert_eq!(load(draco, &NoResolver, &mut b).err(), Some(Error::Unsupported("KHR_draco_mesh_compression".into())));
+    assert_eq!(load(draco, &NoResolver, &mut b).err(), Some(Error::Unsupported("EXT_meshopt_compression".into())));
 
     // Truncated GLB and garbage.
     let (_s, mut b) = CpuScene::new();

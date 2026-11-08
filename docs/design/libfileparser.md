@@ -372,8 +372,8 @@ Format libraries follow §5's rules too, and keep their own extension points: gl
 
 1. **Mature, popular libraries first,** measured on the real-world corpus (corpus/README.md) before one is adopted: how many files it opens, and whether it ever panics or hangs. Today: pulldown-cmark, html5ever (through scraper), rbook, orgize.
 2. **Licence counts only where it constrains.** GPL and AGPL are allowed behind an opt-in feature, like MuPDF, never in a default build.
-3. **We write a parser only when no library does the job** or the measurements say ours opens more. `docx-lite` opened 263 of 279 files against docx-rust's 254; `rtf-lite` 17 of 18 against rtf-parser's 16, which also panicked; no Rust library reads ODT. Fixes found on the way go upstream ([upstream-issues.md](../upstream-issues.md)).
-4. **A parser we write is its own embeddable crate** (a format library, as above): `usd-lite`, `rtf-lite`, `docx-lite`, `odt-lite`. No libfileparser types in it; the category's reader only adapts it.
+3. **We write a parser only when no library does the job** or the measurements say ours opens more. `docx-lite` opened 263 of 279 files against docx-rust's 254; `rtf-lite` 17 of 18 against rtf-parser's 16, which also panicked; no Rust library reads ODT; the `blend` crate panicked on 29 of 208 real `.blend` files. Fixes found on the way go upstream ([upstream-issues.md](../upstream-issues.md)).
+4. **A parser we write is its own embeddable crate** (a format library, as above): `usd-lite`, `blend-lite`, `rtf-lite`, `docx-lite`, `odt-lite`. No libfileparser types in it; the category's reader only adapts it.
 5. **A newly found or invented format is added as above:** one `Reader` and one line in `readers()`, or from outside the crate with `Library::reader` and `replace`. That is how a category keeps its promise of opening any file of its kind.
 
 ### Other extension points
