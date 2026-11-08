@@ -1,0 +1,3 @@
+//! Every reader of `libfileparser-docs`: the first byte picks one, the rest is the file.
+#![no_main]
+libfuzzer_sys::fuzz_target!(|data: &[u8]| viewer_fuzz::category(libfileparser_docs::readers(), data));

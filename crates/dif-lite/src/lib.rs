@@ -107,4 +107,14 @@ mod tests {
         ]);
         assert_eq!(read(b"x", 9), Err(Error::NotDif));
     }
+
+    #[test]
+    fn booleans_and_the_end_of_data() {
+        // TRUE and FALSE; then EOD, after which nothing is a cell.
+        let f = "TABLE\n0,1\n\"\"\nDATA\n0,0\n\"\"\n-1,0\nBOT\n0,1\nTRUE\n0,0\nFALSE\n-1,0\nEOD\n1,0\n\"after\"\n";
+        let c = read(f.as_bytes(), 9).unwrap();
+        assert_eq!(c, vec![Cell { row: 0, col: 0, value: Value::Bool(true) }, Cell { row: 0, col: 1, value: Value::Bool(false) }]);
+        assert_eq!(Error::NotDif.to_string(), "not a DIF file");
+        assert_eq!(Error::TooManyCells(3).to_string(), "more than 3 cells");
+    }
 }

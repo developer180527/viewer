@@ -30,11 +30,11 @@ Every open runs on its own thread with a time limit, so a hang fails the test in
 
 ## Real-world files
 
-`fetch-real.sh` clones public test suites one at a time into a throwaway folder (latest commit only, only the test folders), sorts their files into `real/`, and deletes the clone; it clones (toml-test, JSONTestSuite, the W3C RDF tests, htslib, pydot, kdl, hcl, x12-parser, pydifact, ofxparse, mt940, Arelle; for documents GitHub's markup tests, py-pdf's sample files, python-docx, Apache POI, odfpy, EPUBCheck; and more: about 4,000 files, ~50 MB) into `real/`, sorted by the reader each file should open with; `<reader>-invalid/` holds test suites' negative cases, which must fail or fall back cleanly. They're kept out of git (each has its own licence) and checked by an opt-in test that fails on any crash or hang and reports, per folder, what opened as what:
+`fetch-real.sh` clones public test suites one at a time into a throwaway folder (latest commit only, only the test folders), sorts their files into `real/`, and deletes the clone; it clones (toml-test, JSONTestSuite, the W3C RDF tests, htslib, pydot, kdl, hcl, x12-parser, pydifact, ofxparse, mt940, Arelle; for documents GitHub's markup tests, py-pdf's sample files, python-docx, Apache POI, odfpy, EPUBCheck; and more: about 4,000 files, ~230 MB) into `real/<category>/<reader>/` (`data/`, `docs/`, `sheets/`), by the reader each file should open with; `real/README.md` (written by `index-real.py`) lists every folder and where its files came from; `<reader>-invalid/` holds test suites' negative cases, which must fail or fall back cleanly. They're kept out of git (each has its own licence) and checked by an opt-in test that fails on any crash or hang and reports, per folder, what opened as what:
 
 ```bash
 corpus/fetch-real.sh
-LFP_REAL_CORPUS=corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
+LFP_REAL_CORPUS=$PWD/corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
 ```
 
 ## Fuzzing
@@ -61,8 +61,8 @@ A failing render leaves what was drawn and a diff in `target/tmp/corpus/`.
 
 ## Real-world 3D
 
-`fetch-real-3d.sh` works the same way but keeps each repository's folders, since a model finds its buffers and textures by relative path. `real-3d/` (about 1.5 GB, ignored by git) holds Khronos's glTF samples, the USD Working Group's assets, Pixar's OpenUSD examples, Assimp's and ufbx's test models, the Blender glTF exporter's test scenes and more. An opt-in test goes beyond "did it open": it counts models that opened with nothing to draw, with broken bounds, with files they couldn't find, or under another reader, and says why:
+`fetch-real-3d.sh` works the same way but keeps each repository's folders, since a model finds its buffers and textures by relative path. `real/3d/` (about 1.5 GB, ignored by git) holds Khronos's glTF samples, the USD Working Group's assets, Pixar's OpenUSD examples, Assimp's and ufbx's test models, the Blender glTF exporter's test scenes and more. An opt-in test goes beyond "did it open": it counts models that opened with nothing to draw, with broken bounds, with files they couldn't find, or under another reader, and says why:
 
 ```bash
-LFP_REAL_3D=$PWD/corpus/real-3d cargo test --release -p libfileparser --features docs-mupdf --test real_3d -- --ignored --nocapture
+LFP_REAL_3D=$PWD/corpus/real/3d cargo test --release -p libfileparser --features docs-mupdf --test real_3d -- --ignored --nocapture
 ```

@@ -5,7 +5,7 @@
 //! find. A panic or hang fails the test; `LFP_REAL_3D_OUT` writes one line per file.
 //!
 //! ```text
-//! LFP_REAL_3D=$PWD/corpus/real-3d cargo test --release -p libfileparser --features docs-mupdf --test real_3d -- --ignored --nocapture
+//! LFP_REAL_3D=$PWD/corpus/real/3d cargo test --release -p libfileparser --features docs-mupdf --test real_3d -- --ignored --nocapture
 //! ```
 
 use std::collections::BTreeMap;

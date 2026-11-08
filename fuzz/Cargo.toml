@@ -1,0 +1,118 @@
+# Coverage-guided fuzzing (cargo-fuzz, libFuzzer) of every parser we own. Outside the
+# workspace: it needs nightly and builds with sanitizer flags. scripts/soak.sh runs it.
+#
+#   cargo +nightly fuzz run data -- -max_total_time=60
+[package]
+name = "viewer-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+libfileparser-core = { path = "../crates/libfileparser-core", features = ["scene"] }
+libfileparser-testkit = { path = "../crates/libfileparser-testkit" }
+libfileparser-data = { path = "../crates/libfileparser-data" }
+libfileparser-sheets = { path = "../crates/libfileparser-sheets" }
+libfileparser-docs = { path = "../crates/libfileparser-docs" }
+libfileparser-3d = { path = "../crates/libfileparser-3d" }
+libfileparser-text = { path = "../crates/libfileparser-text" }
+libfileparser-archives = { path = "../crates/libfileparser-archives" }
+libfileparser-images = { path = "../crates/libfileparser-images" }
+usd-lite = { path = "../crates/usd-lite" }
+gltf-lite = { path = "../crates/gltf-lite" }
+scene-data = { path = "../crates/scene-data" }
+rtf-lite = { path = "../crates/rtf-lite", features = ["encodings"] }
+ods-lite = { path = "../crates/ods-lite" }
+
+# Not part of the app's workspace.
+[workspace]
+
+[profile.release]
+debug = 1
+
+[[bin]]
+name = "seed"
+path = "src/bin/seed.rs"
+test = false
+doc = false
+
+[[bin]]
+name = "data"
+path = "fuzz_targets/data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "sheets"
+path = "fuzz_targets/sheets.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "docs"
+path = "fuzz_targets/docs.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "threed"
+path = "fuzz_targets/threed.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "text"
+path = "fuzz_targets/text.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "archives"
+path = "fuzz_targets/archives.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "images"
+path = "fuzz_targets/images.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "rtf"
+path = "fuzz_targets/rtf.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "ods_flat"
+path = "fuzz_targets/ods_flat.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "usd"
+path = "fuzz_targets/usd.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "gltf"
+path = "fuzz_targets/gltf.rs"
+test = false
+doc = false
+bench = false

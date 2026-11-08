@@ -23,17 +23,44 @@ pub fn zip_size(bytes: &Shared, limits: &Limits) -> Result<()> {
     limits.check_unpack(packed, total)
 }
 
-/// How many cells calamine may lay out for one workbook: its cell is 32 bytes.
+/// Bytes calamine holds per cell it lays out or reserves: a value is 32, a value with
+/// its position 40.
+const CELL: u64 = 40;
+
+/// How many cells calamine may lay out for one workbook.
 fn budget(limits: &Limits) -> u64 {
-    limits.allocation / 32
+    limits.allocation / CELL
 }
 
 fn check(total: u64, limits: &Limits) -> Result<()> {
     let max = budget(limits);
     if total > max {
-        return Err(ParseError::too_large(Limit::Allocation, total.saturating_mul(32), max.saturating_mul(32)));
+        return Err(ParseError::too_large(Limit::Allocation, total.saturating_mul(CELL), max.saturating_mul(CELL)));
     }
     Ok(())
+}
+
+/// The cells a Dimensions record (MS-XLS 2.4.90) makes calamine reserve, read as
+/// calamine reads it; `None` when its last row comes before its first, which calamine
+/// subtracts without checking (a panic, or in a release build a reservation of
+/// billions).
+fn dimensions(r: &[u8]) -> Option<u64> {
+    let u16_at = |o: usize| u16::from_le_bytes([r[o], r[o + 1]]) as u32;
+    let u32_at = |o: usize| u32::from_le_bytes([r[o], r[o + 1], r[o + 2], r[o + 3]]);
+    let (rf, rl, mut cf, cl) = match r.len() {
+        10 => (u16_at(0), u16_at(2), u16_at(4), u16_at(6)),
+        14 | 16 => (u32_at(0), u32_at(4), u16_at(8), u16_at(10)),
+        _ => return Some(0),
+    };
+    if 0xff < cf || cl < cf {
+        cf = 0;
+    }
+    if rl == 0 || cl == 0 {
+        return Some(1);
+    }
+    let rows = (rl - 1).checked_sub(rf)? as u64 + 1;
+    let cols = (cl - 1).checked_sub(cf)? as u64 + 1;
+    Some(rows * cols)
 }
 
 /// Whether every sector chain of a compound file ends. calamine follows a chain until
@@ -120,7 +147,9 @@ pub fn xls_extent(bytes: &Shared, limits: &Limits) -> Result<()> {
     if !chains_end(bytes.as_ref()) {
         return Err(ParseError::corrupt("a chain of sectors in the workbook loops back on itself"));
     }
-    let Ok(mut file) = cfb::CompoundFile::open(Cursor::new(bytes.clone())) else { return Ok(()) };
+    // A file the guard can't open can't be measured, and calamine's own reader is more
+    // lenient: so it isn't handed over.
+    let Ok(mut file) = cfb::CompoundFile::open(Cursor::new(bytes.clone())) else { return Err(ParseError::corrupt("the workbook's compound file is damaged")) };
     let mut stream = Vec::new();
     let mut read = false;
     for name in ["/Workbook", "/Book"] {
@@ -133,7 +162,7 @@ pub fn xls_extent(bytes: &Shared, limits: &Limits) -> Result<()> {
         }
     }
     if !read {
-        return Ok(());
+        return Err(ParseError::corrupt("the workbook has no stream it can read"));
     }
     // Rows and columns seen in the sheet being walked, and the total so far.
     let (mut rows, mut cols, mut seen, mut total) = ((u16::MAX, 0u16), (u16::MAX, 0u16), false, 0u64);
@@ -143,6 +172,11 @@ pub fn xls_extent(bytes: &Shared, limits: &Limits) -> Result<()> {
         let Some(body) = stream.get(at + 4..at + 4 + len) else { break };
         let u16_at = |o: usize| body.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
         match id {
+            // Dimensions: calamine reserves what it claims, cells or no cells.
+            0x0200 => match dimensions(body) {
+                Some(n) => check(total.saturating_add(n), limits)?,
+                None => return Err(ParseError::corrupt("a sheet's dimensions end before they start")),
+            },
             // BOF and EOF of a substream.
             0x0809 | 0x000a if seen => {
                 total = total.saturating_add(((rows.1 - rows.0) as u64 + 1) * ((cols.1 - cols.0) as u64 + 1));
@@ -183,5 +217,18 @@ mod tests {
         assert!(!acyclic(&[END, 1]));
         assert!(!acyclic(&[2, END, 3, 2]));
         assert!(acyclic(&[]));
+    }
+
+    #[test]
+    fn dimensions_are_read_as_calamine_reads_them() {
+        let biff8 = |rf: u32, rl: u32, cf: u16, cl: u16| [&rf.to_le_bytes()[..], &rl.to_le_bytes(), &cf.to_le_bytes(), &cl.to_le_bytes(), &[0, 0]].concat();
+        assert_eq!(dimensions(&biff8(0, 10, 0, 4)), Some(40));
+        // A million rows by 16,384 columns: what a small file can claim.
+        assert_eq!(dimensions(&biff8(0, 1 << 20, 0, 1 << 14)), Some(1 << 34));
+        // Columns past 255 start at the first, as calamine has them.
+        assert_eq!(dimensions(&biff8(0, 1, 300, 302)), Some(302));
+        assert_eq!(dimensions(&biff8(5, 2, 0, 1)), None);
+        assert_eq!(dimensions(&biff8(0, 0, 0, 0)), Some(1));
+        assert_eq!(dimensions(&[0; 3]), Some(0));
     }
 }

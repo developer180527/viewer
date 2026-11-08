@@ -170,6 +170,28 @@ struct Site {
     dst: String,
 }
 
+/// The sites that composed a prim and each of its ancestors, innermost first: an arc
+/// to one of them is a cycle (Pcp's "arc cycle"). A prim whose payload names the file's
+/// own default prim would otherwise nest the whole file inside itself, level after
+/// level, until the prim budget ran out, with paths growing all the way.
+struct Ancestry {
+    sites: Vec<(usize, String)>,
+    up: Option<std::rc::Rc<Ancestry>>,
+}
+
+impl Ancestry {
+    fn has(this: &Option<std::rc::Rc<Ancestry>>, stack: usize, path: &str) -> bool {
+        let mut at = this.as_deref();
+        while let Some(a) = at {
+            if a.sites.iter().any(|(s, p)| *s == stack && p == path) {
+                return true;
+            }
+            at = a.up.as_deref();
+        }
+        false
+    }
+}
+
 /// Fields that describe composition: consumed here, not copied out.
 const ARC_FIELDS: &[&str] = &["references", "payload", "inheritPaths", "specializes", "variantSetNames", "variantSelection", "primChildren", "properties", "subLayers", "subLayerOffsets"];
 
@@ -479,19 +501,25 @@ impl Composer<'_> {
         fields.push(("primChildren".into(), Value::TokenArray(children.clone())));
         self.out.specs.insert("/".into(), Spec { spec_type: SpecType::PseudoRoot, fields });
         // Depth-first over the composed tree, without recursion.
-        let mut work: Vec<(String, Vec<Site>)> =
-            children.into_iter().rev().map(|n| (child_path("/", &n), vec![child_site(&root, &n)])).collect();
-        while let Some((path, base)) = work.pop() {
+        let mut work: Vec<(String, Vec<Site>, Option<std::rc::Rc<Ancestry>>)> =
+            children.into_iter().rev().map(|n| (child_path("/", &n), vec![child_site(&root, &n)], None)).collect();
+        while let Some((path, base, ancestry)) = work.pop() {
             self.prims += 1;
             if self.prims > self.limits.max_prims {
                 self.warn(format!("more than {} prims; the rest are skipped", self.limits.max_prims));
                 return;
             }
-            let sites = self.prim_sites(base, &path);
+            let mut sites = self.prim_sites(base, &path);
+            let before = sites.len();
+            sites.retain(|s| !Ancestry::has(&ancestry, s.stack, &s.path));
+            if sites.len() < before {
+                self.warn(format!("{path}: an arc brings in one of its own ancestors (a cycle); not followed"));
+            }
             let Some(children) = self.emit_prim(&path, &sites) else { continue };
+            let ancestry = Some(std::rc::Rc::new(Ancestry { sites: sites.iter().map(|s| (s.stack, s.path.clone())).collect(), up: ancestry }));
             for name in children.into_iter().rev() {
                 let base = sites.iter().map(|s| child_site(s, &name)).collect();
-                work.push((child_path(&path, &name), base));
+                work.push((child_path(&path, &name), base, ancestry.clone()));
             }
         }
     }

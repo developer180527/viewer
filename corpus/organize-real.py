@@ -1,5 +1,6 @@
-"""Sorts one clone's real-world test files (corpus/fetch-real.sh) into folders named by
-the reader each should open with; `<reader>-invalid/` for test suites' negative cases.
+"""Sorts one clone's real-world test files (corpus/fetch-real.sh) into
+`<out>/<category>/<reader>/`, the reader each should open with; `<reader>-invalid/` for
+test suites' negative cases.
 
     organize-real.py <clone> <out>     (adds to <out>; the clone is then deleted)
 """
@@ -19,6 +20,10 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
           # Spreadsheets.
           "xlsx": "xlsx", "xlsm": "xlsx", "xltx": "xlsx", "xltm": "xlsx", "xlam": "xlsx", "xlsb": "xlsb",
           "xls": "xls", "xla": "xls", "xlt": "xls", "ods": "ods", "ots": "ods", "fods": "fods", "slk": "sylk", "dif": "dif"}
+# Category folders, as corpus/real is laid out: data/, docs/, sheets/ (3d/ is
+# fetch-real-3d.sh's).
+DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odt", "org", "pdf", "pptx", "rst", "rtf", "textile", "xps", "comic"}
+SHEETS = {"dif", "fods", "ods", "sylk", "xls", "xlsb", "xlsx"}
 counts = {}
 for repo in [os.path.basename(clone)]:
     root = clone
@@ -46,7 +51,8 @@ for repo in [os.path.basename(clone)]:
             invalid = ("/invalid/" in "/" + rel + "/" or (repo.startswith("nst_") and f.startswith("n_"))
                        or ("-bad-" in name) or (reader == "rdfxml" and "error" in name) or "fail" in rel.lower())
             folder = reader + ("-invalid" if invalid else "")
-            dst = os.path.join(out, folder, (repo.split("_", 1)[1] + "__" + rel.replace("/", "__"))[-150:])
+            category = "docs" if reader in DOCS else "sheets" if reader in SHEETS else "data"
+            dst = os.path.join(out, category, folder, (repo.split("_", 1)[1] + "__" + rel.replace("/", "__"))[-150:])
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(path, dst)
             counts[folder] = counts.get(folder, 0) + 1

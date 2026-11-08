@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use libfileparser_core::{Cell, Content, Document, FileSource, Limit, OwnedTable, ParseContext, ParseError, Result, Role, ValueKind};
+use libfileparser_core::{Cell, Content, Document, FileSource, Limit, OwnedTable, ParseContext, ParseError, Position, Result, Role, ValueKind};
 
 use crate::json::{self, Dialect};
 use crate::lines::{self, Line, LineTable, RowLines, columns, text};
@@ -162,6 +162,11 @@ pub(crate) fn mo(src: &FileSource, cx: &ParseContext) -> Result<Document> {
     let n = u32_at(8).ok_or_else(bad)? as usize;
     let (originals, translations) = (u32_at(12).ok_or_else(bad)? as usize, u32_at(16).ok_or_else(bad)? as usize);
     cx.limits.check(Limit::Rows, n as u64)?;
+    // Each message has 8 bytes in each of the two tables: a count the file can't hold
+    // is damage, not a reason to allocate for it.
+    if n > b.len() / 16 {
+        return Err(ParseError::corrupt_at(format!("MO: {n} messages in a {}-byte file", b.len()), Position::byte(8)));
+    }
     let string = |table: usize, i: usize| -> Option<&[u8]> {
         let len = u32_at(table + i * 8)? as usize;
         let off = u32_at(table + i * 8 + 4)? as usize;

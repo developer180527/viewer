@@ -409,3 +409,17 @@ fn more_config_sgml_fixed_width() {
     assert_eq!(info.columns[1].kind, libfileparser_core::ValueKind::Number);
     assert_eq!(rows, [vec![t("Ann"), Cell::Int(42), t("Paris")], vec![t("Bob Smith"), Cell::Int(7), t("New York")]]);
 }
+
+/// An MO header claiming 1.5 billion messages in 41 bytes: refused, not allocated for.
+#[test]
+fn an_mo_count_the_file_cant_hold_is_damage() {
+    let mut b = vec![0xde, 0x12, 0x04, 0x95, 0, 0, 0, 0];
+    b.extend_from_slice(&0x5a00_0000u32.to_le_bytes());
+    b.extend_from_slice(&28u32.to_le_bytes());
+    b.extend_from_slice(&28u32.to_le_bytes());
+    b.resize(41, 0);
+    let src = libfileparser_core::FileSource::from_bytes("a.mo", b);
+    let reader = libfileparser_data::readers().iter().find(|r| r.info().id == "mo").unwrap();
+    let e = reader.open(&src, &libfileparser_core::ParseContext::new()).err().unwrap();
+    assert!(matches!(e, libfileparser_core::ParseError::Corrupt { .. }), "{e}");
+}

@@ -4,7 +4,7 @@
 # and each file keeps its repository's licence.
 #
 #   corpus/fetch-real.sh
-#   LFP_REAL_CORPUS=corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
+#   LFP_REAL_CORPUS=$PWD/corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
 #
 # Each repository is cloned into a throwaway folder at its latest commit only
 # (--depth 1), with only the folders that hold test files checked out

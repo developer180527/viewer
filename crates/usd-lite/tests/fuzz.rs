@@ -55,3 +55,23 @@ fn layers_survive_fuzzing() {
         }
     });
 }
+
+/// A payload naming the file's own default prim, from inside it (and a resolver that
+/// finds the file): Pcp calls it a cycle. Followed, every level would hold the whole
+/// file again.
+#[test]
+fn a_prim_that_brings_in_its_own_ancestor_is_a_cycle() {
+    let file = b"#usda 1.0\n(\n    defaultPrim = \"World\"\n)\ndef \"World\"\n{\n    def \"again\" (\n        payload = @self.usda@\n    )\n    {\n    }\n    def Cube \"cube\"\n    {\n    }\n}\n";
+    let limits = usd_lite::Limits::default();
+    let layer = usd_lite::read_layer(file, &limits).unwrap();
+    let stage = usd_lite::compose(layer, "self.usda", &Echo(file.to_vec()), &limits);
+    let mut queue = stage.layer.root_prims();
+    let mut prims = 0;
+    while let Some(p) = queue.pop() {
+        prims += 1;
+        queue.extend(stage.layer.children(&p));
+    }
+    // World, again, cube, and again's own copy of cube: not a million.
+    assert!(prims <= 4, "{prims} prims");
+    assert!(stage.warnings.iter().any(|w| w.contains("cycle")), "{:?}", stage.warnings);
+}

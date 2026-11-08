@@ -34,7 +34,13 @@ pub struct Loaded {
 /// recorded in `deps`. ufbx itself opens nothing: the `.mtl` data is handed to it.
 pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps: &Dependencies) -> Result<Loaded> {
     let mtl = if format == ufbx::FileFormat::Obj { mtl_libraries(src, cx, deps) } else { Vec::new() };
+    // ufbx sizes arrays by what the file claims: a few bytes can ask for tens of
+    // gigabytes, and a failed allocation ends the process. Both its arenas stay within
+    // the document's memory limit.
+    let arena = || ufbx::AllocatorOpts { memory_limit: usize::try_from(cx.limits.memory).unwrap_or(usize::MAX), ..Default::default() };
     let opts = |mtl: &[u8]| ufbx::LoadOpts {
+        temp_allocator: arena(),
+        result_allocator: arena(),
         file_format: format,
         target_axes: ufbx::CoordinateAxes::right_handed_y_up(),
         target_unit_meters: 1.0,
@@ -47,7 +53,13 @@ pub fn load(src: &FileSource, format: ufbx::FileFormat, cx: &ParseContext, deps:
     // Some exporters write OBJ as UTF-16, which ufbx doesn't read.
     let utf8 = if format == ufbx::FileFormat::Obj { from_utf16(src.bytes()) } else { None };
     let bytes = utf8.as_ref().map_or(src.bytes(), |s| s.as_bytes());
-    let describe = |e: &ufbx::Error| if e.info().is_empty() { anyhow!("{}", e.description) } else { anyhow!("{}: {}", e.description, e.info()) };
+    let describe = |e: &ufbx::Error| {
+        if matches!(e.type_, ufbx::ErrorType::MemoryLimit | ufbx::ErrorType::AllocationLimit) {
+            let max = cx.limits.memory;
+            return anyhow::Error::new(libfileparser_core::ParseError::too_large(libfileparser_core::Limit::Memory, max.saturating_add(1), max));
+        }
+        if e.info().is_empty() { anyhow!("{}", e.description) } else { anyhow!("{}: {}", e.description, e.info()) }
+    };
     let (root, mut note) = match ufbx::load_memory(bytes, opts(&mtl)) {
         Ok(root) => (root, None),
         Err(e) if format == ufbx::FileFormat::Obj => match (!mtl.is_empty()).then(|| ufbx::load_memory(bytes, opts(&[])).ok()).flatten() {

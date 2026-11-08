@@ -1,12 +1,15 @@
-//! Real-world files, kept out of git: a folder (`LFP_REAL_CORPUS`) of folders named by
-//! the reader their files should open with (`toml/`, `x12/`), or `<reader>-invalid/`
+//! Real-world files, kept out of git: a folder (`LFP_REAL_CORPUS`, usually
+//! `corpus/real`) of category folders (`data/`, `docs/`, `sheets/`), each holding folders
+//! named by the reader their files should open with (`toml/`, `x12/`), or `<reader>-invalid/`
 //! for files broken on purpose (test suites' negative cases), which must fail or fall
 //! back cleanly. Every file opens through the front door on a thread of its own with
 //! a time limit, every facet is made and read; a panic or hang fails, and a report
 //! says, per folder, how many opened as their reader, as another, or not at all.
+//! `3d/` holds whole repositories, kept as they are for relative paths: real_3d.rs
+//! reads it.
 //!
 //! ```text
-//! LFP_REAL_CORPUS=/path/to/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
+//! LFP_REAL_CORPUS=$PWD/corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
 //! ```
 
 use std::collections::BTreeMap;
@@ -57,8 +60,18 @@ fn real_world_files() {
         eprintln!("LFP_REAL_CORPUS isn't set; nothing to check");
         return;
     };
-    let mut folders: Vec<PathBuf> = std::fs::read_dir(&root).unwrap().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
-    folders.sort();
+    let dirs = |d: &PathBuf| -> Vec<PathBuf> { std::fs::read_dir(d).map(|r| r.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect()).unwrap_or_default() };
+    // Reader folders, inside category folders (or, as before, at the top).
+    let mut folders: Vec<PathBuf> = Vec::new();
+    for top in dirs(&root) {
+        let name = top.file_name().unwrap().to_string_lossy().into_owned();
+        match name.as_str() {
+            "3d" => {}
+            "data" | "docs" | "sheets" | "text" | "images" | "archives" => folders.extend(dirs(&top)),
+            _ => folders.push(top),
+        }
+    }
+    folders.sort_by_key(|f| f.file_name().map(|n| n.to_owned()));
     let mut broken = Vec::new();
     for folder in folders {
         let name = folder.file_name().unwrap().to_string_lossy().into_owned();

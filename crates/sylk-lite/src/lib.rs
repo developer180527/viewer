@@ -137,4 +137,13 @@ mod tests {
         assert_eq!(read(b"nope", 1), Err(Error::NotSylk));
         assert_eq!(read(b"ID;\nC;K1\nC;K2\n", 1), Err(Error::TooManyCells(1)));
     }
+
+    #[test]
+    fn every_kind_of_value() {
+        let c = read(b"ID;P\nC;Y1;X1;K2.5\nC;X2;KFALSE\nC;X3;KTRUE\nC;X4;K#DIV/0!\nC;X5;Kplain\n", 10).unwrap();
+        let v: Vec<_> = c.into_iter().map(|c| c.value.unwrap()).collect();
+        assert_eq!(v, [Value::Number(2.5), Value::Bool(false), Value::Bool(true), Value::Error("#DIV/0!".into()), Value::Text("plain".into())]);
+        assert_eq!(Error::NotSylk.to_string(), "not a SYLK file");
+        assert_eq!(Error::TooManyCells(3).to_string(), "more than 3 cells");
+    }
 }
