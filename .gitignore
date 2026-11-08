@@ -5,3 +5,4 @@ ios/Viewer.xcodeproj/
 
 # Real-world test files (corpus/fetch-real.sh), each with its own licence.
 /corpus/real/
+/corpus/real-3d/
