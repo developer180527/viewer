@@ -6,7 +6,7 @@ mod libfileparser;
 
 use std::sync::OnceLock;
 
-pub use libfileparser::{ReaderLoader, open_folder, set_notify, show_facet};
+pub use libfileparser::{ReaderLoader, library, open_folder, set_notify, show_facet};
 use viewer_core::{FormatLoader, Registry};
 
 /// Every loader compiled into this build. Order breaks ties between equal confidences.
@@ -17,11 +17,11 @@ pub fn registry() -> &'static Registry {
         // text reader isn't listed: Viewer's own (which highlights) reads text.
         let adapt = |category: ::libfileparser::Category| -> &'static [&'static dyn FormatLoader] {
             Box::leak(
-                ::libfileparser::readers()
+                library()
+                    .readers()
                     .iter()
                     .filter(|r| r.info().category == category)
-                    .map(|r| pdf_engine(*r))
-                    .map(|r| &*Box::leak(Box::new(ReaderLoader(r))) as &dyn FormatLoader)
+                    .map(|r| &*Box::leak(Box::new(ReaderLoader(*r))) as &dyn FormatLoader)
                     .collect::<Vec<_>>()
                     .into_boxed_slice(),
             )
@@ -37,13 +37,3 @@ pub fn registry() -> &'static Registry {
     })
 }
 
-/// The PDF reader Viewer uses on this platform: libfileparser-docs bundles MuPDF only,
-/// so PDFKit is wired here, on iOS (no MuPDF there) and on macOS when
-/// `VIEWER_PDF_BACKEND=pdfkit`, for comparing the two (docs/design/pdf.md §2).
-fn pdf_engine(reader: &'static dyn ::libfileparser::Reader) -> &'static dyn ::libfileparser::Reader {
-    #[cfg(target_vendor = "apple")]
-    if reader.info().id == "pdf" && (cfg!(target_os = "ios") || std::env::var("VIEWER_PDF_BACKEND").is_ok_and(|b| b.eq_ignore_ascii_case("pdfkit"))) {
-        return &libfileparser_pdfkit::PdfKitReader;
-    }
-    reader
-}

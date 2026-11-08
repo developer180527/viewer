@@ -48,9 +48,26 @@ impl FormatLoader for ReaderLoader {
 
     fn open(&self, src: &FileSource) -> Result<Document> {
         let cx = context();
-        let doc = libfileparser::open_with(self.0.info().id, src, &cx).map_err(|e| anyhow!("{e}"))?;
+        let doc = library().open_with(self.0.info().id, src, &cx).map_err(|e| anyhow!("{e}"))?;
         viewer_document(Arc::new(doc), 0, src, &cx)
     }
+}
+
+/// Viewer's libfileparser: every category, with the PDF reader this platform uses.
+/// libfileparser-docs bundles MuPDF only, so PDFKit is wired here, on iOS (no MuPDF
+/// there) and on macOS when `VIEWER_PDF_BACKEND=pdfkit`, for comparing the two
+/// (docs/design/pdf.md §4). Every open goes through this one library, so the reader
+/// that's listed is the one that opens.
+pub fn library() -> &'static libfileparser::Library {
+    static LIBRARY: OnceLock<libfileparser::Library> = OnceLock::new();
+    LIBRARY.get_or_init(|| {
+        let lib = libfileparser::Library::new();
+        #[cfg(target_vendor = "apple")]
+        if cfg!(target_os = "ios") || std::env::var("VIEWER_PDF_BACKEND").is_ok_and(|b| b.eq_ignore_ascii_case("pdfkit")) {
+            return lib.replace("pdf", &libfileparser_pdfkit::PdfKitReader);
+        }
+        lib
+    })
 }
 
 /// Facet `index` of the page's libfileparser document, as a Viewer document.
@@ -62,7 +79,7 @@ pub fn show_facet(facets: &Facets, index: usize, src: &FileSource) -> Result<Doc
 pub fn open_folder(path: &Path) -> Result<Document> {
     let cx = context();
     let src = FileSource::folder(path);
-    let doc = libfileparser::open(&src, &cx).map_err(|e| anyhow!("{e}"))?;
+    let doc = library().open(&src, &cx).map_err(|e| anyhow!("{e}"))?;
     viewer_document(Arc::new(doc), 0, &src, &cx)
 }
 
