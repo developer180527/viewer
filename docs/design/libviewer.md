@@ -45,5 +45,5 @@ Viewer has two hosts: the window (wgpu) and `--screenshot` (libgui's CPU rendere
 
 1. ✅ **Split out** (2026-11-07): the views, the host contract and the 3D helper, moved from `crates/app/src/lg/`; views read libfileparser's content models directly, so Viewer's facets are no longer converted (trees lazy without a cap, tables live, containers listed on demand). Viewer's own loaders (JSON, TOML, CSV) build libfileparser trees and tables; its highlighted text is a `TextSource` with `Highlights`.
 2. **Renderers apart from views:** the toolkit-free part (tiling, band streaming, 3D frames) as a crate of its own, so a view for another UI toolkit reuses it (architecture.md §2).
-3. **Pages and Markdown** with `-docs`, and their views here.
+3. ✅ **Pages and Markdown** with `-docs`, and their views here (2026-11-08): the tiled page view moved from Viewer; Markdown formatted with libgui's widget.
 4. **Links in views:** select in one view, highlight in another (`Document::links`), as an inspector does.

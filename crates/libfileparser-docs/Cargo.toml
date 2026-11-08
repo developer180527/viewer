@@ -1,0 +1,25 @@
+[package]
+name = "libfileparser-docs"
+description = "Documents into pages and formatted text: PDF (through MuPDF, with the `mupdf` feature), Markdown (docs/design/libfileparser.md §2)."
+version.workspace = true
+edition.workspace = true
+# MIT/Apache. The `mupdf` feature links libfileparser-mupdf, which is AGPL-3.0-or-later
+# as MuPDF is: an app that turns it on takes on the AGPL (docs/design/pdf.md §3).
+license.workspace = true
+
+[features]
+default = []
+# PDF (and later XPS) through MuPDF, built from source. AGPL. Off by default: without
+# it a PDF is recognised and refused with `ParseError::Unsupported`, and an app can
+# register a PDF reader of its own (libfileparser-pdfkit on Apple platforms).
+mupdf = ["dep:libfileparser-mupdf"]
+
+[dependencies]
+libfileparser-core.workspace = true
+
+# MuPDF's Windows build isn't wired in yet (docs/design/pdf.md §10).
+[target.'cfg(not(windows))'.dependencies]
+libfileparser-mupdf = { workspace = true, optional = true }
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true

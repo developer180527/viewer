@@ -1,4 +1,4 @@
-//! The paged view (docs/design/pdf.md §7): every page one after another in a vertical
+//! The paged view for `Content::Pages` (docs/design/pdf.md §7): every page one after another in a vertical
 //! scroll, laid out from page sizes alone and rendered in tiles on a background
 //! thread, only where the window looks.
 //!
@@ -20,10 +20,17 @@ use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use libfileparser_core::{Cancel, PageRect, PageSize, PageSource};
 use libgui::*;
-use viewer_core::{PageImage, PageRect, PageSize, PageSource};
 
-use libviewer::Host;
+use crate::{Host, Waker};
+
+/// One rendered tile: straight RGBA8.
+struct PageImage {
+    width: u32,
+    height: u32,
+    rgba: Vec<u8>,
+}
 
 /// A tile's side in pixels.
 const TILE: u32 = 1024;
@@ -76,7 +83,7 @@ fn tile_points(step: i16) -> f32 {
 fn tile_region(key: TileKey, size: PageSize) -> Option<PageRect> {
     let side = tile_points(key.step);
     let (x, y) = (key.tx as f32 * side, key.ty as f32 * side);
-    (x < size.width && y < size.height).then(|| PageRect { x, y, width: side.min(size.width - x), height: side.min(size.height - y) })
+    (x < size.width && y < size.height).then(|| PageRect::new(x, y, side.min(size.width - x), side.min(size.height - y)))
 }
 
 // ---------------------------------------------------------------- worker
@@ -98,21 +105,24 @@ struct Shared {
 /// Dropping it stops the thread after the tile in hand.
 struct Worker {
     shared: Arc<(Mutex<Shared>, Condvar)>,
+    /// Stops the tile in hand, where the engine checks.
+    cancel: Cancel,
 }
 
 impl Worker {
-    fn spawn(src: Arc<dyn PageSource>) -> Self {
-        let n = src.page_count();
+    fn spawn(src: Arc<dyn PageSource>, wake: Waker) -> Self {
+        let n = src.page_count().min(usize::MAX as u64) as usize;
         let shared = Arc::new((Mutex::new(Shared { sizes: vec![None; n], ..Default::default() }), Condvar::new()));
-        let theirs = shared.clone();
-        let spawned = std::thread::Builder::new().name("page render".into()).spawn(move || work(&src, &theirs));
+        let (theirs, cancel) = (shared.clone(), Cancel::new());
+        let stop = cancel.clone();
+        let spawned = std::thread::Builder::new().name("page render".into()).spawn(move || work(&src, &theirs, &stop, &*wake));
         if spawned.is_err() {
             // No thread, no pages: say so on every page rather than spin.
             let mut s = lock(&shared.0);
             s.sizes.iter_mut().for_each(|e| *e = Some(Err("couldn't start the render thread".into())));
             s.measured = n;
         }
-        Self { shared }
+        Self { shared, cancel }
     }
 
     fn lock(&self) -> MutexGuard<'_, Shared> {
@@ -123,6 +133,7 @@ impl Worker {
 impl Drop for Worker {
     fn drop(&mut self) {
         self.lock().closed = true;
+        self.cancel.cancel();
         self.shared.1.notify_all();
     }
 }
@@ -131,19 +142,14 @@ fn lock(m: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
     m.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn wake() {
-    if let Some(wake) = crate::loading::WAKE.get() {
-        wake();
-    }
-}
-
 enum Job {
     Tile(TileKey),
     Measure(usize),
 }
 
-fn work(src: &Arc<dyn PageSource>, shared: &(Mutex<Shared>, Condvar)) {
-    let n = src.page_count();
+fn work(src: &Arc<dyn PageSource>, shared: &(Mutex<Shared>, Condvar), cancel: &Cancel, wake: &(dyn Fn() + Send + Sync)) {
+    let n = src.page_count().min(usize::MAX as u64) as usize;
+    let mut buf = Vec::new();
     let mut next_size = 0;
     loop {
         let job = {
@@ -166,17 +172,18 @@ fn work(src: &Arc<dyn PageSource>, shared: &(Mutex<Shared>, Condvar)) {
         match job {
             Job::Tile(key) => {
                 let result = src
-                    .page_size(key.page as usize)
+                    .page_size(key.page as u64)
                     .and_then(|size| {
-                        let region = tile_region(key, size).ok_or_else(|| anyhow::anyhow!("tile outside the page"))?;
-                        src.render(key.page as usize, step_scale(key.step), region)
+                        let region = tile_region(key, size).ok_or_else(|| libfileparser_core::ParseError::invalid("tile outside the page"))?;
+                        let (width, height) = src.render(key.page as u64, step_scale(key.step), region, &mut buf, cancel)?;
+                        Ok(PageImage { width, height, rgba: std::mem::take(&mut buf) })
                     })
-                    .map_err(|e| format!("{e:#}"));
+                    .map_err(|e| e.to_string());
                 lock(&shared.0).results.push((key, result));
             }
             Job::Measure(first) => {
                 let last = (first + SIZES_PER_TURN).min(n);
-                let sizes: Vec<_> = (first..last).map(|i| src.page_size(i).map_err(|e| format!("{e:#}"))).collect();
+                let sizes: Vec<_> = (first..last).map(|i| src.page_size(i as u64).map_err(|e| e.to_string())).collect();
                 let mut s = lock(&shared.0);
                 for (i, size) in (first..last).zip(sizes) {
                     s.sizes[i] = Some(size);
@@ -301,23 +308,23 @@ impl PagesView {
         self.tiles.values().map(|t| t.tex).collect()
     }
 
-    fn start(&mut self, src: &Arc<dyn PageSource>) {
-        let n = src.page_count();
+    fn start(&mut self, src: &Arc<dyn PageSource>, wake: Waker) {
+        let n = src.page_count().min(usize::MAX as u64) as usize;
         if n == 0 {
             self.error = Some("This document has no pages.".into());
             return;
         }
         // Page 1's size lays out everything until the worker measures the rest.
-        let guess = src.page_size(0).unwrap_or(PageSize { width: 612.0, height: 792.0 });
+        let guess = src.page_size(0).unwrap_or(PageSize::new(612.0, 792.0));
         self.layout = Layout::new(n, guess);
-        self.worker = Some(Worker::spawn(src.clone()));
+        self.worker = Some(Worker::spawn(src.clone(), wake));
     }
 
     /// The zoom when the user hasn't chosen one: the widest page fills the window's
     /// width (phones, narrow windows), but on a wide window no bigger than 100% or a
     /// whole page in view, whichever is larger, so a portrait page isn't blown up.
     fn fit(&self, rect: Rect) -> f32 {
-        let s = self.layout.sizes.first().copied().unwrap_or(PageSize { width: 1.0, height: 1.0 });
+        let s = self.layout.sizes.first().copied().unwrap_or(PageSize::new(1.0, 1.0));
         let width = (rect.w - 2.0 * MARGIN) / self.layout.widest;
         let page = (rect.h - 2.0 * GAP) / s.height.max(1.0);
         width.min(page.max(1.0)).clamp(MIN_ZOOM, MAX_ZOOM)
@@ -436,9 +443,11 @@ struct Placed {
     rect: Rect,
 }
 
-pub fn show(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mut dyn Host) {
+/// Draws pages: a vertical scroll of every page, rendered in tiles on a thread of the
+/// view's own, only where the window looks.
+pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mut dyn Host) {
     if st.worker.is_none() && st.error.is_none() {
-        st.start(src);
+        st.start(src, tex.waker());
     }
     if let Some(e) = &st.error {
         ui.label(e.as_str());
@@ -712,11 +721,14 @@ fn tiles_in(p: &Placed, size: PageSize, step: i16, zoom: f32, view: Rect, out: &
 mod tests {
     use super::*;
 
-    const LETTER: PageSize = PageSize { width: 612.0, height: 792.0 };
+    fn letter() -> PageSize {
+        PageSize::new(612.0, 792.0)
+    }
+
 
     #[test]
     fn layout_finds_pages_by_position() {
-        let l = Layout::new(3, LETTER);
+        let l = Layout::new(3, letter());
         assert_eq!(l.top(0, 1.0), GAP);
         assert_eq!(l.top(1, 1.0), GAP + 792.0 + GAP);
         assert_eq!(l.page_at(0.0, 1.0), 0);
@@ -728,7 +740,7 @@ mod tests {
 
     #[test]
     fn scroll_position_survives_pages_above_changing_size() {
-        let mut v = PagesView { layout: Layout::new(3, LETTER), ..Default::default() };
+        let mut v = PagesView { layout: Layout::new(3, letter()), ..Default::default() };
         let y = v.layout.top(2, 1.0) + 100.0;
         v.set_top_y(y, 1.0, 500.0);
         assert_eq!(v.anchor, (2, 100.0));
@@ -749,23 +761,23 @@ mod tests {
         let step = step_for(2.0);
         assert_eq!(step_scale(step), 2.0);
         assert_eq!(tile_points(step), 512.0);
-        let r = tile_region(TileKey { page: 0, step, tx: 1, ty: 1 }, LETTER).unwrap();
+        let r = tile_region(TileKey { page: 0, step, tx: 1, ty: 1 }, letter()).unwrap();
         assert_eq!((r.x, r.y, r.width, r.height), (512.0, 512.0, 100.0, 280.0));
-        assert!(tile_region(TileKey { page: 0, step, tx: 2, ty: 0 }, LETTER).is_none());
+        assert!(tile_region(TileKey { page: 0, step, tx: 2, ty: 0 }, letter()).is_none());
         // A whole page in view at 2× is a 2 × 2 grid.
         let p = Placed { index: 0, rect: Rect::new(0.0, 0.0, 612.0, 792.0) };
         let mut out = Vec::new();
-        tiles_in(&p, LETTER, step, 1.0, Rect::new(0.0, 0.0, 2000.0, 2000.0), &mut out);
+        tiles_in(&p, letter(), step, 1.0, Rect::new(0.0, 0.0, 2000.0, 2000.0), &mut out);
         assert_eq!(out.len(), 4);
         // Only the top half in view: the top row.
         out.clear();
-        tiles_in(&p, LETTER, step, 1.0, Rect::new(0.0, 0.0, 2000.0, 300.0), &mut out);
+        tiles_in(&p, letter(), step, 1.0, Rect::new(0.0, 0.0, 2000.0, 300.0), &mut out);
         assert_eq!(out.iter().map(|(k, _)| k.ty).max(), Some(0));
     }
 
     #[test]
     fn default_zoom_fills_narrow_windows_but_not_wide_ones() {
-        let v = PagesView { layout: Layout::new(3, LETTER), ..Default::default() };
+        let v = PagesView { layout: Layout::new(3, letter()), ..Default::default() };
         // A phone: page width fills the screen.
         let phone = v.fit(Rect::new(0.0, 0.0, 390.0, 760.0));
         assert!((phone - (390.0 - 2.0 * MARGIN) / 612.0).abs() < 1e-4);

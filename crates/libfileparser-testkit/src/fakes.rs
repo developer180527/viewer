@@ -125,5 +125,6 @@ pub fn tiny_limits() -> Limits {
     l.expansion = 16;
     l.memory = 64 << 10;
     l.dependencies = 2;
+    l.pages = 1;
     l
 }

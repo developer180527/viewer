@@ -14,7 +14,8 @@ use std::time::{Duration, Instant};
 use image::RgbaImage;
 use toml::{Table, Value};
 use libfileparser_core::Content as Model;
-use viewer_core::{Content, Document, FileSource, PageRect, Unreadable};
+use libfileparser_core::PageRect;
+use viewer_core::{Content, Document, FileSource, Unreadable};
 
 /// The longest side of a golden render, in pixels: enough to catch a wrong decode or
 /// a blank page, small enough to keep the goldens tiny.
@@ -175,6 +176,27 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
                 scene_summary(scene.scene(), &mut t);
                 "scene"
             }
+            Model::Markdown(md) => {
+                let lines = md.lines(0..md.info().lines.known()).map_err(|e| e.to_string())?;
+                let chars: usize = lines.iter().map(|l| String::from_utf8_lossy(l).chars().count() + 1).sum();
+                t.insert("chars".into(), int(chars.saturating_sub(1)));
+                "markdown"
+            }
+            Model::Pages(pages) => {
+                let n = pages.page_count() as usize;
+                t.insert("backend".into(), pages.engine().into());
+                t.insert("count".into(), int(n));
+                let sizes = (0..n.min(LIST_MAX)).map(|i| pages.page_size(i as u64).map_or_else(|e| format!("error: {e}"), |s| format!("{}x{}", s.width, s.height)));
+                t.insert("sizes".into(), list(sizes, n));
+                if golden && n > 0 {
+                    let size = pages.page_size(0).map_err(|e| e.to_string())?;
+                    let scale = GOLDEN_SIDE as f32 / size.width.max(size.height);
+                    let mut rgba = Vec::new();
+                    let (w, h) = pages.render(0, scale, PageRect::whole(size), &mut rgba, &libfileparser_core::Cancel::new()).map_err(|e| e.to_string())?;
+                    render = Some(RgbaImage::from_raw(w, h, rgba).ok_or("page pixel count doesn't match")?);
+                }
+                "pages"
+            }
             _ => "other",
         },
         Content::Text(text) => {
@@ -183,25 +205,6 @@ fn content(doc: &mut Document, golden: bool, deadline: Instant, summary: &mut Ta
                 t.insert("syntax".into(), s.clone().into());
             }
             "text"
-        }
-        Content::Markdown(md) => {
-            t.insert("chars".into(), int(md.chars().count()));
-            "markdown"
-        }
-        Content::Pages(pages) => {
-            t.insert("backend".into(), pages.backend().into());
-            t.insert("count".into(), int(pages.page_count()));
-            let sizes = (0..pages.page_count().min(LIST_MAX)).map(|i| {
-                pages.page_size(i).map_or_else(|e| format!("error: {e:#}"), |s| format!("{}x{}", s.width, s.height))
-            });
-            t.insert("sizes".into(), list(sizes, pages.page_count()));
-            if golden && pages.page_count() > 0 {
-                let size = pages.page_size(0).map_err(|e| format!("{e:#}"))?;
-                let scale = GOLDEN_SIDE as f32 / size.width.max(size.height);
-                let page = pages.render(0, scale, PageRect::whole(size)).map_err(|e| format!("{e:#}"))?;
-                render = Some(RgbaImage::from_raw(page.width, page.height, page.rgba).ok_or("page pixel count doesn't match")?);
-            }
-            "pages"
         }
     };
     summary.insert(key.into(), t.into());

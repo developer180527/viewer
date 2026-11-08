@@ -1,22 +1,49 @@
-//! PDF pages through Apple's PDFKit (docs/design/pdf.md §2), behind
-//! `viewer_core::PageSource`. The PDF backend on iOS, where MuPDF can't ship; on
-//! macOS it builds too, for comparing the two.
+//! PDF through Apple's PDFKit (docs/design/pdf.md §2): a [`PdfKitReader`] an app
+//! registers in place of libfileparser-docs' MuPDF reader (same id, `"pdf"`), and the
+//! [`PageSource`] it opens. MIT/Apache, so it can ship where MuPDF's AGPL can't (the
+//! App Store). libfileparser-docs bundles only MuPDF; this is wired by the app:
+//!
+//! ```ignore
+//! let lib = libfileparser::Library::new().replace("pdf", &libfileparser_pdfkit::PdfKitReader);
+//! ```
 //!
 //! PDFKit's objects aren't documented as thread-safe, so the document is used only
 //! under a mutex, inside an autorelease pool (the render thread has none of its own).
 
 #![cfg(target_vendor = "apple")]
 
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
-use anyhow::bail;
 use objc2::AnyThread;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGBitmapContextCreate, CGColorSpace, CGContext, CGImageAlphaInfo};
 use objc2_foundation::NSData;
 use objc2_pdf_kit::{PDFDisplayBox, PDFDocument, PDFPage};
-use viewer_core::{FileSource, PageImage, PageRect, PageSize, PageSource, Result, render_size};
+use libfileparser_core::{Cancel, Detection, Document, FileSource, PageRect, PageSize, PageSource, ParseContext, ParseError, Reader, ReaderInfo, Result, render_size};
+
+/// PDF read by PDFKit: detects and shapes documents as libfileparser-docs' reader does.
+pub struct PdfKitReader;
+
+impl Reader for PdfKitReader {
+    fn info(&self) -> &ReaderInfo {
+        &libfileparser_docs::pdf::INFO
+    }
+
+    fn detect(&self, header: &[u8], name: &str) -> Detection {
+        libfileparser_docs::pdf::detect(header, name)
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
+        cx.cancel.check()?;
+        if !libfileparser_docs::pdf::is_pdf(src.header()) {
+            return Err(ParseError::NotThisFormat);
+        }
+        let pages = PdfKitDocument::open(src)?;
+        let version = pages.version();
+        libfileparser_docs::pdf::document(src, Arc::new(pages), vec![("Version".into(), version)], cx)
+    }
+}
 
 struct Doc(Retained<PDFDocument>);
 
@@ -26,7 +53,7 @@ unsafe impl Send for Doc {}
 
 pub struct PdfKitDocument {
     doc: Mutex<Doc>,
-    pages: usize,
+    pages: u64,
     sizes: Vec<OnceLock<std::result::Result<PageSize, String>>>,
 }
 
@@ -40,23 +67,35 @@ impl PdfKitDocument {
             let data = NSData::with_bytes(source.bytes());
             // SAFETY: a plain initialiser on a fresh allocation.
             let Some(doc) = (unsafe { PDFDocument::initWithData(PDFDocument::alloc(), &data) }) else {
-                bail!("PDFKit couldn't read this file as a PDF");
+                return Err(ParseError::corrupt("PDFKit couldn't read this file as a PDF"));
             };
             // SAFETY: plain getters.
             if unsafe { doc.isLocked() } {
-                bail!("This document is protected by a password.");
+                return Err(ParseError::unsupported("This document is protected by a password."));
             }
-            let pages = unsafe { doc.pageCount() };
+            let pages = unsafe { doc.pageCount() } as u64;
             Ok(Self { doc: Mutex::new(Doc(doc)), pages, sizes: (0..pages).map(|_| OnceLock::new()).collect() })
         })
     }
 
-    fn page(doc: &PDFDocument, index: usize) -> Result<Retained<PDFPage>> {
+    /// "PDF 1.7".
+    fn version(&self) -> String {
+        let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
+        // SAFETY: plain getters.
+        let (major, minor) = unsafe { (doc.0.majorVersion(), doc.0.minorVersion()) };
+        format!("PDF {major}.{minor}")
+    }
+
+    fn page(doc: &PDFDocument, index: u64) -> Result<Retained<PDFPage>> {
         // SAFETY: `index` is checked against the page count by the callers.
-        match unsafe { doc.pageAtIndex(index) } {
+        match unsafe { doc.pageAtIndex(index as usize) } {
             Some(p) => Ok(p),
-            None => bail!("page {} couldn't be read", index + 1),
+            None => Err(ParseError::corrupt(format!("page {} couldn't be read", index + 1))),
         }
+    }
+
+    fn check(&self, index: u64) -> Result<()> {
+        if index < self.pages { Ok(()) } else { Err(ParseError::invalid(format!("no page {}", index + 1))) }
     }
 
     /// The page's box and rotation, in points.
@@ -69,33 +108,35 @@ impl PdfKitDocument {
 }
 
 impl PageSource for PdfKitDocument {
-    fn backend(&self) -> &'static str {
+    fn engine(&self) -> &str {
         "PDFKit"
     }
 
-    fn page_count(&self) -> usize {
+    fn page_count(&self) -> u64 {
         self.pages
     }
 
-    fn page_size(&self, index: usize) -> Result<PageSize> {
-        let Some(slot) = self.sizes.get(index) else { bail!("no page {}", index + 1) };
-        slot.get_or_init(|| {
+    fn page_size(&self, index: u64) -> Result<PageSize> {
+        self.check(index)?;
+        self.sizes[index as usize].get_or_init(|| {
             let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
             autoreleasepool(|_| {
                 let page = Self::page(&doc.0, index).map_err(|e| e.to_string())?;
                 let (r, rot) = Self::geometry(&page);
                 let (w, h) = (r.size.width as f32, r.size.height as f32);
-                Ok(if rot == 90 || rot == 270 { PageSize { width: h, height: w } } else { PageSize { width: w, height: h } })
+                Ok(if rot == 90 || rot == 270 { PageSize::new(h, w) } else { PageSize::new(w, h) })
             })
         })
         .clone()
-        .map_err(anyhow::Error::msg)
+        .map_err(ParseError::corrupt)
     }
 
-    fn render(&self, index: usize, scale: f32, region: PageRect) -> Result<PageImage> {
+    fn render(&self, index: u64, scale: f32, region: PageRect, rgba: &mut Vec<u8>, cancel: &Cancel) -> Result<(u32, u32)> {
         let shown = self.page_size(index)?;
         let (w, h) = render_size(scale, region)?;
-        let mut rgba = vec![0u8; w as usize * h as usize * 4];
+        cancel.check()?;
+        rgba.clear();
+        rgba.resize(w as usize * h as usize * 4, 0);
         let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
         autoreleasepool(|_| {
             let page = Self::page(&doc.0, index)?;
@@ -113,7 +154,7 @@ impl PageSource for PdfKitDocument {
                     CGImageAlphaInfo::PremultipliedLast.0,
                 )
             };
-            let Some(ctx) = ctx else { bail!("couldn't make a {w} × {h} bitmap") };
+            let Some(ctx) = ctx else { return Err(ParseError::corrupt(format!("couldn't make a {w} × {h} bitmap"))) };
             let s = scale as f64;
             CGContext::set_rgb_fill_color(Some(&ctx), 1.0, 1.0, 1.0, 1.0);
             CGContext::fill_rect(Some(&ctx), CGRect::new(CGPoint::new(0.0, 0.0), CGSize::new(w as f64, h as f64)));
@@ -128,6 +169,6 @@ impl PageSource for PdfKitDocument {
             drop(ctx);
             Ok(())
         })?;
-        Ok(PageImage { width: w, height: h, rgba })
+        Ok((w, h))
     }
 }

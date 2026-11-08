@@ -1,5 +1,5 @@
 use std::ops::Range;
-use std::sync::Arc;
+
 
 use crate::FileSource;
 
@@ -104,9 +104,6 @@ pub enum Content {
     Model(libfileparser_core::Content),
     /// Text with Viewer's syntax highlighting (its text loader).
     Text(TextDoc),
-    Markdown(String),
-    /// Pages laid out one after another and rendered on demand (PDF).
-    Pages(Arc<dyn crate::PageSource>),
 }
 
 impl Content {
@@ -120,11 +117,11 @@ impl Content {
                 libfileparser_core::Content::Container(_) => "Container",
                 libfileparser_core::Content::Hex(_) => "Hex",
                 libfileparser_core::Content::Scene(_) => "3D scene",
+                libfileparser_core::Content::Pages(_) => "Pages",
+                libfileparser_core::Content::Markdown(_) => "Rich text",
                 _ => "Other",
             },
             Content::Text(_) => "Text",
-            Content::Markdown(_) => "Rich text",
-            Content::Pages(_) => "Pages",
         }
     }
 

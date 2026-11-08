@@ -28,9 +28,9 @@ scene-data = { path = "crates/scene-data" }
 rendererx = { path = "crates/rendererx" }
 gltf-lite = { path = "crates/gltf-lite" }
 usd-lite = { path = "crates/usd-lite" }
-viewer-pdf-mupdf = { path = "crates/pdf-mupdf" }
-viewer-pdf-pdfkit = { path = "crates/pdf-pdfkit" }
-viewer-fmt-pdf = { path = "crates/fmt-pdf" }
+libfileparser-mupdf = { path = "crates/libfileparser-mupdf" }
+libfileparser-pdfkit = { path = "crates/libfileparser-pdfkit" }
+libfileparser-docs = { path = "crates/libfileparser-docs" }
 
 anyhow = "1"
 memmap2 = "0.9"

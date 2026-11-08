@@ -32,6 +32,8 @@ pub enum Limit {
     Memory,
     /// Other files one document may read.
     Dependencies,
+    /// Pages of a paged document.
+    Pages,
 }
 
 impl fmt::Display for Limit {
@@ -48,6 +50,7 @@ impl fmt::Display for Limit {
             Limit::Expansion => "expansion",
             Limit::Memory => "document memory",
             Limit::Dependencies => "files referenced",
+            Limit::Pages => "page count",
         })
     }
 }
@@ -76,6 +79,7 @@ pub struct Limits {
     pub expansion: u64,
     pub memory: u64,
     pub dependencies: u64,
+    pub pages: u64,
 }
 
 impl Limits {
@@ -94,6 +98,7 @@ impl Limits {
             expansion: 1 << 20,
             memory: 4 << 30,
             dependencies: 10_000,
+            pages: 1 << 20,
         }
     }
 
@@ -127,6 +132,7 @@ impl Limits {
             Limit::Expansion => self.expansion,
             Limit::Memory => self.memory,
             Limit::Dependencies => self.dependencies,
+            Limit::Pages => self.pages,
         }
     }
 

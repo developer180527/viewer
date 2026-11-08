@@ -142,7 +142,7 @@ jobs:
       - name: Check
         run: >
           cargo check --target wasm32-unknown-unknown
-          -p libfileparser --no-default-features --features data,text,archives,images
+          -p libfileparser --no-default-features --features data,text,archives,images,docs
 
   api:
     name: Public API

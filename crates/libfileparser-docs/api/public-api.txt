@@ -1,0 +1,25 @@
+pub mod libfileparser_docs
+pub mod libfileparser_docs::pdf
+pub struct libfileparser_docs::pdf::PdfReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::pdf::PdfReader
+pub fn libfileparser_docs::pdf::PdfReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::pdf::PdfReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::pdf::PdfReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub static libfileparser_docs::pdf::INFO: libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::pdf::detect(&[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::pdf::document(&libfileparser_core::source::FileSource, alloc::sync::Arc<dyn libfileparser_core::pages::PageSource>, alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_docs::pdf::is_pdf(&[u8]) -> bool
+pub struct libfileparser_docs::MarkdownReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::MarkdownReader
+pub fn libfileparser_docs::MarkdownReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::MarkdownReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::MarkdownReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::PdfReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::pdf::PdfReader
+pub fn libfileparser_docs::pdf::PdfReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::pdf::PdfReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::pdf::PdfReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_docs::detect(&[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
+pub fn libfileparser_docs::open(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_docs::open_with(&str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub fn libfileparser_docs::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

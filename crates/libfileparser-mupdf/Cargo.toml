@@ -1,0 +1,18 @@
+[package]
+name = "libfileparser-mupdf"
+description = "PDF (and XPS) pages through MuPDF, built from source: a PageSource for libfileparser. AGPL, as MuPDF is."
+version.workspace = true
+edition.workspace = true
+# MuPDF is AGPL, so this crate is too. libfileparser-docs depends on it only with its
+# `mupdf` feature, which is off by default (docs/design/pdf.md §3).
+license = "AGPL-3.0-or-later"
+links = "mupdf"
+
+[dependencies]
+libfileparser-core.workspace = true
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true
+
+[build-dependencies]
+cc = "1"

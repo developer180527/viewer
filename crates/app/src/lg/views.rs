@@ -1,5 +1,5 @@
 //! A page's content on screen: libviewer's views for libfileparser's models, and
-//! Viewer's own for what libfileparser has no model for yet (Markdown, PDF pages).
+//! Viewer's highlighted text.
 
 use libgui::*;
 use viewer_core::{Content, TextDoc};
@@ -10,18 +10,14 @@ use libviewer::Host;
 
 /// Per-page view state that libgui leaves to us.
 pub enum ViewState {
-    Model(libviewer::View),
-    Markdown(libgui_markdown::Markdown),
-    Pages(Box<super::pages::PagesView>),
+    Model(Box<libviewer::View>),
     None,
 }
 
 impl ViewState {
     pub fn new(content: &Content) -> Self {
         match content {
-            Content::Model(c) => Self::Model(libviewer::View::new(c)),
-            Content::Markdown(md) => Self::Markdown(libgui_markdown::Markdown::parse(md)),
-            Content::Pages(_) => Self::Pages(Box::default()),
+            Content::Model(c) => Self::Model(Box::new(libviewer::View::new(c))),
             Content::Text(_) => Self::None,
         }
     }
@@ -30,8 +26,7 @@ impl ViewState {
     pub fn textures(&self) -> Vec<TextureId> {
         match self {
             Self::Model(v) => v.textures(),
-            Self::Pages(st) => st.textures(),
-            _ => Vec::new(),
+            Self::None => Vec::new(),
         }
     }
 }
@@ -52,18 +47,6 @@ pub fn show(ui: &mut Ui, page: &mut Page, host: &mut dyn Host, dark: bool) -> Op
         (Content::Model(c), ViewState::Model(view)) => libviewer::show(ui, c, view, host, None, dark),
         (Content::Text(t), _) => {
             libviewer::text(ui, t, Some(&Highlighted(t)), dark);
-            None
-        }
-        (Content::Markdown(_), ViewState::Markdown(md)) => {
-            ui.scroll_area("markdown", |ui| {
-                ui.container(Layout::column().height(Size::Fit).padding(Insets::xy(24.0, 16.0)), Frame::none(), |ui| {
-                    md.show(ui, "md");
-                });
-            });
-            None
-        }
-        (Content::Pages(src), ViewState::Pages(st)) => {
-            super::pages::show(ui, src, st, host);
             None
         }
         _ => unreachable!("every page gets the view state its content needs"),

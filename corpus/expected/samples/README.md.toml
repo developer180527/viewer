@@ -3,7 +3,8 @@ format = "Markdown"
 model = "Rich text"
 
 [markdown]
-chars = 376
+chars = 375
 
 [metadata]
+Lines = "19"
 Words = "64"

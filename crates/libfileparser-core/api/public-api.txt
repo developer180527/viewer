@@ -74,6 +74,8 @@ impl core::marker::StructuralPartialEq for libfileparser_core::Confidence
 #[non_exhaustive] pub enum libfileparser_core::Content
 pub libfileparser_core::Content::Container(alloc::sync::Arc<dyn libfileparser_core::Container>)
 pub libfileparser_core::Content::Hex(libfileparser_core::FileSource)
+pub libfileparser_core::Content::Markdown(alloc::sync::Arc<dyn libfileparser_core::TextSource>)
+pub libfileparser_core::Content::Pages(alloc::sync::Arc<dyn libfileparser_core::PageSource>)
 pub libfileparser_core::Content::Raster(libfileparser_core::Raster)
 pub libfileparser_core::Content::Scene(libfileparser_core::SceneDoc)
 pub libfileparser_core::Content::Table(alloc::sync::Arc<dyn libfileparser_core::TableSource>)
@@ -145,6 +147,7 @@ pub libfileparser_core::Limit::Geometry
 pub libfileparser_core::Limit::ImagePixels
 pub libfileparser_core::Limit::Memory
 pub libfileparser_core::Limit::Nodes
+pub libfileparser_core::Limit::Pages
 pub libfileparser_core::Limit::Rows
 pub libfileparser_core::Limit::Unpacked
 impl core::clone::Clone for libfileparser_core::Limit
@@ -163,6 +166,8 @@ impl core::marker::StructuralPartialEq for libfileparser_core::Limit
 #[non_exhaustive] pub enum libfileparser_core::Model
 pub libfileparser_core::Model::Container
 pub libfileparser_core::Model::Hex
+pub libfileparser_core::Model::Markdown
+pub libfileparser_core::Model::Pages
 pub libfileparser_core::Model::Raster
 pub libfileparser_core::Model::Scene
 pub libfileparser_core::Model::Table
@@ -609,6 +614,7 @@ pub libfileparser_core::Limits::geometry: u64
 pub libfileparser_core::Limits::image_pixels: u64
 pub libfileparser_core::Limits::memory: u64
 pub libfileparser_core::Limits::nodes: u64
+pub libfileparser_core::Limits::pages: u64
 pub libfileparser_core::Limits::rows: u64
 pub libfileparser_core::Limits::unpack_always: u64
 pub libfileparser_core::Limits::unpack_ratio: u64
@@ -719,6 +725,35 @@ pub fn libfileparser_core::OwnedTree::find(&self, &str) -> libfileparser_core::R
 pub fn libfileparser_core::OwnedTree::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::OwnedTree::path(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<alloc::string::String>>
 pub fn libfileparser_core::OwnedTree::value(&self, libfileparser_core::NodeId) -> libfileparser_core::Result<core::option::Option<libfileparser_core::Cell>>
+#[non_exhaustive] pub struct libfileparser_core::PageRect
+pub libfileparser_core::PageRect::height: f32
+pub libfileparser_core::PageRect::width: f32
+pub libfileparser_core::PageRect::x: f32
+pub libfileparser_core::PageRect::y: f32
+impl libfileparser_core::PageRect
+pub fn libfileparser_core::PageRect::new(f32, f32, f32, f32) -> Self
+pub fn libfileparser_core::PageRect::whole(libfileparser_core::PageSize) -> Self
+impl core::clone::Clone for libfileparser_core::PageRect
+pub fn libfileparser_core::PageRect::clone(&self) -> libfileparser_core::PageRect
+impl core::cmp::PartialEq for libfileparser_core::PageRect
+pub fn libfileparser_core::PageRect::eq(&self, &libfileparser_core::PageRect) -> bool
+impl core::fmt::Debug for libfileparser_core::PageRect
+pub fn libfileparser_core::PageRect::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for libfileparser_core::PageRect
+impl core::marker::StructuralPartialEq for libfileparser_core::PageRect
+#[non_exhaustive] pub struct libfileparser_core::PageSize
+pub libfileparser_core::PageSize::height: f32
+pub libfileparser_core::PageSize::width: f32
+impl libfileparser_core::PageSize
+pub fn libfileparser_core::PageSize::new(f32, f32) -> Self
+impl core::clone::Clone for libfileparser_core::PageSize
+pub fn libfileparser_core::PageSize::clone(&self) -> libfileparser_core::PageSize
+impl core::cmp::PartialEq for libfileparser_core::PageSize
+pub fn libfileparser_core::PageSize::eq(&self, &libfileparser_core::PageSize) -> bool
+impl core::fmt::Debug for libfileparser_core::PageSize
+pub fn libfileparser_core::PageSize::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for libfileparser_core::PageSize
+impl core::marker::StructuralPartialEq for libfileparser_core::PageSize
 #[non_exhaustive] pub struct libfileparser_core::ParseContext
 pub libfileparser_core::ParseContext::cancel: libfileparser_core::Cancel
 pub libfileparser_core::ParseContext::facet_providers: alloc::vec::Vec<alloc::sync::Arc<dyn libfileparser_core::FacetProvider>>
@@ -866,6 +901,7 @@ impl core::fmt::Debug for libfileparser_core::Warning
 pub fn libfileparser_core::Warning::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for libfileparser_core::Warning
 pub const libfileparser_core::COPY_BELOW: u64
+pub const libfileparser_core::MAX_RENDER_SIDE: u32
 pub trait libfileparser_core::BandSource: core::marker::Send + core::marker::Sync
 pub fn libfileparser_core::BandSource::bands(&self) -> libfileparser_core::Result<libfileparser_core::Bands>
 pub fn libfileparser_core::BandSource::memory(&self) -> libfileparser_core::MemoryUse
@@ -897,6 +933,12 @@ pub trait libfileparser_core::Notify: core::marker::Send + core::marker::Sync
 pub fn libfileparser_core::Notify::notify(&self)
 impl libfileparser_core::Notify for libfileparser_core::NoNotify
 pub fn libfileparser_core::NoNotify::notify(&self)
+pub trait libfileparser_core::PageSource: core::marker::Send + core::marker::Sync
+pub fn libfileparser_core::PageSource::engine(&self) -> &str
+pub fn libfileparser_core::PageSource::memory(&self) -> libfileparser_core::MemoryUse
+pub fn libfileparser_core::PageSource::page_count(&self) -> u64
+pub fn libfileparser_core::PageSource::page_size(&self, u64) -> libfileparser_core::Result<libfileparser_core::PageSize>
+pub fn libfileparser_core::PageSource::render(&self, u64, f32, libfileparser_core::PageRect, &mut alloc::vec::Vec<u8>, &libfileparser_core::Cancel) -> libfileparser_core::Result<(u32, u32)>
 pub trait libfileparser_core::Reader: core::marker::Sync
 pub fn libfileparser_core::Reader::detect(&self, &[u8], &str) -> libfileparser_core::Detection
 pub fn libfileparser_core::Reader::info(&self) -> &libfileparser_core::ReaderInfo
@@ -944,5 +986,6 @@ pub fn libfileparser_core::is_text(&[u8]) -> bool
 pub fn libfileparser_core::open(&[&dyn libfileparser_core::Reader], &libfileparser_core::FileSource, &libfileparser_core::ParseContext) -> libfileparser_core::Result<libfileparser_core::Document>
 pub fn libfileparser_core::open_guarded(&dyn libfileparser_core::Reader, &libfileparser_core::FileSource, &libfileparser_core::ParseContext) -> libfileparser_core::Result<libfileparser_core::Document>
 pub fn libfileparser_core::open_with(&[&dyn libfileparser_core::Reader], &str, &libfileparser_core::FileSource, &libfileparser_core::ParseContext) -> libfileparser_core::Result<libfileparser_core::Document>
+pub fn libfileparser_core::render_size(f32, libfileparser_core::PageRect) -> libfileparser_core::Result<(u32, u32)>
 pub type libfileparser_core::Bands = alloc::boxed::Box<(dyn core::iter::traits::iterator::Iterator<Item = libfileparser_core::Result<libfileparser_core::Band>> + core::marker::Send)>
 pub type libfileparser_core::Result<T> = core::result::Result<T, libfileparser_core::ParseError>

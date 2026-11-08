@@ -1,6 +1,6 @@
 # PDF in Viewer
 
-Status: both backends in, behind `PageSource`, and the page view (§7) built (`crates/app/src/lg/pages.rs`). See §10 for what's left. Roadmap step 2 (PLAN.md §11), the first document format.
+Status: built. Since 2026-11-08 PDF lives in libfileparser: `libfileparser-docs` bundles MuPDF only (feature `mupdf`, AGPL, off by default); PDFKit is a separate reader (`libfileparser-pdfkit`) that an app wires itself, as Viewer does on iOS; the page view is libviewer's (`crates/libviewer/src/pages.rs`). See §4 and §10. Roadmap step 2 (PLAN.md §11), the first document format.
 
 ## 1. Goals
 
@@ -26,10 +26,10 @@ PDFium was the other candidate: a permissive licence, but a heavy Chromium-style
 
 ## 3. Licences
 
-- **libgui, libfilepicker, RendererX and every `viewer-*` crate that doesn't link MuPDF stay `MIT OR Apache-2.0`.**
-- **`viewer-pdf-mupdf`** (the only crate that links MuPDF) is `AGPL-3.0-or-later`, set in its own `Cargo.toml`, overriding the workspace licence.
+- **libgui, libfilepicker, RendererX and every crate that doesn't link MuPDF stay `MIT OR Apache-2.0`,** `libfileparser-docs` included.
+- **`libfileparser-mupdf`** (the only crate that links MuPDF) is `AGPL-3.0-or-later`, set in its own `Cargo.toml`. `libfileparser-docs` uses it only with its `mupdf` feature, which is off by default and in no preset of the front door (`libfileparser`'s `docs-mupdf`): an app that names it takes on the AGPL.
 - **The Viewer app** built with MuPDF is distributed under the AGPL: the repo stays public, the README says which builds include MuPDF, and the About screen credits it with a link to the source.
-- **The iOS build has no MuPDF** at all: `cargo tree -p viewer --target aarch64-apple-ios` must not list `viewer-pdf-mupdf`. CI checks this (§8).
+- **The iOS build has no MuPDF** at all: `cargo tree -p viewer --target aarch64-apple-ios` must not list `libfileparser-mupdf`. Viewer turns `docs-mupdf` on through a target-specific dependency, so iOS (and Windows, until its build is wired) never builds it.
 - **Artifex:** we'll ask whether they would allow MuPDF in the App Store build of a free, open-source viewer. If they say yes, iOS can switch to MuPDF too with a build flag; nothing else changes.
 
 ### What iOS doesn't get
@@ -55,16 +55,18 @@ If Artifex ever allows MuPDF in the App Store build, these rows simply switch on
 
 ```
 crates/
-  core/           viewer-core        Content::Pages, PageSource and its types (MIT/Apache)
-  pdf-mupdf/      viewer-pdf-mupdf   MuPDF backend + its FFI (AGPL)
-  pdf-pdfkit/     viewer-pdf-pdfkit  PDFKit backend via objc2-pdf-kit (MIT/Apache)
-  fmt-pdf/        viewer-fmt-pdf     the FormatLoader; picks the backend by target (MIT/Apache)
+  libfileparser-core/    Content::Pages, PageSource, PageSize, PageRect, Limit::Pages (MIT/Apache)
+  libfileparser-docs/    the PDF reader (and Markdown); `pdf::{INFO, detect, document}` for any engine (MIT/Apache)
+  libfileparser-mupdf/   MuPDF's PageSource + its FFI and C shim; used by -docs' `mupdf` feature (AGPL)
+  libfileparser-pdfkit/  PdfKitReader: a Reader with id "pdf" an app registers itself (MIT/Apache, Apple)
+  libviewer/             the page view (pages.rs)
 third_party/
-  mupdf/          git submodule, pinned to a release tag (with its own thirdparty/ submodules)
+  mupdf/                 git submodule, pinned to a release tag (with its own thirdparty/ submodules)
 ```
 
-- `viewer-fmt-pdf` depends on `viewer-pdf-mupdf` with `cfg(not(target_os = "ios"))` and on `viewer-pdf-pdfkit` with `cfg(target_vendor = "apple")`. On macOS both exist; MuPDF is the default, and PDFKit is selectable for comparison in tests and benchmarks.
-- **Building MuPDF:** `viewer-pdf-mupdf/build.rs` runs MuPDF's own `make` (Unix, BSD, Android NDK) or its Visual Studio project (Windows) into `target/`, then links the static libraries.
+- **`-docs` bundles MuPDF and nothing else** (decided 2026-11-08). Without the feature, a PDF is still recognised and named, and refused with `ParseError::Unsupported`. Any other engine is the app's to wire: a `Reader` with id `"pdf"`, registered with `Library::replace("pdf", …)`, shaping its documents with `libfileparser_docs::pdf::document` so they look the same. `libfileparser-pdfkit` is that, for Apple; `hayro` or PDFium would be the same.
+- **Viewer's wiring** (`crates/formats`): `docs-mupdf` on everywhere but iOS and Windows; on iOS the `"pdf"` reader is PDFKit's, and on macOS `VIEWER_PDF_BACKEND=pdfkit` switches to it for comparison.
+- **Building MuPDF:** `libfileparser-mupdf/build.rs` runs MuPDF's own `make` (Unix, BSD, Android NDK) or its Visual Studio project (Windows) into `target/`, then links the static libraries.
   - **Configuration:** no JavaScript (`HAVE_MUJS=no`), no network, a trimmed font set (`TOFU`/CJK fonts as a later, lazily loaded extra).
   - **Caching:** the build output is keyed by the submodule commit plus the flags, so a normal `cargo build` doesn't rebuild C.
   - **FFI:** our own small hand-written FFI layer (only the calls we use) plus a C shim for MuPDF's `fz_try`/`fz_catch` (setjmp-based errors must never unwind through Rust).
@@ -143,7 +145,7 @@ So each open document has one **page-render thread** (the backend serialises acc
 1. ✅ **MuPDF from source on macOS:** submodule at 1.28.6, `build.rs` (~20 s clean, incremental after), a C shim catching MuPDF's errors. A 22-page, 2.2 MB textbook chapter: open 4 ms, page 1 at 2× on screen in 111 ms.
 2. ✅ **PDFKit** through `objc2-pdf-kit`, tested on macOS: open 53 ms, page 1 in 122 ms; renders match MuPDF. ⬜ Measure on the iPhone and iPad.
 3. ✅ `viewer-core`: `Content::Pages` + `PageSource` (+ hand-written test PDFs in `viewer_core::testing`).
-4. ✅ `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` behind the trait; `viewer-fmt-pdf` loader (`VIEWER_PDF_BACKEND=pdfkit` on macOS). The iOS dependency tree has no MuPDF. The page-render thread came with the view (5).
+4. ✅ `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` (since 2026-11-08 `libfileparser-mupdf` and `-pdfkit`, §4) behind the trait; `viewer-fmt-pdf` loader (`VIEWER_PDF_BACKEND=pdfkit` on macOS). The iOS dependency tree has no MuPDF. The page-render thread came with the view (5).
 5. ✅ The view: layout, tiles, zoom, cache, page counter, keys, its render thread. ⬜ Jump to page, thumbnails, momentum after a touch fling, aborting a slow tile.
 6. 🟡 The corpus and its runner exist (`corpus/`, `crates/corpus`): page count, sizes and a page-1 render, checked on every CI platform with MuPDF. ⬜ Real-world and hostile PDFs beyond the first two, and PDFKit with its own expected renders.
 7. Builds: Windows (MSVC), Linux, Android NDK, BSD; CI with the iOS dependency check; README and licence notes.

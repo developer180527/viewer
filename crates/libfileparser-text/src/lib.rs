@@ -146,7 +146,7 @@ pub struct TextReader;
 
 static TEXT: ReaderInfo = ReaderInfo::new("text", "Text", Category::Text)
     .extensions(&[
-        "txt", "text", "log", "md", "markdown", "rs", "c", "h", "cc", "cpp", "cxx", "hpp", "m", "mm", "swift", "kt", "java", "go", "py", "rb", "php",
+        "txt", "text", "log", "rs", "c", "h", "cc", "cpp", "cxx", "hpp", "m", "mm", "swift", "kt", "java", "go", "py", "rb", "php",
         "lua", "js", "mjs", "ts", "tsx", "jsx", "css", "html", "htm", "xml", "sh", "bash", "zsh", "sql", "yaml", "yml", "ini", "cfg", "conf", "tex",
         "diff", "patch", "proto", "cs", "dart", "zig", "srt", "vtt", "rst",
     ])

@@ -11,4 +11,11 @@ viewer-core.workspace = true
 viewer-fmt-doc.workspace = true
 libfileparser.workspace = true
 libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
-viewer-fmt-pdf.workspace = true
+# PDFKit for PDF on Apple platforms: the reader on iOS, where MuPDF's AGPL can't ship,
+# and on macOS when VIEWER_PDF_BACKEND=pdfkit (docs/design/pdf.md §2).
+libfileparser-pdfkit.workspace = true
+
+# MuPDF for PDF everywhere else (AGPL; not built for Windows yet). A feature on a
+# target-specific dependency applies only when building for that target.
+[target.'cfg(not(any(target_os = "ios", windows)))'.dependencies]
+libfileparser = { workspace = true, features = ["docs-mupdf"] }

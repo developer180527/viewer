@@ -1,4 +1,5 @@
-//! Text-like loaders: plain text, source code (syntect highlighting) and Markdown.
+//! Viewer's text loader: plain text and source code, with syntect highlighting.
+//! (Markdown is libfileparser-docs'.)
 
 use std::sync::OnceLock;
 
@@ -6,7 +7,7 @@ use syntect::highlighting::{FontStyle, HighlightIterator, HighlightState, Highli
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
 use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Result, Span, TextDoc};
 
-pub static LOADERS: &[&dyn FormatLoader] = &[&MarkdownLoader, &TextLoader];
+pub static LOADERS: &[&dyn FormatLoader] = &[&TextLoader];
 
 /// Files above this size are shown without highlighting so they open instantly.
 const HIGHLIGHT_LIMIT: usize = 512 * 1024;
@@ -70,31 +71,6 @@ impl FormatLoader for TextLoader {
             out = out.with_meta("Highlighting", "off (file too large)");
         }
         Ok(out)
-    }
-}
-
-pub struct MarkdownLoader;
-
-impl FormatLoader for MarkdownLoader {
-    fn id(&self) -> &'static str {
-        "markdown"
-    }
-
-    fn name(&self) -> &'static str {
-        "Markdown"
-    }
-
-    fn probe(&self, _: &[u8], ext: Option<&str>, _: &str) -> Confidence {
-        match ext {
-            Some("md" | "markdown" | "mdown" | "mkd") => Confidence(60),
-            _ => Confidence::NONE,
-        }
-    }
-
-    fn open(&self, src: &FileSource) -> Result<Document> {
-        let text = std::str::from_utf8(src.bytes())?.to_owned();
-        let words = text.split_whitespace().count();
-        Ok(Document::new("Markdown", Content::Markdown(text)).with_meta("Words", words))
     }
 }
 

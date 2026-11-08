@@ -6,7 +6,6 @@
 //! applies what the UI asks for (cursor, title, textures to free).
 
 mod app;
-mod pages;
 mod views;
 
 use std::path::Path;

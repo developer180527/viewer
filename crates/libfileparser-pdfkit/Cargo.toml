@@ -1,13 +1,13 @@
 [package]
-name = "viewer-pdf-pdfkit"
-description = "PDF pages through Apple's PDFKit (the backend on iOS; on macOS for comparison)."
+name = "libfileparser-pdfkit"
+description = "PDF through Apple's PDFKit: a Reader an app registers in place of libfileparser-docs' MuPDF one (Apple platforms only)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 [dependencies]
-viewer-core.workspace = true
-anyhow.workspace = true
+libfileparser-core.workspace = true
+libfileparser-docs.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 objc2 = "0.6"
@@ -15,3 +15,6 @@ objc2-foundation = { version = "0.3", default-features = false, features = ["std
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGContext", "CGBitmapContext", "CGColorSpace", "CGImage", "objc2"] }
 objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "PDFPage", "objc2-core-graphics"] }
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true

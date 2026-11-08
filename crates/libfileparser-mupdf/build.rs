@@ -13,7 +13,7 @@ fn main() {
     if target.contains("windows") {
         // MuPDF builds on Windows with its Visual Studio projects (platform/win32);
         // wiring those in is docs/design/pdf.md §10 step 7. Until then the crate is
-        // empty there and nothing depends on it (viewer-fmt-pdf has no Windows backend).
+        // empty there, and libfileparser-docs refuses PDFs on Windows (no engine).
         return;
     }
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());

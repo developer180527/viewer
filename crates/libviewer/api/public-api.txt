@@ -2,7 +2,9 @@ pub mod libviewer
 #[non_exhaustive] pub enum libviewer::Action
 pub libviewer::Action::OpenEntry(alloc::sync::Arc<dyn libfileparser_core::content::Container>, u64)
 #[non_exhaustive] pub enum libviewer::View
+pub libviewer::View::Markdown(alloc::boxed::Box<libviewer::MarkdownView>)
 pub libviewer::View::None
+pub libviewer::View::Pages(alloc::boxed::Box<libviewer::PagesView>)
 pub libviewer::View::Raster(libviewer::RasterView)
 pub libviewer::View::Scene(alloc::boxed::Box<libviewer::SceneView>)
 pub libviewer::View::Table(libviewer::TableView)
@@ -20,6 +22,14 @@ pub fn libviewer::Frame3d::pending() -> Self
 pub fn libviewer::Frame3d::shown(core::option::Option<libgui::draw::TextureId>, bool) -> Self
 impl core::default::Default for libviewer::Frame3d
 pub fn libviewer::Frame3d::default() -> libviewer::Frame3d
+pub struct libviewer::MarkdownView
+impl libviewer::MarkdownView
+pub fn libviewer::MarkdownView::new(&dyn libfileparser_core::content::TextSource) -> Self
+pub struct libviewer::PagesView
+impl libviewer::PagesView
+pub fn libviewer::PagesView::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
+impl core::default::Default for libviewer::PagesView
+pub fn libviewer::PagesView::default() -> Self
 pub struct libviewer::RasterView
 impl libviewer::RasterView
 pub fn libviewer::RasterView::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
@@ -62,7 +72,9 @@ pub fn libviewer::draw_scene((&rendererx::Renderer, &wgpu::api::device::Device, 
 pub fn libviewer::hex(&mut libgui::ui::Ui, &[u8])
 pub fn libviewer::hex_file(&mut libgui::ui::Ui, &libfileparser_core::source::FileSource)
 pub fn libviewer::human_bytes(u64) -> alloc::string::String
+pub fn libviewer::markdown(&mut libgui::ui::Ui, &mut libviewer::MarkdownView)
 pub fn libviewer::model_name(&libfileparser_core::content::Content) -> &'static str
+pub fn libviewer::pages(&mut libgui::ui::Ui, &alloc::sync::Arc<dyn libfileparser_core::pages::PageSource>, &mut libviewer::PagesView, &mut dyn libviewer::Host)
 pub fn libviewer::raster(&mut libgui::ui::Ui, &libfileparser_core::content::Raster, &mut libviewer::RasterView, &mut dyn libviewer::Host)
 pub fn libviewer::scene(&mut libgui::ui::Ui, &libfileparser_core::content::SceneDoc, &mut libviewer::SceneView, &mut dyn libviewer::Host)
 pub fn libviewer::show(&mut libgui::ui::Ui, &libfileparser_core::content::Content, &mut libviewer::View, &mut dyn libviewer::Host, core::option::Option<&dyn libviewer::Highlights>, bool) -> core::option::Option<libviewer::Action>

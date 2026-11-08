@@ -206,7 +206,7 @@ The fallback is always Hex.
 | `libbluray` | LGPL | OK, dynamic; unencrypted discs only |
 | `libdvdnav` / `libdvdread`, `libcdio` | GPL | Avoid: no DVD menus (titles play from their VOBs), no audio CDs |
 | H.264, HEVC, AAC (patents, not licences) | Patent pools | Prefer the platform's hardware decoders where they exist; get a proper answer before any commercial release |
-| MuPDF | AGPL | **Used, except on iOS.** Only `viewer-pdf-mupdf` and the app builds containing it are AGPL; libgui, libfilepicker, RendererX and the other crates stay MIT/Apache (docs/design/pdf.md §3) |
+| MuPDF | AGPL | **Used, except on iOS.** Only `libfileparser-mupdf` (used by `libfileparser-docs`' opt-in `mupdf` feature) and the app builds containing it are AGPL; libgui, libfilepicker, RendererX and the other crates stay MIT/Apache (docs/design/pdf.md §3) |
 | Poppler | GPL | Avoid |
 | djvulibre | GPL | Optional plugin / converter only |
 
@@ -291,8 +291,8 @@ crates/
   libfileparser/  libfileparser-core/  libfileparser-testkit/          libfileparser (docs/design/libfileparser.md)
   libfileparser-3d/  -images/  -data/  -text/  -archives/               its categories; each crate's api/ holds its API snapshot
   libviewer/            views for every content model (docs/design/libviewer.md)
-  fmt-doc/  fmt-pdf/                                                    Viewer's loaders still to move to libfileparser
-  pdf-mupdf/            MuPDF backend (AGPL)        pdf-pdfkit/   PDFKit backend
+  fmt-doc/              Viewer's highlighted text loader
+  libfileparser-docs/  -mupdf/ (AGPL)  -pdfkit/                        PDF and Markdown; MuPDF bundled, PDFKit wired by the app
   rendererx/  scene-data/  gltf-lite/      the reusable 3D renderer (docs/design/3d-renderer.md)
   usd-lite/             pure-Rust USD reader and composition
   formats/              viewer-formats: the registry of every loader, shared by the app and the corpus

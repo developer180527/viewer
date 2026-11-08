@@ -1,4 +1,7 @@
 pub mod libfileparser_testkit
+pub mod libfileparser_testkit::pdf
+pub fn libfileparser_testkit::pdf::pdf(&[(f32, f32, u32)]) -> alloc::vec::Vec<u8>
+pub fn libfileparser_testkit::pdf::pixel(&[u8], u32, u32, u32) -> [u8; 4]
 pub struct libfileparser_testkit::CountingNotify(_)
 impl libfileparser_testkit::CountingNotify
 pub fn libfileparser_testkit::CountingNotify::count(&self) -> usize

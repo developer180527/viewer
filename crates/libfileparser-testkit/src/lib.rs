@@ -16,6 +16,7 @@
 mod conformance;
 mod fakes;
 mod fuzz;
+pub mod pdf;
 mod summary;
 
 pub use conformance::{Sample, assert_conforms, check};

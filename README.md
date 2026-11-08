@@ -54,7 +54,7 @@ Automation flags: `--benchmark` (prints startup timings and exits once the file 
 
 ## Licence
 
-MIT or Apache-2.0, except `crates/pdf-mupdf`, which links MuPDF and is AGPL-3.0-or-later. Desktop and Android builds include it, so those builds of the app are distributed under the AGPL; iOS builds use PDFKit and contain no MuPDF (docs/design/pdf.md §3).
+MIT or Apache-2.0, except `crates/libfileparser-mupdf`, which links MuPDF and is AGPL-3.0-or-later. `libfileparser-docs` uses it only with its `mupdf` feature, off by default. Viewer's desktop and Android builds turn it on, so those builds of the app are distributed under the AGPL; iOS builds use PDFKit and contain no MuPDF (docs/design/pdf.md §3).
 
 ## Layout
 
@@ -69,10 +69,10 @@ crates/libfileparser-images   PNG, JPEG, WebP, GIF, TIFF, EXR, HDR… and SVG, d
 crates/libfileparser-data     JSON and its dialects, YAML, TOML, XML, plists, INI-like config, CSV/TSV: trees and tables linked to their lines
 crates/libfileparser-text     text by lines and its language; the Source facet
 crates/libfileparser-archives zip / tar / gzip containers, folders; the Package facet
-crates/libviewer              views for every content model (text, hex, tree, table, container, raster, scene), libgui
-crates/fmt-pdf       PDF loader; picks the backend by target
-crates/pdf-mupdf     MuPDF backend (AGPL; not in iOS builds)
-crates/pdf-pdfkit    PDFKit backend (Apple)
+crates/libviewer              views for every content model (text, hex, tree, table, container, raster, scene, pages, Markdown), libgui
+crates/libfileparser-docs     PDF and Markdown; MuPDF its only bundled PDF engine (feature `mupdf`)
+crates/libfileparser-mupdf    MuPDF's pages, built from source (AGPL; not in iOS builds)
+crates/libfileparser-pdfkit   PDF through Apple's PDFKit, a reader an app registers (Viewer: iOS)
 crates/rendererx*    RendererX: the reusable 3D renderer, its CPU scene and glTF loader
 crates/usd-lite      pure-Rust USD reader and composition
 crates/formats       the registry of every loader (app and corpus share it)

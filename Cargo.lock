@@ -1358,6 +1358,7 @@ dependencies = [
  "libfileparser-archives",
  "libfileparser-core",
  "libfileparser-data",
+ "libfileparser-docs",
  "libfileparser-images",
  "libfileparser-testkit",
  "libfileparser-text",
@@ -1422,6 +1423,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "libfileparser-docs"
+version = "0.3.1"
+dependencies = [
+ "libfileparser-core",
+ "libfileparser-mupdf",
+ "libfileparser-testkit",
+]
+
+[[package]]
 name = "libfileparser-images"
 version = "0.3.1"
 dependencies = [
@@ -1430,6 +1440,29 @@ dependencies = [
  "libfileparser-testkit",
  "png",
  "resvg",
+]
+
+[[package]]
+name = "libfileparser-mupdf"
+version = "0.3.1"
+dependencies = [
+ "cc",
+ "libfileparser-core",
+ "libfileparser-testkit",
+]
+
+[[package]]
+name = "libfileparser-pdfkit"
+version = "0.3.1"
+dependencies = [
+ "libfileparser-core",
+ "libfileparser-docs",
+ "libfileparser-testkit",
+ "objc2 0.6.5",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-foundation 0.3.2",
+ "objc2-pdf-kit",
 ]
 
 [[package]]
@@ -1579,6 +1612,7 @@ version = "0.3.1"
 dependencies = [
  "libfileparser-core",
  "libgui",
+ "libgui_markdown",
  "rendererx",
  "wgpu",
 ]
@@ -3659,7 +3693,6 @@ dependencies = [
  "rendererx",
  "viewer-core",
  "viewer-fmt-doc",
- "viewer-fmt-pdf",
  "viewer-formats",
  "wgpu",
  "winit",
@@ -3699,47 +3732,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "viewer-fmt-pdf"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "viewer-core",
- "viewer-pdf-mupdf",
- "viewer-pdf-pdfkit",
-]
-
-[[package]]
 name = "viewer-formats"
 version = "0.3.1"
 dependencies = [
  "anyhow",
  "libfileparser",
  "libfileparser-core",
+ "libfileparser-pdfkit",
  "viewer-core",
  "viewer-fmt-doc",
- "viewer-fmt-pdf",
-]
-
-[[package]]
-name = "viewer-pdf-mupdf"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "cc",
- "viewer-core",
-]
-
-[[package]]
-name = "viewer-pdf-pdfkit"
-version = "0.3.1"
-dependencies = [
- "anyhow",
- "objc2 0.6.5",
- "objc2-core-foundation",
- "objc2-core-graphics",
- "objc2-foundation 0.3.2",
- "objc2-pdf-kit",
- "viewer-core",
 ]
 
 [[package]]

@@ -1,6 +1,6 @@
 [package]
 name = "viewer-fmt-doc"
-description = "Text, source code and Markdown loaders."
+description = "Viewer's text loader: plain text and source code, highlighted."
 version.workspace = true
 edition.workspace = true
 license.workspace = true

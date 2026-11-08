@@ -9,5 +9,5 @@ sizes = ["612x792", "842x595"]
 
 [metadata]
 Pages = "2"
-Renderer = "MuPDF"
+"Rendered by" = "MuPDF"
 Version = "PDF 1.7"
