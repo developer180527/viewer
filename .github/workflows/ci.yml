@@ -173,7 +173,9 @@ jobs:
           if [ "$GITHUB_REF" = refs/heads/main ]; then base=HEAD~1; else base=$(git merge-base HEAD origin/main); fi
           cargo semver-checks --baseline-rev "$base" \
             -p libfileparser-core -p libfileparser -p libfileparser-3d -p libfileparser-images -p libfileparser-text \
-            -p libfileparser-archives -p libfileparser-data -p libfileparser-testkit -p usd-lite -p gltf-lite -p scene-data -p libviewer
+            -p libfileparser-archives -p libfileparser-data -p libfileparser-docs -p libfileparser-sheets -p libfileparser-testkit \
+            -p usd-lite -p gltf-lite -p blend-lite -p scene-data -p libviewer \
+            -p docx-lite -p odt-lite -p rtf-lite -p ods-lite -p sylk-lite -p dif-lite
 
   # The shared crates and the app itself (ios/run-sim.sh runs it on a simulator).
   ios:

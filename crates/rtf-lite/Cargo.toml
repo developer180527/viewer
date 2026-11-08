@@ -1,9 +1,15 @@
 [package]
 name = "rtf-lite"
-description = "Reads Rich Text Format into events (paragraphs, headings, marks, tables, links), for any document model. No dependencies."
+description = "Reads Rich Text Format into events (paragraphs, headings, marks, tables, links), for any document model. No dependencies unless `encodings` is on."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
 # Reusable on its own: no dependency on libfileparser or the viewer.
 [dependencies]
+encoding_rs = { version = "0.8", optional = true }
+
+[features]
+# Every common Windows code page (Cyrillic, Greek, CJK…); without it, only
+# Windows-1252 text reads right.
+encodings = ["dep:encoding_rs"]

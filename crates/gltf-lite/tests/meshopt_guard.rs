@@ -47,3 +47,11 @@ fn bad_counts_and_strides_are_refused() {
         let _ = gltf_lite::load(Arc::new(gltf(mode, count, stride)), &None_, &mut builder);
     }
 }
+
+#[test]
+fn a_view_claiming_more_than_the_scene_may_hold_isnt_decoded() {
+    // A billion 4-byte vertices: 4 GB, over the default 2 GiB scene budget.
+    let (_, mut builder) = scene_data::CpuScene::new();
+    let loaded = gltf_lite::load(Arc::new(gltf("ATTRIBUTES", 1_000_000_000, 4)), &None_, &mut builder).unwrap();
+    assert!(loaded.warnings.iter().any(|w| w.contains("more compressed data") || w.contains("more decoded data")), "{:?}", loaded.warnings);
+}

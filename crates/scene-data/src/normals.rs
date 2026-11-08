@@ -11,6 +11,78 @@ use crate::{Indices, MeshData, Stream, Topology};
 /// Faces meeting at more than this angle keep a hard edge (Blender's auto smooth).
 const HARD_EDGE_COS: f32 = 0.5; // cos 60°
 
+/// A vertex in more triangles than this has them grouped by direction (see [`Busy`]):
+/// summing every one for every corner would be quadratic in a fan's size.
+const BUSY: usize = 64;
+
+/// The triangles around one busy vertex, grouped by which way they face.
+///
+/// A corner's normal sums the triangles within 60° of its own. A group lying wholly
+/// inside that angle is added in one step and one wholly outside is skipped; only a
+/// group the boundary cuts through is looked at triangle by triangle. So the sum is the
+/// same as triangle by triangle, at a cost of about the number of groups.
+struct Busy {
+    groups: Vec<Group>,
+    /// Every triangle's face, for a corner whose own triangle is degenerate.
+    all: Vec3,
+}
+
+struct Group {
+    /// The members' mean direction, and how far (the cosine) the furthest strays.
+    dir: Vec3,
+    spread: f32,
+    sum: Vec3,
+    tris: Vec<u32>,
+}
+
+impl Busy {
+    fn new(incident: &[u32], faces: &[Vec3], units: &[Vec3]) -> Self {
+        let mut keyed: HashMap<[i32; 3], Vec<u32>> = HashMap::new();
+        let mut all = Vec3::ZERO;
+        // Finer groups for busier vertices: the boundary cuts fewer members each.
+        let scale = ((incident.len() as f32).sqrt() / 4.0).clamp(4.0, 32.0);
+        for &t in incident {
+            all += faces[t as usize];
+            // Degenerate triangles face nowhere: within no corner's angle.
+            let u = units[t as usize];
+            if u != Vec3::ZERO {
+                keyed.entry((u * scale).round().as_ivec3().to_array()).or_default().push(t);
+            }
+        }
+        let groups = keyed
+            .into_values()
+            .map(|tris| {
+                let dir = tris.iter().fold(Vec3::ZERO, |a, &t| a + units[t as usize]).normalize_or_zero();
+                let spread = tris.iter().map(|&t| units[t as usize].dot(dir)).fold(1.0f32, f32::min).clamp(-1.0, 1.0);
+                let sum = tris.iter().fold(Vec3::ZERO, |a, &t| a + faces[t as usize]);
+                Group { dir, spread, sum, tris }
+            })
+            .collect();
+        Self { groups, all }
+    }
+
+    /// The sum of the faces within [`HARD_EDGE_COS`] of `own`.
+    fn sum(&self, own: Vec3, faces: &[Vec3], units: &[Vec3]) -> Vec3 {
+        if own == Vec3::ZERO {
+            return self.all;
+        }
+        let limit = HARD_EDGE_COS.acos();
+        // Rounding near the boundary goes the exact way.
+        const MARGIN: f32 = 1e-3;
+        let mut sum = Vec3::ZERO;
+        for g in &self.groups {
+            let (at, spread) = (g.dir.dot(own).clamp(-1.0, 1.0).acos(), g.spread.acos());
+            if at + spread < limit - MARGIN {
+                sum += g.sum;
+            } else if at - spread > limit + MARGIN {
+            } else {
+                sum += g.tris.iter().filter(|&&t| units[t as usize].dot(own) >= HARD_EDGE_COS).fold(Vec3::ZERO, |a, &t| a + faces[t as usize]);
+            }
+        }
+        sum
+    }
+}
+
 /// Adds normals to a triangle mesh that has none; other meshes are returned as they are.
 ///
 /// Triangles are smoothed across gentle edges and kept hard across sharp ones, so a scan
@@ -64,14 +136,24 @@ pub(crate) fn generate(mut mesh: MeshData) -> MeshData {
     let mut variants: HashMap<(u32, [i32; 3]), u32> = HashMap::new();
     // Only materialised once the first vertex splits.
     let mut new_indices: Option<Vec<u32>> = None;
+    // Busy vertices' groups, and their corners' normals by own direction: a flat fan's
+    // corners all face the same way.
+    let mut busy: HashMap<u32, Busy> = HashMap::new();
+    let mut seen: HashMap<(u32, [u32; 3]), Vec3> = HashMap::new();
     for (c, &v) in indices.iter().enumerate() {
         let own = units[c / 3];
         let incident = &around[start[v as usize] as usize..start[v as usize + 1] as usize];
-        let n = incident
-            .iter()
-            .filter(|&&t| own == Vec3::ZERO || units[t as usize].dot(own) >= HARD_EDGE_COS)
-            .fold(Vec3::ZERO, |acc, &t| acc + faces[t as usize])
-            .normalize_or_zero();
+        let n = if incident.len() > BUSY {
+            *seen.entry((v, own.to_array().map(f32::to_bits))).or_insert_with(|| {
+                busy.entry(v).or_insert_with(|| Busy::new(incident, &faces, &units)).sum(own, &faces, &units).normalize_or_zero()
+            })
+        } else {
+            incident
+                .iter()
+                .filter(|&&t| own == Vec3::ZERO || units[t as usize].dot(own) >= HARD_EDGE_COS)
+                .fold(Vec3::ZERO, |acc, &t| acc + faces[t as usize])
+                .normalize_or_zero()
+        };
         let vi = v as usize;
         let index = if !assigned[vi] {
             assigned[vi] = true;
@@ -159,6 +241,61 @@ mod tests {
         // A gentle bend (under 60°) is smoothed across: shared vertices stay shared.
         let bend = indexed(vec![Vec3::ZERO, Vec3::X, Vec3::Y, Vec3::new(0.5, -1.0, 0.3)], vec![0, 1, 2, 1, 0, 3]);
         assert_eq!(generate(bend).positions.len(), 4);
+    }
+
+    /// Triangle by triangle, as for a vertex that isn't busy.
+    fn direct(m: &MeshData) -> Vec<Vec3> {
+        let p = m.positions.as_slice();
+        let idx = index_list(m);
+        let face = |t: usize| {
+            let n = (p[idx[t * 3 + 1] as usize] - p[idx[t * 3] as usize]).cross(p[idx[t * 3 + 2] as usize] - p[idx[t * 3] as usize]);
+            if n.is_finite() { n } else { Vec3::ZERO }
+        };
+        (0..idx.len())
+            .map(|c| {
+                let own = face(c / 3).normalize_or_zero();
+                (0..idx.len() / 3)
+                    .filter(|&t| idx[t * 3..t * 3 + 3].contains(&idx[c]))
+                    .filter(|&t| own == Vec3::ZERO || face(t).normalize_or_zero().dot(own) >= HARD_EDGE_COS)
+                    .fold(Vec3::ZERO, |a, t| a + face(t))
+                    .normalize_or_zero()
+            })
+            .collect()
+    }
+
+    /// A cone's tip: `n` triangles round one vertex, `height` setting how sharp it is.
+    fn cone(n: usize, height: f32) -> MeshData {
+        let mut positions = vec![Vec3::Z * height];
+        let mut indices = Vec::new();
+        for i in 0..n {
+            let a = i as f32 / n as f32 * std::f32::consts::TAU;
+            positions.push(Vec3::new(a.cos(), a.sin(), 0.0));
+            indices.extend([0, 1 + i as u32, 1 + ((i + 1) % n) as u32]);
+        }
+        indexed(positions, indices)
+    }
+
+    #[test]
+    fn a_busy_vertex_gets_the_normals_it_would_triangle_by_triangle() {
+        // Flat, gentle, sharp (some neighbours past 60°, some not), and a needle.
+        for height in [0.0, 0.3, 1.0, 4.0] {
+            let m = cone(200, height);
+            let want = direct(&m);
+            let g = generate(m.clone());
+            let (n, idx) = (g.normals.as_ref().unwrap().as_slice(), index_list(&g));
+            for (c, w) in want.iter().enumerate() {
+                assert!((n[idx[c] as usize] - *w).length() < 1e-4, "height {height}, corner {c}: {} vs {w}", n[idx[c] as usize]);
+            }
+        }
+    }
+
+    #[test]
+    fn a_huge_fan_takes_moments() {
+        // Triangle by triangle, 300,000 corners each summing 100,000 triangles.
+        let started = std::time::Instant::now();
+        let g = generate(cone(100_000, 1.0));
+        assert!(g.normals.is_some());
+        assert!(started.elapsed() < std::time::Duration::from_secs(20), "{:?}", started.elapsed());
     }
 
     #[test]

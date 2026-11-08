@@ -3,8 +3,10 @@
 //! It reads paragraphs, headings (from the style sheet's "heading N" styles or
 //! `\\outlinelevel`), bold, italic, underline, strikethrough, superscript and
 //! subscript, tables, line and page breaks, links (`HYPERLINK` fields), Unicode
-//! (`\\u`) and Windows-1252 text, and the document's title. Pictures, fonts, colours,
-//! headers, footers and footnotes are skipped.
+//! (`\\u`, characters past U+FFFF included), text in the document's or a font's code
+//! page (Windows-1252 always; Cyrillic, Greek, Japanese, Chinese, Korean and the rest
+//! with the `encodings` feature), and the document's title. Pictures (`\\bin` data
+//! included), colours, headers, footers and footnotes are skipped.
 //!
 //! What it reads arrives as events in a [`Sink`] the caller implements, so it builds
 //! whatever document model the caller has:
@@ -156,6 +158,8 @@ impl Chars {
 #[derive(Clone, Default)]
 struct Group {
     chars: Chars,
+    /// The font chosen with `\\f`: its character set says how bytes read.
+    font: Option<i64>,
     /// What this group's text is for; `None` is the document's text.
     dest: Option<Dest>,
     /// Characters to skip after a `\u` (the plain-text fallback).
@@ -164,8 +168,10 @@ struct Group {
 
 #[derive(Clone, Copy, PartialEq)]
 enum Dest {
-    /// Not shown (fonts, colours, pictures, headers…).
+    /// Not shown (colours, pictures, headers…).
     Skip,
+    /// The font table: not shown, but each font's character set is kept.
+    FontTable,
     StyleSheet,
     Title,
     /// A field's instruction (`HYPERLINK "…"`).
@@ -191,6 +197,107 @@ struct State<'a, S: Sink> {
     in_table: bool,
     in_row: bool,
     codepage: u32,
+    /// Fonts whose character set names a code page other than the document's.
+    font_pages: HashMap<i64, u32>,
+    /// The font table entry being read.
+    font_entry: Option<i64>,
+}
+
+impl<S: Sink> State<'_, S> {
+    /// The code page bytes are read in, in this group: its font's, else the document's.
+    fn page(&self, stack: &[Group]) -> u32 {
+        stack.last().and_then(|g| g.font).and_then(|f| self.font_pages.get(&f).copied()).unwrap_or(self.codepage)
+    }
+}
+
+/// Text read but not yet sent: characters, then the bytes after them (a double-byte
+/// code page's characters are two `\\'hh` each, so bytes are decoded together), and a
+/// UTF-16 high surrogate from `\\u` waiting for its low half.
+#[derive(Default)]
+struct Text {
+    chars: String,
+    bytes: Vec<u8>,
+    page: u32,
+    high: Option<u32>,
+}
+
+impl Text {
+    fn decode_bytes(&mut self) {
+        if !self.bytes.is_empty() {
+            self.chars.push_str(&decode(&self.bytes, self.page));
+            self.bytes.clear();
+        }
+    }
+
+    /// Before anything but a low surrogate: a high one alone is a broken character.
+    fn settle(&mut self) {
+        self.decode_bytes();
+        if self.high.take().is_some() {
+            self.chars.push('\u{fffd}');
+        }
+    }
+
+    fn push(&mut self, c: char) {
+        self.settle();
+        self.chars.push(c);
+    }
+
+    fn byte(&mut self, b: u8, page: u32) {
+        if self.high.is_some() || (page != self.page && !self.bytes.is_empty()) {
+            self.settle();
+        }
+        self.page = page;
+        self.bytes.push(b);
+    }
+
+    /// One `\\u`: a UTF-16 unit, half of a pair or a whole character.
+    fn unit(&mut self, u: u32) {
+        match (self.high, u) {
+            (Some(h), 0xdc00..=0xdfff) => {
+                self.high = None;
+                self.decode_bytes();
+                self.chars.push(char::from_u32(0x10000 + ((h - 0xd800) << 10) + (u - 0xdc00)).unwrap_or('\u{fffd}'));
+            }
+            (_, 0xd800..=0xdbff) => {
+                self.settle();
+                self.high = Some(u);
+            }
+            _ => self.push(char::from_u32(u).unwrap_or('\u{fffd}')),
+        }
+    }
+
+    fn is_empty(&self) -> bool {
+        self.chars.is_empty() && self.bytes.is_empty()
+    }
+
+    /// What's ready to send. A high surrogate waits: the control word read next may be
+    /// its low half.
+    fn take(&mut self) -> String {
+        self.decode_bytes();
+        std::mem::take(&mut self.chars)
+    }
+}
+
+/// A font's `\\fcharset` as a Windows code page; `None` for ANSI (the document's own
+/// `\\ansicpg`), symbol fonts and ones not known.
+fn charset_page(charset: i64) -> Option<u32> {
+    Some(match charset {
+        77 => 10000,
+        128 => 932,
+        129 => 949,
+        134 => 936,
+        136 => 950,
+        161 => 1253,
+        162 => 1254,
+        163 => 1258,
+        177 => 1255,
+        178 => 1256,
+        186 => 1257,
+        204 => 1251,
+        222 => 874,
+        238 => 1250,
+        _ => return None,
+    })
 }
 
 /// Reads `rtf` into `sink`, within `limits`. Stops early, with [`Error::Stopped`], when
@@ -199,11 +306,11 @@ pub fn parse<S: Sink>(rtf: &[u8], sink: &mut S, limits: &Limits) -> Result<Info,
     if !rtf.starts_with(b"{\\rtf") {
         return Err(Error::NotRtf);
     }
-    let mut st = State { s: sink, in_cell: false, field_depth: None, open: Vec::new(), in_para: false, heading: None, style_headings: HashMap::new(), style_text: String::new(), style_index: None, title: String::new(), field: String::new(), link: false, in_table: false, in_row: false, codepage: 1252 };
+    let mut st = State { s: sink, in_cell: false, field_depth: None, open: Vec::new(), in_para: false, heading: None, style_headings: HashMap::new(), style_text: String::new(), style_index: None, title: String::new(), field: String::new(), link: false, in_table: false, in_row: false, codepage: 1252, font_pages: HashMap::new(), font_entry: None };
     let mut stack: Vec<Group> = vec![Group { uc: 1, ..Default::default() }];
     let mut skip_chars = 0u32;
     let mut i = 0;
-    let mut text = Vec::new();
+    let mut text = Text::default();
     while i < rtf.len() {
         let c = rtf[i];
         match c {
@@ -260,6 +367,12 @@ pub fn parse<S: Sink>(rtf: &[u8], sink: &mut S, limits: &Limits) -> Result<Info,
                     if rtf.get(i) == Some(&b' ') {
                         i += 1;
                     }
+                    // `\bin N`: N raw bytes (a picture, an object), which may hold
+                    // braces and backslashes of their own. Never text.
+                    if word == "bin" {
+                        i = i.saturating_add(param.unwrap_or(0).max(0) as usize).min(rtf.len());
+                        continue;
+                    }
                     if skip_chars > 0 {
                         skip_chars -= 1;
                         continue;
@@ -272,7 +385,7 @@ pub fn parse<S: Sink>(rtf: &[u8], sink: &mut S, limits: &Limits) -> Result<Info,
                     if skip_chars > 0 {
                         skip_chars -= 1;
                     } else if let Some(byte) = hex {
-                        push_char(&mut text, decode_byte(byte, st.codepage));
+                        text.byte(byte, st.page(&stack));
                     }
                 } else {
                     i += 1;
@@ -281,14 +394,14 @@ pub fn parse<S: Sink>(rtf: &[u8], sink: &mut S, limits: &Limits) -> Result<Info,
                         continue;
                     }
                     match n {
-                        b'~' => push_char(&mut text, '\u{a0}'),
+                        b'~' => text.push('\u{a0}'),
                         b'-' => {}
-                        b'_' => push_char(&mut text, '\u{2011}'),
+                        b'_' => text.push('\u{2011}'),
                         b'\n' | b'\r' => {
                             st.flush_text(&mut text, &stack)?;
                             st.par()?;
                         }
-                        other => push_char(&mut text, other as char),
+                        other => text.push(other as char),
                     }
                 }
             }
@@ -298,7 +411,12 @@ pub fn parse<S: Sink>(rtf: &[u8], sink: &mut S, limits: &Limits) -> Result<Info,
                     skip_chars -= 1;
                 } else {
                     // Plain ASCII; anything else is the code page's.
-                    push_char(&mut text, if c < 0x80 { c as char } else { decode_byte(c, st.codepage) });
+                    if c < 0x80 && text.bytes.is_empty() {
+                        text.push(c as char);
+                    } else {
+                        // A double-byte character's second byte can be ASCII.
+                        text.byte(c, st.page(&stack));
+                    }
                 }
                 i += 1;
             }
@@ -311,8 +429,45 @@ pub fn parse<S: Sink>(rtf: &[u8], sink: &mut S, limits: &Limits) -> Result<Info,
     Ok(Info { title: (!title.is_empty()).then_some(title) })
 }
 
-fn push_char(text: &mut Vec<char>, c: char) {
-    text.push(c);
+/// Bytes in a Windows code page. With the `encodings` feature every common one is read
+/// (Cyrillic, Greek, Japanese, Chinese, Korean…); without it, Windows-1252, and others
+/// as Latin-1.
+fn decode(bytes: &[u8], page: u32) -> String {
+    #[cfg(feature = "encodings")]
+    if let Some(e) = encoding(page) {
+        return e.decode_without_bom_handling(bytes).0.into_owned();
+    }
+    bytes.iter().map(|&b| decode_byte(b, page)).collect()
+}
+
+#[cfg(feature = "encodings")]
+fn encoding(page: u32) -> Option<&'static encoding_rs::Encoding> {
+    use encoding_rs::*;
+    Some(match page {
+        437 | 1252 => return None,
+        866 => IBM866,
+        874 => WINDOWS_874,
+        932 => SHIFT_JIS,
+        936 => GBK,
+        949 => EUC_KR,
+        950 => BIG5,
+        1250 => WINDOWS_1250,
+        1251 => WINDOWS_1251,
+        1253 => WINDOWS_1253,
+        1254 => WINDOWS_1254,
+        1255 => WINDOWS_1255,
+        1256 => WINDOWS_1256,
+        1257 => WINDOWS_1257,
+        1258 => WINDOWS_1258,
+        10000 => MACINTOSH,
+        20866 => KOI8_R,
+        21866 => KOI8_U,
+        28592 => ISO_8859_2,
+        28595 => ISO_8859_5,
+        28597 => ISO_8859_7,
+        65001 => UTF_8,
+        _ => return None,
+    })
 }
 
 /// A byte in Windows-1252 (the usual `\ansicpg`); others are read as Latin-1.
@@ -325,14 +480,14 @@ fn decode_byte(b: u8, codepage: u32) -> char {
 }
 
 impl<S: Sink> State<'_, S> {
-    fn flush_text(&mut self, text: &mut Vec<char>, stack: &[Group]) -> Result<(), Error> {
+    fn flush_text(&mut self, text: &mut Text, stack: &[Group]) -> Result<(), Error> {
         if text.is_empty() {
             return Ok(());
         }
-        let s: String = text.drain(..).collect();
+        let s = text.take();
         let g = stack.last().cloned().unwrap_or_default();
         match g.dest {
-            Some(Dest::Skip) => {}
+            Some(Dest::Skip | Dest::FontTable) => {}
             Some(Dest::StyleSheet) => self.style_text.push_str(&s),
             Some(Dest::Title) => self.title.push_str(&s),
             Some(Dest::FieldInstr) => self.field.push_str(&s),
@@ -437,7 +592,7 @@ impl<S: Sink> State<'_, S> {
         Ok(())
     }
 
-    fn control(&mut self, word: &str, param: Option<i64>, stack: &mut [Group], skip: &mut u32, text: &mut Vec<char>) -> Result<(), Error> {
+    fn control(&mut self, word: &str, param: Option<i64>, stack: &mut [Group], skip: &mut u32, text: &mut Text) -> Result<(), Error> {
         let on = param != Some(0);
         let g = stack.last_mut().expect("a group is open");
         match word {
@@ -456,18 +611,18 @@ impl<S: Sink> State<'_, S> {
                 self.end_para()?;
                 self.s.page_break()?;
             }
-            "tab" => push_char(text, '\t'),
-            "emdash" => push_char(text, '—'),
-            "endash" => push_char(text, '–'),
-            "bullet" => push_char(text, '•'),
-            "lquote" => push_char(text, '‘'),
-            "rquote" => push_char(text, '’'),
-            "ldblquote" => push_char(text, '“'),
-            "rdblquote" => push_char(text, '”'),
+            "tab" => text.push('\t'),
+            "emdash" => text.push('—'),
+            "endash" => text.push('–'),
+            "bullet" => text.push('•'),
+            "lquote" => text.push('‘'),
+            "rquote" => text.push('’'),
+            "ldblquote" => text.push('“'),
+            "rdblquote" => text.push('”'),
             "u" => {
                 if let Some(p) = param {
                     let code = if p < 0 { p + 65536 } else { p } as u32;
-                    push_char(text, char::from_u32(code).unwrap_or('\u{fffd}'));
+                    text.unit(code);
                     *skip = g.uc;
                 }
             }
@@ -527,7 +682,21 @@ impl<S: Sink> State<'_, S> {
             }
             // `\info` holds `\title` (shown) among things that aren't (skipped by name).
             "info" => {}
-            "fonttbl" | "colortbl" | "pict" | "object" | "header" | "footer" | "headerl" | "headerr" | "footerl" | "footerr" | "footnote" | "annotation" | "xmlnstbl"
+            "fonttbl" => g.dest = Some(Dest::FontTable),
+            "f" if g.dest == Some(Dest::FontTable) => self.font_entry = param,
+            "f" => g.font = param,
+            "deff" => g.font = param,
+            "fcharset" if g.dest == Some(Dest::FontTable) => {
+                if let (Some(f), Some(page)) = (self.font_entry, param.and_then(charset_page)) {
+                    self.font_pages.insert(f, page);
+                }
+            }
+            "cpg" if g.dest == Some(Dest::FontTable) => {
+                if let (Some(f), Some(p)) = (self.font_entry, param) {
+                    self.font_pages.insert(f, p.clamp(0, 65535) as u32);
+                }
+            }
+            "colortbl" | "pict" | "object" | "header" | "footer" | "headerl" | "headerr" | "footerl" | "footerr" | "footnote" | "annotation" | "xmlnstbl"
             | "listtable" | "listoverridetable" | "revtbl" | "rsidtbl" | "generator" | "themedata" | "colorschememapping" | "latentstyles" | "datastore" | "bkmkstart"
             | "bkmkend" | "nonshppict" | "shp" | "author" | "operator" | "company" => g.dest = Some(Dest::Skip),
             _ => {}
@@ -600,6 +769,43 @@ mod tests {
             }
         }
         assert_eq!(parse(b"{\\rtf1 hi\\par}", &mut Quit, &Limits::default()), Err(Error::Stopped));
+    }
+
+    fn text_of(rtf: &[u8]) -> String {
+        struct Plain(String);
+        impl Sink for Plain {
+            fn text(&mut self, t: &str) -> Result<(), Stop> {
+                self.0.push_str(t);
+                Ok(())
+            }
+        }
+        let mut out = Plain(String::new());
+        parse(rtf, &mut out, &Limits::default()).unwrap();
+        out.0
+    }
+
+    #[test]
+    fn characters_past_the_basic_plane_come_whole() {
+        // Word writes 😀 as its two UTF-16 halves, each with a fallback `?`.
+        assert_eq!(text_of(br"{\rtf1 a\u-10179?\u-8704?b}"), "a😀b");
+        // A half on its own is a broken character, not a lost one.
+        assert_eq!(text_of(br"{\rtf1 a\u-10179?b}"), "a\u{fffd}b");
+    }
+
+    #[test]
+    fn binary_data_isnt_read_as_rtf() {
+        // Six raw bytes holding a brace and a backslash: skipped, the group still ends.
+        assert_eq!(text_of(b"{\\rtf1 {\\pict\\bin6 }\\x{a\\par}after}"), "after");
+    }
+
+    #[cfg(feature = "encodings")]
+    #[test]
+    fn bytes_read_in_the_fonts_code_page() {
+        // Cyrillic by the document's code page, by a font's character set, and Japanese
+        // (two bytes a character).
+        assert_eq!(text_of(br"{\rtf1\ansi\ansicpg1251 \'cf\'f0\'e8}"), "При");
+        assert_eq!(text_of(br"{\rtf1\ansi\ansicpg1252{\fonttbl{\f0 Arial;}{\f1\fcharset204 Arial Cyr;}}\f0 caf\'e9 {\f1 \'cf\'f0\'e8}}"), "café При");
+        assert_eq!(text_of(br"{\rtf1\ansi{\fonttbl{\f0\fcharset128 MS Mincho;}}\f0 \'82\'a0\'93\'fa}"), "あ日");
     }
 
     #[test]

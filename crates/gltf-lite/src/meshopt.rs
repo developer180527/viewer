@@ -10,10 +10,19 @@ use crate::accessor::BufferData;
 use crate::json::Root;
 
 const EXTENSIONS: [&str; 2] = ["EXT_meshopt_compression", "KHR_meshopt_compression"];
-/// Most bytes one view may decode to.
-const MAX_DECODED: usize = 1 << 31;
-/// Most bytes all of a file's views may decode to: a small file can claim a lot.
-const MAX_TOTAL: usize = 1 << 32;
+
+/// Decoded data, kept in the words it was decoded into (filters need them aligned)
+/// rather than copied out to bytes.
+struct Decoded {
+    words: Vec<u32>,
+    len: usize,
+}
+
+impl AsRef<[u8]> for Decoded {
+    fn as_ref(&self) -> &[u8] {
+        &bytemuck::cast_slice(&self.words)[..self.len]
+    }
+}
 
 /// Whether a buffer only stands in for compressed views, and so holds no data.
 pub fn is_placeholder(extensions: &serde_json::Map<String, Value>) -> bool {
@@ -21,11 +30,11 @@ pub fn is_placeholder(extensions: &serde_json::Map<String, Value>) -> bool {
 }
 
 /// Decodes one view's data. Filters read it as 16- and 32-bit values, so it's aligned.
-fn decode(ext: &Value, source: &[u8]) -> Result<Vec<u8>, String> {
+fn decode(ext: &Value, source: &[u8], max: usize) -> Result<Decoded, String> {
     let num = |k: &str| ext.get(k).and_then(Value::as_u64).map(|v| v as usize);
     let count = num("count").ok_or("no count")?;
     let stride = num("byteStride").filter(|s| (1..=256).contains(s)).ok_or("bad byteStride")?;
-    let len = count.checked_mul(stride).filter(|&n| n <= MAX_DECODED).ok_or("too large")?;
+    let len = count.checked_mul(stride).filter(|&n| n <= max).ok_or("more decoded data than the scene may hold")?;
     let mut words = vec![0u32; len.div_ceil(4)];
     let out: &mut [u8] = bytemuck::cast_slice_mut(&mut words);
     let dest = out.as_mut_ptr() as *mut c_void;
@@ -57,11 +66,14 @@ fn decode(ext: &Value, source: &[u8]) -> Result<Vec<u8>, String> {
             _ => return Err(format!("filter {filter} with stride {stride}")),
         }
     }
-    out.get(..len).map(<[u8]>::to_vec).ok_or_else(|| "too short".to_string())
+    Ok(Decoded { words, len })
 }
 
-/// Decodes every compressed view, each into a buffer of its own that the view then names.
-pub fn decompress(root: &mut Root, buffers: &mut Vec<Option<BufferData>>, warnings: &mut Vec<String>) {
+/// Decodes every compressed view, each into a buffer of its own that the view then names,
+/// all of them together within `max` bytes (the scene's byte limit): a small file can
+/// claim a lot.
+pub fn decompress(root: &mut Root, buffers: &mut Vec<Option<BufferData>>, max: u64, warnings: &mut Vec<String>) {
+    let max = usize::try_from(max).unwrap_or(usize::MAX);
     let mut total = 0usize;
     for i in 0..root.buffer_views.len() {
         let view = &root.buffer_views[i];
@@ -74,18 +86,18 @@ pub fn decompress(root: &mut Root, buffers: &mut Vec<Option<BufferData>>, warnin
             continue;
         };
         let claimed = num("count").saturating_mul(num("byteStride"));
-        if total.saturating_add(claimed) > MAX_TOTAL {
+        if total.saturating_add(claimed) > max {
             warnings.push(format!("buffer view {i}: more compressed data than one file may decode to"));
             continue;
         }
-        total += claimed;
-        match decode(&ext, data) {
+        match decode(&ext, data, max - total) {
             Ok(bytes) => {
-                let len = bytes.len();
+                let len = bytes.len;
                 let view = &mut root.buffer_views[i];
                 view.buffer = buffers.len();
                 view.byte_offset = 0;
                 view.byte_length = len;
+                total += len;
                 buffers.push(Some(BufferData::whole(Arc::new(bytes))));
             }
             Err(e) => warnings.push(format!("buffer view {i}: {e}")),

@@ -243,7 +243,7 @@ pub fn load(file: Bytes, resolver: &dyn Resolver, builder: &mut SceneBuilder) ->
             loaded.map_err(|e| warnings.push(format!("buffer {i}: {e}"))).ok()
         })
         .collect();
-    meshopt::decompress(&mut root, &mut buffers, &mut warnings);
+    meshopt::decompress(&mut root, &mut buffers, builder.scene().limits().max_bytes, &mut warnings);
 
     let mut loader = Loader {
         reader: Reader { root: &root, buffers: &buffers },

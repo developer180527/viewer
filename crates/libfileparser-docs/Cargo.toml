@@ -18,7 +18,7 @@ mupdf = ["dep:libfileparser-mupdf"]
 libfileparser-core.workspace = true
 # Our own format libraries (docs/design/libfileparser.md §6), where no mature one was
 # more reliable on the real-world corpus.
-rtf-lite.workspace = true
+rtf-lite = { workspace = true, features = ["encodings"] }
 docx-lite.workspace = true
 odt-lite.workspace = true
 # Markdown (CommonMark and GitHub's tables, strikethrough, task lists, footnotes).
