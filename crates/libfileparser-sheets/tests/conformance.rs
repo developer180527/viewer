@@ -88,6 +88,44 @@ fn a_cell_past_the_last_column_is_refused() {
     assert_eq!(t.info().columns.len(), 16_384);
 }
 
+#[test]
+fn a_sheet_damaged_partway_keeps_the_cells_before_the_damage() {
+    let cx = ParseContext::new();
+    let bytes = xlsx(r#"<row r="1"><c r="A1"><v>1</v></c></row><row r="2"><c r="A2" t="b"><v>00</v></c></row>"#);
+    let doc = XlsxReader.open(&FileSource::from_bytes("a.xlsx", bytes), &cx).unwrap();
+    assert!(doc.warnings().iter().any(|w| w.message.contains("damaged")), "{:?}", doc.warnings());
+    let Content::Table(t) = doc.facet(0, &cx).unwrap() else { panic!("a table") };
+    assert_eq!(t.rows(0..1).unwrap()[0][0], Cell::Int(1));
+}
+
+#[test]
+fn cells_past_the_last_column_of_a_workbook_are_left_out() {
+    let cx = ParseContext::new();
+    let bytes = xlsx(r#"<row r="1"><c r="A1"><v>1</v></c><c r="XFE1"><v>2</v></c></row>"#);
+    let doc = XlsxReader.open(&FileSource::from_bytes("a.xlsx", bytes), &cx).unwrap();
+    assert!(doc.warnings().iter().any(|w| w.message.contains("past the last column")), "{:?}", doc.warnings());
+    let Content::Table(t) = doc.facet(0, &cx).unwrap() else { panic!("a table") };
+    assert_eq!(t.info().columns.len(), 1);
+}
+
+#[test]
+fn a_workbook_of_only_charts_says_so() {
+    let mut out = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut out));
+        let mut add = |name: &str, body: &str| {
+            zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(body.as_bytes()).unwrap();
+        };
+        add("_rels/.rels", r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>"#);
+        add("xl/workbook.xml", r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="Chart" sheetId="1" r:id="rId1"/></sheets></workbook>"#);
+        add("xl/_rels/workbook.xml.rels", r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chartsheet" Target="chartsheets/sheet1.xml"/></Relationships>"#);
+        add("xl/chartsheets/sheet1.xml", r#"<chartsheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"/>"#);
+    }
+    let e = XlsxReader.open(&FileSource::from_bytes("a.xlsx", out), &ParseContext::new()).err().unwrap();
+    assert!(matches!(e, ParseError::Unsupported { .. }) && e.to_string().contains("charts"), "{e}");
+}
+
 /// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), every workbook opens or
 /// fails cleanly, every sheet and the formulas included: no panic, no hang, no abort.
 #[test]

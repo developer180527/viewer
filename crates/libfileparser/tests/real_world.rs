@@ -11,6 +11,9 @@
 //! ```text
 //! LFP_REAL_CORPUS=$PWD/corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
 //! ```
+//!
+//! `LFP_REAL_ONLY=xls,docx` checks only those reader folders; `LFP_REAL_VERBOSE=1` prints
+//! every file that didn't open, with its whole error.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -21,8 +24,8 @@ use libfileparser::{FileSource, ParseContext};
 
 /// What opening one file did.
 enum Outcome {
-    /// Opened, by this reader.
-    Opened(String),
+    /// Opened, by this reader, after these readers failed.
+    Opened(String, Vec<String>),
     Failed(String),
     Panicked(String),
     Hung,
@@ -36,10 +39,14 @@ fn open(path: PathBuf) -> Outcome {
         .spawn(move || {
             let result = std::panic::catch_unwind(|| {
                 let cx = ParseContext::new().with_limits(libfileparser_testkit::Fuzz::new().limits);
-                match FileSource::open(&path).map_err(|e| e.to_string()).and_then(|src| libfileparser::open(&src, &cx).map_err(|e| e.to_string())) {
-                    Ok(doc) => {
+                let opened = FileSource::open(&path).map_err(|e| e.to_string()).and_then(|src| {
+                    let (doc, tried) = libfileparser::open_reporting(&src, &cx);
+                    doc.map(|d| (d, tried.iter().map(|a| format!("{}: {}", a.reader, a.error)).collect())).map_err(|e| e.to_string())
+                });
+                match opened {
+                    Ok((doc, tried)) => {
                         libfileparser_testkit::exercise(&doc, &cx);
-                        Outcome::Opened(doc.format().reader.to_string())
+                        Outcome::Opened(doc.format().reader.to_string(), tried)
                     }
                     Err(e) => Outcome::Failed(e),
                 }
@@ -72,6 +79,11 @@ fn real_world_files() {
         }
     }
     folders.sort_by_key(|f| f.file_name().map(|n| n.to_owned()));
+    if let Ok(only) = std::env::var("LFP_REAL_ONLY") {
+        let only: Vec<&str> = only.split(',').map(str::trim).collect();
+        folders.retain(|f| only.contains(&&*f.file_name().unwrap().to_string_lossy()));
+    }
+    let verbose = std::env::var_os("LFP_REAL_VERBOSE").is_some();
     let mut broken = Vec::new();
     for folder in folders {
         let name = folder.file_name().unwrap().to_string_lossy().into_owned();
@@ -85,9 +97,17 @@ fn real_world_files() {
         for path in &files {
             let file = path.file_name().unwrap().to_string_lossy().into_owned();
             match open(path.clone()) {
-                Outcome::Opened(r) if r == expected => ok += 1,
-                Outcome::Opened(r) => other.entry(r).or_default().push(file),
+                Outcome::Opened(r, _) if r == expected => ok += 1,
+                Outcome::Opened(r, tried) => {
+                    if verbose {
+                        println!("  {name}/{file}: opened as {r}, after {}", tried.join("; "));
+                    }
+                    other.entry(r).or_default().push(file)
+                }
                 Outcome::Failed(e) => {
+                    if verbose {
+                        println!("  {name}/{file}: {e}");
+                    }
                     // Group errors by their first words.
                     let key: String = e.split([':', '(']).take(2).collect::<Vec<_>>().join(":").chars().take(70).collect();
                     failed.entry(key).or_default().push(file);

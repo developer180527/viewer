@@ -6,7 +6,7 @@ use std::sync::{Arc, Mutex};
 
 use calamine::{Data, DataRef, Reader as _, SheetType, SheetVisible, Sheets};
 use libfileparser_core::{
-    Category, Cell, Column, Content, Count, Document, FacetInfo, FileSource, FormatInfo, Limit, MemoryUse, Model, OwnedTable, ParseContext, ParseError, Result, Role, TableInfo, TableSource,
+    Category, Cell, Column, Content, Count, Document, FacetInfo, FileSource, FormatInfo, Limit, MemoryUse, Model, OwnedTable, ParseContext, ParseError, Result, Role, TableInfo, TableSource, Warning,
 };
 
 /// The file's bytes, shared rather than copied, as calamine's reader.
@@ -100,6 +100,7 @@ impl Sheet {
         cells.sort_by_key(|c| (c.0, c.1));
         let rows = cells.last().map_or(0, |c| c.0 as u64 + 1);
         let width = cells.iter().map(|c| c.1).max().map_or(0, |c| c.saturating_add(1));
+        // Calamine's sheets have had these left out (`read_cells`); our own readers' haven't.
         if width > MAX_COLUMNS {
             return Err(ParseError::corrupt(format!("a cell in column {}, past the last column ({})", width, column_name(MAX_COLUMNS - 1))));
         }
@@ -147,26 +148,55 @@ fn tick(n: &mut u32, cx: &ParseContext) -> Result<()> {
     if *n & 0xfff == 0 { cx.cancel.check() } else { Ok(()) }
 }
 
-fn read_cells(book: &mut Book, name: &str, cx: &ParseContext) -> Result<Vec<(u32, u32, Cell)>> {
+/// A sheet's cells, and, when damage cut it short, what stopped it: calamine reads cell
+/// by cell, so everything before the damage is kept. A sheet that can't be started is
+/// an error.
+struct Cells {
+    cells: Vec<(u32, u32, Cell)>,
+    damage: Option<String>,
+    /// Cells past the last column (XFD), left out.
+    beyond: usize,
+}
+
+fn read_cells(book: &mut Book, name: &str, cx: &ParseContext) -> Result<Cells> {
     let mut out = Vec::new();
     let mut n = 0;
+    let mut damage = None;
     match book {
         // Cell by cell: nothing here is sized by what the file claims.
         Sheets::Xlsx(x) => {
             let mut r = x.worksheet_cells_reader(name).map_err(error)?;
-            while let Some(c) = r.next_cell().map_err(error)? {
-                tick(&mut n, cx)?;
-                if let Some(v) = cell_ref(c.get_value()) {
-                    out.push((c.get_position().0, c.get_position().1, v));
+            loop {
+                match r.next_cell() {
+                    Ok(Some(c)) => {
+                        tick(&mut n, cx)?;
+                        if let Some(v) = cell_ref(c.get_value()) {
+                            out.push((c.get_position().0, c.get_position().1, v));
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        damage = Some(e.to_string());
+                        break;
+                    }
                 }
             }
         }
         Sheets::Xlsb(x) => {
             let mut r = x.worksheet_cells_reader(name).map_err(error)?;
-            while let Some(c) = r.next_cell().map_err(error)? {
-                tick(&mut n, cx)?;
-                if let Some(v) = cell_ref(c.get_value()) {
-                    out.push((c.get_position().0, c.get_position().1, v));
+            loop {
+                match r.next_cell() {
+                    Ok(Some(c)) => {
+                        tick(&mut n, cx)?;
+                        if let Some(v) = cell_ref(c.get_value()) {
+                            out.push((c.get_position().0, c.get_position().1, v));
+                        }
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        damage = Some(e.to_string());
+                        break;
+                    }
                 }
             }
         }
@@ -182,7 +212,9 @@ fn read_cells(book: &mut Book, name: &str, cx: &ParseContext) -> Result<Vec<(u32
             }
         }
     }
-    Ok(out)
+    let before = out.len();
+    out.retain(|c| c.1 < MAX_COLUMNS);
+    Ok(Cells { beyond: before - out.len(), cells: out, damage })
 }
 
 fn read_formulas(book: &mut Book, name: &str, out: &mut Vec<Vec<Cell>>, cx: &ParseContext) -> Result<()> {
@@ -249,17 +281,47 @@ fn open_workbook(src: &FileSource, bytes: Shared, reader: &'static str, format: 
     // A workbook opens on its first visible sheet; hidden ones come after the others.
     let mut order: Vec<&(String, bool)> = sheets.iter().collect();
     order.sort_by_key(|s| !s.1);
-    let Some((first, _)) = order.first().map(|s| (s.0.clone(), s.1)) else {
-        return Err(ParseError::corrupt("a workbook with no sheets"));
+    if order.is_empty() {
+        let charts = book.lock().unwrap_or_else(|e| e.into_inner()).sheets_metadata().iter().any(|s| s.typ == SheetType::ChartSheet);
+        return Err(if charts { ParseError::unsupported("This workbook holds only charts, which can't be shown yet.") } else { ParseError::corrupt("a workbook with no sheets") });
+    }
+    // It opens on the first sheet that can be read; one that can't is a warning, and an
+    // error only when no sheet can be.
+    let mut warnings = Vec::new();
+    let mut opened = None;
+    let mut first_error = None;
+    for (i, (name, _)) in order.iter().enumerate() {
+        match calm(|| read_cells(&mut book.lock().unwrap_or_else(|e| e.into_inner()), name, cx)) {
+            Ok(cells) => {
+                if let Some(d) = &cells.damage {
+                    warnings.push(Warning::new(format!("Sheet “{name}” is damaged; only the cells before the damage are shown: {d}")));
+                }
+                if cells.beyond > 0 {
+                    warnings.push(Warning::new(format!("Sheet “{name}” has {} cells past the last column ({}); they're left out.", cells.beyond, column_name(MAX_COLUMNS - 1))));
+                }
+                opened = Some((i, cells));
+                break;
+            }
+            Err(e @ (ParseError::Cancelled | ParseError::TooLarge(_))) => return Err(e),
+            Err(e) => {
+                warnings.push(Warning::new(format!("Sheet “{name}” couldn't be read: {e}")));
+                first_error.get_or_insert(e);
+            }
+        }
+    }
+    let Some((at, cells)) = opened else {
+        return Err(first_error.unwrap_or_else(|| ParseError::corrupt("a workbook with no sheets")));
     };
-    let table = Sheet::new(read_cells(&mut book.lock().unwrap_or_else(|e| e.into_inner()), &first, cx)?, cx)?;
-    let mut doc = Document::new(FormatInfo::new(reader, format, Category::Sheets)).with_facet(Role::Primary, first.clone(), Content::Table(Arc::new(table)));
-    for (name, visible) in order.iter().skip(1) {
+    let first = order[at].0.clone();
+    let table = Sheet::new(cells.cells, cx)?;
+    let mut doc = Document::new(FormatInfo::new(reader, format, Category::Sheets)).with_facet(Role::Primary, first.clone(), Content::Table(Arc::new(table))).with_warnings(warnings);
+    for (name, visible) in order.iter().enumerate().filter(|(i, _)| *i != at).map(|(_, s)| s) {
         let label = if *visible { name.clone() } else { format!("{name} (hidden)") };
         let (book, name) = (book.clone(), name.clone());
         doc = doc.with_lazy_facet(FacetInfo::new(Role::Structure, label, Model::Table), move |cx| {
+            // Damage partway keeps the cells before it.
             let cells = calm(|| read_cells(&mut book.lock().unwrap_or_else(|e| e.into_inner()), &name, cx))?;
-            Ok(Content::Table(Arc::new(Sheet::new(cells, cx)?)))
+            Ok(Content::Table(Arc::new(Sheet::new(cells.cells, cx)?)))
         });
     }
     let all: Vec<String> = sheets.iter().map(|s| s.0.clone()).collect();
