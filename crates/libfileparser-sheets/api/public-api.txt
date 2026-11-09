@@ -34,4 +34,9 @@ impl libfileparser_core::reader::Reader for libfileparser_sheets::XlsxReader
 pub fn libfileparser_sheets::XlsxReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_sheets::XlsxReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_sheets::XlsxReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::XmlssReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::XmlssReader
+pub fn libfileparser_sheets::XmlssReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::XmlssReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::XmlssReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub fn libfileparser_sheets::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

@@ -33,6 +33,8 @@ rtf-lite = { path = "crates/rtf-lite" }
 ods-lite = { path = "crates/ods-lite" }
 sylk-lite = { path = "crates/sylk-lite" }
 dif-lite = { path = "crates/dif-lite" }
+biff-lite = { path = "crates/biff-lite" }
+xmlss-lite = { path = "crates/xmlss-lite" }
 docx-lite = { path = "crates/docx-lite" }
 odt-lite = { path = "crates/odt-lite" }
 libfileparser-mupdf = { path = "crates/libfileparser-mupdf" }

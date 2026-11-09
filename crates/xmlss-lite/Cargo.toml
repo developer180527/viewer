@@ -1,0 +1,10 @@
+[package]
+name = "xmlss-lite"
+description = "Reads XML Spreadsheet 2003 (SpreadsheetML), Excel 2002 and 2003's XML format, into sheets of cells."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+quick-xml = "0.41"

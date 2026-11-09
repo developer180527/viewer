@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+ <Names><NamedRange ss:Name="Prices" ss:RefersTo="=Sales!R2C2:R3C2"/></Names>
+ <Worksheet ss:Name="Sales">
+  <Table>
+   <Row><Cell><Data ss:Type="String">Item</Data></Cell><Cell><Data ss:Type="String">Price</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">Café</Data></Cell><Cell><Data ss:Type="Number">2.5</Data></Cell></Row>
+   <Row><Cell><Data ss:Type="String">Tea</Data></Cell><Cell><Data ss:Type="Number">3</Data></Cell><Cell><Data ss:Type="Boolean">1</Data></Cell></Row>
+   <Row><Cell ss:Index="2" ss:Formula="=SUM(R2C2:R3C2)"><Data ss:Type="Number">5.5</Data></Cell><Cell><Data ss:Type="DateTime">2024-03-01T00:00:00.000</Data></Cell></Row>
+  </Table>
+ </Worksheet>
+ <Worksheet ss:Name="Notes"><Table><Row><Cell><Data ss:Type="String">Second sheet</Data></Cell></Row></Table></Worksheet>
+</Workbook>

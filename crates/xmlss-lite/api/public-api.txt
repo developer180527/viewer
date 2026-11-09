@@ -1,0 +1,68 @@
+pub mod xmlss_lite
+#[non_exhaustive] pub enum xmlss_lite::Error
+pub xmlss_lite::Error::NotXmlss
+pub xmlss_lite::Error::TooManyCells(u64)
+pub xmlss_lite::Error::TooMuchText(u64)
+pub xmlss_lite::Error::Xml(alloc::string::String)
+impl core::clone::Clone for xmlss_lite::Error
+pub fn xmlss_lite::Error::clone(&self) -> xmlss_lite::Error
+impl core::cmp::Eq for xmlss_lite::Error
+impl core::cmp::PartialEq for xmlss_lite::Error
+pub fn xmlss_lite::Error::eq(&self, &xmlss_lite::Error) -> bool
+impl core::error::Error for xmlss_lite::Error
+impl core::fmt::Debug for xmlss_lite::Error
+pub fn xmlss_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for xmlss_lite::Error
+pub fn xmlss_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for xmlss_lite::Error
+#[non_exhaustive] pub enum xmlss_lite::Value
+pub xmlss_lite::Value::Bool(bool)
+pub xmlss_lite::Value::Date(alloc::string::String)
+pub xmlss_lite::Value::Error(alloc::string::String)
+pub xmlss_lite::Value::Number(f64)
+pub xmlss_lite::Value::Text(alloc::string::String)
+impl core::clone::Clone for xmlss_lite::Value
+pub fn xmlss_lite::Value::clone(&self) -> xmlss_lite::Value
+impl core::cmp::PartialEq for xmlss_lite::Value
+pub fn xmlss_lite::Value::eq(&self, &xmlss_lite::Value) -> bool
+impl core::fmt::Debug for xmlss_lite::Value
+pub fn xmlss_lite::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for xmlss_lite::Value
+#[non_exhaustive] pub struct xmlss_lite::Cell
+pub xmlss_lite::Cell::col: u32
+pub xmlss_lite::Cell::formula: core::option::Option<alloc::string::String>
+pub xmlss_lite::Cell::row: u32
+pub xmlss_lite::Cell::value: core::option::Option<xmlss_lite::Value>
+impl core::clone::Clone for xmlss_lite::Cell
+pub fn xmlss_lite::Cell::clone(&self) -> xmlss_lite::Cell
+impl core::cmp::PartialEq for xmlss_lite::Cell
+pub fn xmlss_lite::Cell::eq(&self, &xmlss_lite::Cell) -> bool
+impl core::fmt::Debug for xmlss_lite::Cell
+pub fn xmlss_lite::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for xmlss_lite::Cell
+#[non_exhaustive] pub struct xmlss_lite::Sheet
+pub xmlss_lite::Sheet::cells: alloc::vec::Vec<xmlss_lite::Cell>
+pub xmlss_lite::Sheet::name: alloc::string::String
+impl core::clone::Clone for xmlss_lite::Sheet
+pub fn xmlss_lite::Sheet::clone(&self) -> xmlss_lite::Sheet
+impl core::cmp::PartialEq for xmlss_lite::Sheet
+pub fn xmlss_lite::Sheet::eq(&self, &xmlss_lite::Sheet) -> bool
+impl core::default::Default for xmlss_lite::Sheet
+pub fn xmlss_lite::Sheet::default() -> xmlss_lite::Sheet
+impl core::fmt::Debug for xmlss_lite::Sheet
+pub fn xmlss_lite::Sheet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for xmlss_lite::Sheet
+#[non_exhaustive] pub struct xmlss_lite::Workbook
+pub xmlss_lite::Workbook::names: alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
+pub xmlss_lite::Workbook::sheets: alloc::vec::Vec<xmlss_lite::Sheet>
+impl core::clone::Clone for xmlss_lite::Workbook
+pub fn xmlss_lite::Workbook::clone(&self) -> xmlss_lite::Workbook
+impl core::cmp::PartialEq for xmlss_lite::Workbook
+pub fn xmlss_lite::Workbook::eq(&self, &xmlss_lite::Workbook) -> bool
+impl core::default::Default for xmlss_lite::Workbook
+pub fn xmlss_lite::Workbook::default() -> xmlss_lite::Workbook
+impl core::fmt::Debug for xmlss_lite::Workbook
+pub fn xmlss_lite::Workbook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for xmlss_lite::Workbook
+pub fn xmlss_lite::detect(&[u8]) -> bool
+pub fn xmlss_lite::read(&[u8], u64, u64) -> core::result::Result<xmlss_lite::Workbook, xmlss_lite::Error>

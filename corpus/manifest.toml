@@ -121,6 +121,13 @@ path = "corpus/files/sheets/sample.slk"
 [[file]]
 path = "corpus/files/sheets/sample.dif"
 
+# Written for this corpus: Excel 4's bare BIFF, and Excel 2003's XML.
+[[file]]
+path = "corpus/files/sheets/sample-biff4.xls"
+
+[[file]]
+path = "corpus/files/sheets/sample-xmlss.xml"
+
 # ---------------------------------------------------------------- data
 
 [[file]]

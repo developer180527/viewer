@@ -1,6 +1,7 @@
 //! Workbooks (docs/design/libfileparser.md §2.1): every sheet a table of typed cells,
 //! the workbook's formulas and defined names as tables of their own. XLSX, XLSB and XLS
-//! are read by calamine; ODS, FODS, SYLK and DIF by our own crates.
+//! are read by calamine; ODS, FODS, SYLK, DIF, XML Spreadsheet 2003 and the bare BIFF of
+//! Excel 2 to 5 by our own crates.
 //!
 //! A new format is one more [`Reader`] and one more line in [`readers`].
 
@@ -10,7 +11,7 @@ mod guard;
 mod plain;
 mod workbook;
 
-pub use plain::{DifReader, FodsReader, OdsReader, SylkReader};
+pub use plain::{DifReader, FodsReader, OdsReader, SylkReader, XmlssReader};
 
 use workbook::Shared;
 
@@ -19,7 +20,7 @@ const OLE: &[u8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
 
 /// Every reader here, in the order they're tried.
 pub fn readers() -> &'static [&'static dyn Reader] {
-    &[&XlsxReader, &XlsbReader, &XlsReader, &OdsReader, &FodsReader, &SylkReader, &DifReader]
+    &[&XlsxReader, &XlsbReader, &XlsReader, &OdsReader, &FodsReader, &SylkReader, &DifReader, &XmlssReader]
 }
 
 /// Whether an OLE file holds an encrypted Office package: how a password-protected
@@ -34,7 +35,7 @@ fn shared(src: &FileSource, cx: &ParseContext) -> Result<Shared> {
     Ok(Shared(src.shared_bytes()))
 }
 
-fn locked() -> ParseError {
+pub(crate) fn locked() -> ParseError {
     ParseError::unsupported("This workbook is protected by a password.")
 }
 
@@ -91,7 +92,7 @@ impl Reader for XlsbReader {
     }
 }
 
-static XLS: ReaderInfo = ReaderInfo::new("xls", "Excel 97–2003 workbook", Category::Sheets).extensions(&["xls", "xla", "xlt"]).mime_types(&["application/vnd.ms-excel"]);
+static XLS: ReaderInfo = ReaderInfo::new("xls", "Excel 97–2003 workbook", Category::Sheets).extensions(&["xls", "xla", "xlt", "xlw"]).mime_types(&["application/vnd.ms-excel"]);
 
 pub struct XlsReader;
 
@@ -100,11 +101,23 @@ impl Reader for XlsReader {
         &XLS
     }
 
+    /// A compound file named as a workbook; or a bare BIFF stream, as Excel 2 to 4 saved
+    /// every file, certain when named as one.
     fn detect(&self, header: &[u8], name: &str) -> Detection {
-        if header.starts_with(OLE) && XLS.matches_extension(name) { Detection::new(Confidence::Certain) } else { Detection::NONE }
+        let named = XLS.matches_extension(name);
+        if header.starts_with(OLE) && named || biff_lite::detect(header) && named {
+            Detection::new(Confidence::Certain)
+        } else if biff_lite::detect(header) {
+            Detection::new(Confidence::Magic)
+        } else {
+            Detection::NONE
+        }
     }
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
+        if biff_lite::detect(src.header()) {
+            return plain::biff(src, cx);
+        }
         let bytes = shared(src, cx)?;
         if !src.header().starts_with(OLE) {
             return Err(ParseError::NotThisFormat);

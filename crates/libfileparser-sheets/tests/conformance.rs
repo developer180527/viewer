@@ -3,7 +3,7 @@
 use std::io::Write;
 
 use libfileparser_core::{Cell, Content, FileSource, Limits, ParseContext, ParseError, Reader, Result};
-use libfileparser_sheets::{DifReader, FodsReader, OdsReader, SylkReader, XlsReader, XlsbReader, XlsxReader, readers};
+use libfileparser_sheets::{DifReader, FodsReader, OdsReader, SylkReader, XlsReader, XlsbReader, XlsxReader, XmlssReader, readers};
 use libfileparser_testkit::{Sample, assert_conforms};
 
 fn sample(name: &str) -> Vec<u8> {
@@ -14,12 +14,13 @@ fn sample(name: &str) -> Vec<u8> {
 fn every_reader_conforms() {
     assert_conforms(&XlsxReader, &[Sample::new("sample.xlsx", sample("sample.xlsx")).fits_tiny_limits()]);
     assert_conforms(&XlsbReader, &[Sample::new("sample.xlsb", sample("sample.xlsb")).fits_tiny_limits()]);
-    assert_conforms(&XlsReader, &[Sample::new("sample.xls", sample("sample.xls")).fits_tiny_limits()]);
+    assert_conforms(&XlsReader, &[Sample::new("sample.xls", sample("sample.xls")).fits_tiny_limits(), Sample::new("sample-biff4.xls", sample("sample-biff4.xls")).fits_tiny_limits()]);
     assert_conforms(&OdsReader, &[Sample::new("sample.ods", sample("sample.ods")).fits_tiny_limits()]);
     assert_conforms(&FodsReader, &[Sample::new("sample.fods", sample("sample.fods")).fits_tiny_limits()]);
     assert_conforms(&SylkReader, &[Sample::new("sample.slk", sample("sample.slk")).fits_tiny_limits()]);
     assert_conforms(&DifReader, &[Sample::new("sample.dif", sample("sample.dif")).fits_tiny_limits()]);
-    assert_eq!(readers().len(), 7);
+    assert_conforms(&XmlssReader, &[Sample::new("sample-xmlss.xml", sample("sample-xmlss.xml")).fits_tiny_limits()]);
+    assert_eq!(readers().len(), 8);
 }
 
 /// A minimal XLSX with these rows of the first sheet's `<sheetData>`.
@@ -126,14 +127,44 @@ fn a_workbook_of_only_charts_says_so() {
     assert!(matches!(e, ParseError::Unsupported { .. }) && e.to_string().contains("charts"), "{e}");
 }
 
+#[test]
+fn an_excel_4_worksheet_opens_as_xls() {
+    let cx = ParseContext::new();
+    let bytes = sample("sample-biff4.xls");
+    assert_eq!(XlsReader.detect(&bytes, "old.xls").confidence, libfileparser_core::Confidence::Certain);
+    let doc = XlsReader.open(&FileSource::from_bytes("old.xls", bytes), &cx).unwrap();
+    assert_eq!(doc.format().name, "Excel 4 worksheet");
+    let Content::Table(t) = doc.facet(0, &cx).unwrap() else { panic!("a table") };
+    let rows = t.rows(0..4).unwrap();
+    assert_eq!(rows[1][0], Cell::Text("Café €".into()));
+    assert_eq!(rows[1][1], Cell::Float(2.5));
+    assert_eq!((rows[2][1].clone(), rows[2][2].clone()), (Cell::Int(3), Cell::Bool(true)));
+    assert_eq!(rows[3][1], Cell::Float(5.5));
+}
+
+#[test]
+fn an_xml_spreadsheet_opens_with_its_sheets_formulas_and_names() {
+    let cx = ParseContext::new();
+    let bytes = sample("sample-xmlss.xml");
+    assert_eq!(XmlssReader.detect(&bytes, "report.xls").confidence, libfileparser_core::Confidence::Certain);
+    let doc = XmlssReader.open(&FileSource::from_bytes("report.xls", bytes), &cx).unwrap();
+    let Content::Table(t) = doc.facet(0, &cx).unwrap() else { panic!("a table") };
+    let rows = t.rows(0..4).unwrap();
+    assert_eq!((rows[1][0].clone(), rows[1][1].clone()), (Cell::Text("Café".into()), Cell::Float(2.5)));
+    assert_eq!(rows[3][2], Cell::Date("2024-03-01T00:00:00.000".into()));
+    let facets: Vec<String> = doc.facets().map(|f| f.name.clone()).collect();
+    assert_eq!(facets[..4], ["Sales", "Notes", "Formulas", "Defined names"]);
+}
+
 /// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), every workbook opens or
 /// fails cleanly, every sheet and the formulas included: no panic, no hang, no abort.
 #[test]
 fn every_reader_survives_fuzzing() {
-    let all = ["sample.xlsx", "sample.xlsb", "sample.xls", "sample.ods", "sample.fods", "sample.slk", "sample.dif"];
+    let all = ["sample.xlsx", "sample.xlsb", "sample.xls", "sample-biff4.xls", "sample.ods", "sample.fods", "sample.slk", "sample.dif", "sample-xmlss.xml"];
     libfileparser_testkit::assert_fuzz_clean(readers(), |id| {
         let ext = match id {
             "sylk" => "slk",
+            "xmlss" => "xml",
             id => id,
         };
         all.iter().filter(|f| f.ends_with(&format!(".{ext}"))).map(|f| Sample::new(*f, sample(f))).collect()

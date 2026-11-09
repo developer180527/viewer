@@ -1,0 +1,12 @@
+loader = "xmlss"
+format = "XML Spreadsheet 2003"
+model = "Table"
+
+[table]
+rows = 4
+columns = 3
+headers = ["A", "B", "C"]
+kinds = ["Unknown", "Unknown", "Unknown"]
+
+[metadata]
+Sheets = "2"

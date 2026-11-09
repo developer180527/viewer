@@ -1,4 +1,5 @@
-//! The workbooks our own crates read: ODS and flat FODS (`ods-lite`), SYLK and DIF.
+//! The workbooks our own crates read: ODS and flat FODS (`ods-lite`), SYLK, DIF, bare
+//! BIFF streams (`biff-lite`: Excel 2 to 5) and XML Spreadsheet 2003 (`xmlss-lite`).
 
 use std::sync::Arc;
 
@@ -50,13 +51,32 @@ fn ods_error(e: ods_lite::Error) -> ParseError {
     }
 }
 
+/// Sheets of cells as a document: the first the primary table, the others after it,
+/// then the formulas and defined names.
+type Cells = Vec<(u32, u32, Cell)>;
+
+fn many(src: &FileSource, reader: &'static str, format: impl Into<String>, sheets: Vec<(String, Cells)>, formulas: Vec<Vec<Cell>>, names: Vec<(String, String)>, cx: &ParseContext) -> Result<Document> {
+    let count = sheets.len();
+    let mut sheets = sheets.into_iter();
+    let (name, cells) = sheets.next().ok_or_else(|| ParseError::corrupt("a workbook with no sheets"))?;
+    let mut doc = Document::new(FormatInfo::new(reader, format, Category::Sheets)).with_facet(Role::Primary, name, Content::Table(Arc::new(Sheet::new(cells, cx)?)));
+    for (name, cells) in sheets {
+        cx.cancel.check()?;
+        doc = doc.with_facet(Role::Structure, name, Content::Table(Arc::new(Sheet::new(cells, cx)?)));
+    }
+    doc = with_formulas(doc, formulas);
+    if !names.is_empty() {
+        let rows = names.into_iter().map(|(n, r)| vec![n, r]).collect();
+        doc = doc.with_facet(Role::Inspector, "Defined names", Content::Table(Arc::new(OwnedTable::text(vec!["Name".into(), "Refers to".into()], rows))));
+    }
+    Ok(doc.with_meta("Sheets", count).with_file_facets(src, None))
+}
+
 /// A workbook read by `ods-lite`, every sheet a table.
 fn workbook(src: &FileSource, book: ods_lite::Workbook, reader: &'static str, format: &'static str, cx: &ParseContext) -> Result<Document> {
-    let count = book.sheets.len();
-    let mut sheets = book.sheets.into_iter();
-    let first = sheets.next().ok_or_else(|| ParseError::corrupt("a workbook with no sheets"))?;
     let mut formulas = Vec::new();
-    let mut table = |sheet: ods_lite::Sheet| -> Result<(String, Sheet)> {
+    let mut sheets = Vec::with_capacity(book.sheets.len());
+    for sheet in book.sheets {
         cx.cancel.check()?;
         let mut cells = Vec::with_capacity(sheet.cells.len());
         for c in sheet.cells {
@@ -67,20 +87,52 @@ fn workbook(src: &FileSource, book: ods_lite::Workbook, reader: &'static str, fo
                 cells.push((c.row, c.col, ods_cell(v)));
             }
         }
-        Ok((sheet.name, Sheet::new(cells, cx)?))
+        sheets.push((sheet.name, cells));
+    }
+    many(src, reader, format, sheets, formulas, book.names, cx)
+}
+
+/// A bare BIFF stream (no compound file around it): how Excel 2, 3 and 4 saved every
+/// file. Opened by the XLS reader, as such files are named `.xls`.
+pub(crate) fn biff(src: &FileSource, cx: &ParseContext) -> Result<Document> {
+    cx.cancel.check()?;
+    let max = cx.limits.memory / 64;
+    let book = biff_lite::read(src.bytes(), max).map_err(|e| match e {
+        biff_lite::Error::NotBiff => ParseError::NotThisFormat,
+        biff_lite::Error::Encrypted => crate::locked(),
+        biff_lite::Error::TooManyCells(max) => ParseError::too_large(Limit::Memory, max.saturating_add(1).saturating_mul(64), max.saturating_mul(64)),
+        e => ParseError::corrupt(e),
+    })?;
+    let format = match book.biff {
+        2 => "Excel 2 worksheet",
+        3 => "Excel 3 worksheet",
+        4 => "Excel 4 worksheet",
+        5 => "Excel 5 workbook (bare stream)",
+        _ => "Excel 97 workbook (bare stream)",
     };
-    let (name, t) = table(first)?;
-    let mut doc = Document::new(FormatInfo::new(reader, format, Category::Sheets)).with_facet(Role::Primary, name, Content::Table(Arc::new(t)));
-    for sheet in sheets {
-        let (name, t) = table(sheet)?;
-        doc = doc.with_facet(Role::Structure, name, Content::Table(Arc::new(t)));
-    }
-    doc = with_formulas(doc, formulas);
-    if !book.names.is_empty() {
-        let rows = book.names.into_iter().map(|(n, r)| vec![n, r]).collect();
-        doc = doc.with_facet(Role::Inspector, "Defined names", Content::Table(Arc::new(OwnedTable::text(vec!["Name".into(), "Refers to".into()], rows))));
-    }
-    Ok(doc.with_meta("Sheets", count).with_file_facets(src, None))
+    let sheets = book
+        .sheets
+        .into_iter()
+        .map(|s| {
+            use biff_lite::Value as V;
+            let cells = s
+                .cells
+                .into_iter()
+                .filter_map(|c| {
+                    let v = match c.value {
+                        V::Number(n) => number(n),
+                        V::Text(t) => Cell::Text(t),
+                        V::Bool(b) => Cell::Bool(b),
+                        V::Error(e) => Cell::Error(e),
+                        _ => return None,
+                    };
+                    Some((c.row, c.col, v))
+                })
+                .collect();
+            (s.name, cells)
+        })
+        .collect();
+    many(src, "xls", format, sheets, Vec::new(), Vec::new(), cx)
 }
 
 static ODS: ReaderInfo = ReaderInfo::new("ods", "OpenDocument spreadsheet", Category::Sheets).extensions(&["ods", "ots"]).mime_types(&["application/vnd.oasis.opendocument.spreadsheet"]);
@@ -211,5 +263,57 @@ impl Reader for DifReader {
             })
             .collect();
         one_sheet(src, "dif", "DIF spreadsheet", cells, Vec::new(), cx)
+    }
+}
+
+static XMLSS: ReaderInfo = ReaderInfo::new("xmlss", "XML Spreadsheet 2003", Category::Sheets).extensions(&["xml"]).mime_types(&["application/vnd.ms-excel"]);
+
+pub struct XmlssReader;
+
+impl Reader for XmlssReader {
+    fn info(&self) -> &ReaderInfo {
+        &XMLSS
+    }
+
+    /// By content, whatever the name (often `.xls`): certain, so it outranks the XML
+    /// reader.
+    fn detect(&self, header: &[u8], _: &str) -> Detection {
+        if xmlss_lite::detect(header) { Detection::new(Confidence::Certain).with_language("xml") } else { Detection::NONE }
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
+        cx.cancel.check()?;
+        let max = cx.limits.memory / 64;
+        let book = xmlss_lite::read(src.bytes(), max, cx.limits.memory).map_err(|e| match e {
+            xmlss_lite::Error::NotXmlss => ParseError::NotThisFormat,
+            xmlss_lite::Error::TooManyCells(max) => ParseError::too_large(Limit::Memory, max.saturating_add(1).saturating_mul(64), max.saturating_mul(64)),
+            xmlss_lite::Error::TooMuchText(max) => ParseError::too_large(Limit::Memory, max.saturating_add(1), max),
+            e => ParseError::corrupt(e),
+        })?;
+        let mut formulas = Vec::new();
+        let sheets = book
+            .sheets
+            .into_iter()
+            .map(|s| {
+                let mut cells = Vec::with_capacity(s.cells.len());
+                for c in s.cells {
+                    if let Some(f) = c.formula {
+                        formulas.push(formula_row(&s.name, c.row, c.col, f));
+                    }
+                    use xmlss_lite::Value as V;
+                    let v = match c.value {
+                        Some(V::Number(n)) => number(n),
+                        Some(V::Text(t)) => Cell::Text(t),
+                        Some(V::Bool(b)) => Cell::Bool(b),
+                        Some(V::Date(d)) => Cell::Date(d),
+                        Some(V::Error(e)) => Cell::Error(e),
+                        _ => continue,
+                    };
+                    cells.push((c.row, c.col, v));
+                }
+                (s.name, cells)
+            })
+            .collect();
+        many(src, "xmlss", "XML Spreadsheet 2003", sheets, formulas, book.names, cx)
     }
 }

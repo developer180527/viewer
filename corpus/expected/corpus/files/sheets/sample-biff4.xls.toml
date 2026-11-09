@@ -1,0 +1,12 @@
+loader = "xls"
+format = "Excel 4 worksheet"
+model = "Table"
+
+[table]
+rows = 4
+columns = 3
+headers = ["A", "B", "C"]
+kinds = ["Unknown", "Unknown", "Unknown"]
+
+[metadata]
+Sheets = "1"

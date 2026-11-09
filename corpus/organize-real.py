@@ -23,7 +23,7 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
 # Category folders, as corpus/real is laid out: data/, docs/, sheets/ (3d/ is
 # fetch-real-3d.sh's).
 DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odt", "org", "pdf", "pptx", "rst", "rtf", "textile", "xps", "comic"}
-SHEETS = {"dif", "fods", "ods", "sylk", "xls", "xlsb", "xlsx"}
+SHEETS = {"dif", "fods", "ods", "sylk", "xls", "xlsb", "xlsx", "xmlss"}
 counts = {}
 for repo in [os.path.basename(clone)]:
     root = clone
@@ -34,7 +34,7 @@ for repo in [os.path.basename(clone)]:
             rel = os.path.relpath(path, root)
             ext = f.rsplit(".", 1)[-1].lower() if "." in f else ""
             reader = by_ext.get(ext)
-            head = open(path, "rb").read(256)
+            head = open(path, "rb").read(1024)
             if ext == "vcf":
                 reader = "vcard" if b"BEGIN:VCARD" in head else "vcf"
             if ext == "txt":
@@ -42,6 +42,9 @@ for repo in [os.path.basename(clone)]:
                 elif repo.startswith("nerdocs_pydifact"): reader = "edifact"
                 elif repo.startswith("Efferent-Health"): reader = "hl7"
                 elif repo.startswith("WoLpH_mt940"): reader = "swift"
+            # Excel 2003's XML, whatever it's named (often .xls).
+            if ext in ("xls", "xml") and head.lstrip(b"\xef\xbb\xbf").startswith(b"<?xml") and b"urn:schemas-microsoft-com:office:spreadsheet" in head:
+                reader = "xmlss"
             if repo.startswith("WoLpH_mt940") and ext not in ("sta", "txt"):
                 reader = None
             if reader is None:

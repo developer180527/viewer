@@ -45,7 +45,7 @@ optional, beside them:
 | **`-3d`** | glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDA/USDC/USDZ, `.blend`; later CAD, point clouds | Scene | `-images`, ufbx, `usd-lite` |
 | **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown; later reStructuredText, AsciiDoc, PPTX, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`) |
 | **`-data`** | Data written as text: structured, config, delimited tables, schemas, RDF, graphs, geo, logs, science records, SQL, contacts and calendars, business messages, localization, feeds (§2.1) | Tree, Table | Pure Rust, a feature per family |
-| **`-sheets`** | ✅ XLSX, XLSM, XLSB, XLS, ODS, FODS, SYLK, DIF; later Numbers | Tables, one per sheet, with Formulas and Defined names | calamine; `ods-lite`, `sylk-lite`, `dif-lite`; zip, cfb |
+| **`-sheets`** | ✅ XLSX, XLSM, XLSB, XLS (and Excel 2–5's bare BIFF), XML Spreadsheet 2003, ODS, FODS, SYLK, DIF; later Numbers | Tables, one per sheet, with Formulas and Defined names | calamine; `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`; zip |
 | **`-datasets`** | HDF5, NetCDF, FITS, MATLAB, R, SAS, Stata, SPSS, Parquet, ORC, Feather, SQLite | Table, Tree | Heavy readers, as features |
 | **`-text`** | Text, code; Markdown until `-docs` owns it | Text, Markdown | — |
 | **`-archives`** | Zip, tar, gzip, folders; later 7z, RAR, ISO | Container | — |
@@ -373,7 +373,7 @@ Format libraries follow §5's rules too, and keep their own extension points: gl
 1. **Mature, popular libraries first,** measured on the real-world corpus (corpus/README.md) before one is adopted: how many files it opens, and whether it ever panics or hangs. Today: pulldown-cmark, html5ever (through scraper), rbook, orgize.
 2. **Licence counts only where it constrains.** GPL and AGPL are allowed behind an opt-in feature, like MuPDF, never in a default build.
 3. **We write a parser only when no library does the job** or the measurements say ours opens more. `docx-lite` opened 263 of 279 files against docx-rust's 254; `rtf-lite` 17 of 18 against rtf-parser's 16, which also panicked; no Rust library reads ODT; the `blend` crate panicked on 29 of 208 real `.blend` files; calamine failed on 46 of 399 real ODS files. Fixes found on the way go upstream ([upstream-issues.md](../upstream-issues.md)).
-4. **A parser we write is its own embeddable crate** (a format library, as above): `usd-lite`, `blend-lite`, `ods-lite`, `sylk-lite`, `dif-lite`, `rtf-lite`, `docx-lite`, `odt-lite`. No libfileparser types in it; the category's reader only adapts it.
+4. **A parser we write is its own embeddable crate** (a format library, as above): `usd-lite`, `blend-lite`, `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`, `rtf-lite`, `docx-lite`, `odt-lite`. No libfileparser types in it; the category's reader only adapts it.
 5. **A newly found or invented format is added as above:** one `Reader` and one line in `readers()`, or from outside the crate with `Library::reader` and `replace`. That is how a category keeps its promise of opening any file of its kind.
 
 ### Other extension points

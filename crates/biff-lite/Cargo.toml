@@ -1,0 +1,15 @@
+[package]
+name = "biff-lite"
+description = "Reads the cells of bare BIFF streams: Excel 2, 3 and 4 files, and Excel 5 and 97 workbook streams saved without a compound file. No dependencies unless `encodings` is on."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+encoding_rs = { version = "0.8", optional = true }
+
+[features]
+# Every common Windows code page (Cyrillic, Greek, Arabic, CJK…); without it, only
+# Windows-1252 text reads right.
+encodings = ["dep:encoding_rs"]

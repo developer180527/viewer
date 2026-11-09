@@ -1,0 +1,62 @@
+pub mod biff_lite
+#[non_exhaustive] pub enum biff_lite::Error
+pub biff_lite::Error::Encrypted
+pub biff_lite::Error::NotBiff
+pub biff_lite::Error::TooManyCells(u64)
+impl core::clone::Clone for biff_lite::Error
+pub fn biff_lite::Error::clone(&self) -> biff_lite::Error
+impl core::cmp::Eq for biff_lite::Error
+impl core::cmp::PartialEq for biff_lite::Error
+pub fn biff_lite::Error::eq(&self, &biff_lite::Error) -> bool
+impl core::error::Error for biff_lite::Error
+impl core::fmt::Debug for biff_lite::Error
+pub fn biff_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for biff_lite::Error
+pub fn biff_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for biff_lite::Error
+impl core::marker::StructuralPartialEq for biff_lite::Error
+#[non_exhaustive] pub enum biff_lite::Value
+pub biff_lite::Value::Bool(bool)
+pub biff_lite::Value::Error(alloc::string::String)
+pub biff_lite::Value::Number(f64)
+pub biff_lite::Value::Text(alloc::string::String)
+impl core::clone::Clone for biff_lite::Value
+pub fn biff_lite::Value::clone(&self) -> biff_lite::Value
+impl core::cmp::PartialEq for biff_lite::Value
+pub fn biff_lite::Value::eq(&self, &biff_lite::Value) -> bool
+impl core::fmt::Debug for biff_lite::Value
+pub fn biff_lite::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for biff_lite::Value
+#[non_exhaustive] pub struct biff_lite::Cell
+pub biff_lite::Cell::col: u32
+pub biff_lite::Cell::row: u32
+pub biff_lite::Cell::value: biff_lite::Value
+impl core::clone::Clone for biff_lite::Cell
+pub fn biff_lite::Cell::clone(&self) -> biff_lite::Cell
+impl core::cmp::PartialEq for biff_lite::Cell
+pub fn biff_lite::Cell::eq(&self, &biff_lite::Cell) -> bool
+impl core::fmt::Debug for biff_lite::Cell
+pub fn biff_lite::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for biff_lite::Cell
+#[non_exhaustive] pub struct biff_lite::Sheet
+pub biff_lite::Sheet::cells: alloc::vec::Vec<biff_lite::Cell>
+pub biff_lite::Sheet::name: alloc::string::String
+impl core::clone::Clone for biff_lite::Sheet
+pub fn biff_lite::Sheet::clone(&self) -> biff_lite::Sheet
+impl core::cmp::PartialEq for biff_lite::Sheet
+pub fn biff_lite::Sheet::eq(&self, &biff_lite::Sheet) -> bool
+impl core::fmt::Debug for biff_lite::Sheet
+pub fn biff_lite::Sheet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for biff_lite::Sheet
+#[non_exhaustive] pub struct biff_lite::Workbook
+pub biff_lite::Workbook::biff: u8
+pub biff_lite::Workbook::sheets: alloc::vec::Vec<biff_lite::Sheet>
+impl core::clone::Clone for biff_lite::Workbook
+pub fn biff_lite::Workbook::clone(&self) -> biff_lite::Workbook
+impl core::cmp::PartialEq for biff_lite::Workbook
+pub fn biff_lite::Workbook::eq(&self, &biff_lite::Workbook) -> bool
+impl core::fmt::Debug for biff_lite::Workbook
+pub fn biff_lite::Workbook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for biff_lite::Workbook
+pub fn biff_lite::detect(&[u8]) -> bool
+pub fn biff_lite::read(&[u8], u64) -> core::result::Result<biff_lite::Workbook, biff_lite::Error>

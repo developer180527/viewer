@@ -1,6 +1,6 @@
 [package]
 name = "libfileparser-sheets"
-description = "Workbooks as tables, sheet by sheet, with their formulas: XLSX, XLSM, XLSB, XLS, ODS, FODS, SYLK, DIF (docs/design/libfileparser.md §2)."
+description = "Workbooks as tables, sheet by sheet, with their formulas: XLSX, XLSM, XLSB, XLS (and Excel 2–5), ODS, FODS, SYLK, DIF, XML Spreadsheet 2003 (docs/design/libfileparser.md §2)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,6 +15,9 @@ zip = { version = "9", default-features = false, features = ["deflate-flate2-zli
 ods-lite.workspace = true
 sylk-lite.workspace = true
 dif-lite.workspace = true
+# Excel 2 to 5 saved without a compound file, and Excel 2003's XML: calamine reads neither.
+biff-lite = { workspace = true, features = ["encodings"] }
+xmlss-lite.workspace = true
 
 [dev-dependencies]
 libfileparser-testkit.workspace = true
