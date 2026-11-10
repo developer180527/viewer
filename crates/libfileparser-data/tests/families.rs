@@ -423,3 +423,24 @@ fn an_mo_count_the_file_cant_hold_is_damage() {
     let e = reader.open(&src, &libfileparser_core::ParseContext::new()).err().unwrap();
     assert!(matches!(e, libfileparser_core::ParseError::Corrupt { .. }), "{e}");
 }
+
+/// Found by the overnight soak: text cut inside a character where a reader sliced by
+/// bytes (an MT tag, a WKT word, `SRID=`). Every reader, named as its own files are,
+/// opens or fails on each: none panics.
+#[test]
+fn a_character_cut_by_a_byte_offset_is_no_panic() {
+    let inputs: [&[u8]; 5] = [b"\xcf\x82\n", ":0\u{e9}:x\n:20:a\n".as_bytes(), b"A:\xb40:131110\n:25:1\n", "SRID\u{e9}4326;POINT(1 2)".as_bytes(), "POINT (1 2)\n\u{3b9}".as_bytes()];
+    let cx = ParseContext::new();
+    for reader in libfileparser_data::readers() {
+        let ext = reader.info().extensions.first().copied().unwrap_or("txt");
+        for bytes in inputs {
+            let src = FileSource::from_bytes(format!("a.{ext}"), bytes.to_vec());
+            let opened = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if let Ok(doc) = reader.open(&src, &cx) {
+                    libfileparser_testkit::exercise(&doc, &cx);
+                }
+            }));
+            assert!(opened.is_ok(), "{} panicked on {bytes:?}", reader.info().id);
+        }
+    }
+}

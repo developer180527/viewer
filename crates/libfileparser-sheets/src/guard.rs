@@ -234,45 +234,95 @@ pub fn xls_extent(bytes: &Shared, limits: &Limits) -> Result<()> {
         Some(s) => s,
         None => return Err(ParseError::corrupt("the workbook's compound file is damaged")),
     };
-    // Rows and columns seen in the sheet being walked, and the total so far.
-    let (mut rows, mut cols, mut seen, mut total) = ((u16::MAX, 0u16), (u16::MAX, 0u16), false, 0u64);
-    let mut at = 0usize;
-    while let Some(head) = stream.get(at..at + 4) {
+    sheets_extent(&stream, limits)
+}
+
+/// A stream's records from `at`: id and body, until one is cut short.
+fn records(stream: &[u8], mut at: usize) -> impl Iterator<Item = (u16, &[u8])> {
+    std::iter::from_fn(move || {
+        let head = stream.get(at..at.checked_add(4)?)?;
         let (id, len) = (u16::from_le_bytes([head[0], head[1]]), u16::from_le_bytes([head[2], head[3]]) as usize);
-        let Some(body) = stream.get(at + 4..at + 4 + len) else { break };
-        let u16_at = |o: usize| body.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+        let body = stream.get(at + 4..at + 4 + len)?;
+        at += 4 + len;
+        Some((id, body))
+    })
+}
+
+/// What calamine lays out for a workbook stream, measured as calamine reads it: the
+/// globals to their EOF, naming where each sheet starts (BOUNDSHEET); then each sheet
+/// from there, every sheet listed, even several at one place, its nested substreams
+/// (embedded charts) passed over, to its EOF. A sheet is laid out densely over the rows
+/// and columns its cells span, so that span is what's counted.
+fn sheets_extent(stream: &[u8], limits: &Limits) -> Result<()> {
+    let mut starts = Vec::new();
+    for (id, body) in records(stream, 0) {
         match id {
             // FilePass: what follows is encrypted, so it can't be measured, and calamine
             // can't decrypt it.
             0x002f => return Err(crate::locked()),
-            // Dimensions: calamine reserves what it claims, cells or no cells.
-            0x0200 => match dimensions(body) {
-                Some(n) => check(total.saturating_add(n), limits)?,
-                None => return Err(ParseError::corrupt("a sheet's dimensions end before they start")),
-            },
-            // BOF and EOF of a substream.
-            0x0809 | 0x000a if seen => {
-                total = total.saturating_add(((rows.1 - rows.0) as u64 + 1) * ((cols.1 - cols.0) as u64 + 1));
-                check(total, limits)?;
-                (rows, cols, seen) = ((u16::MAX, 0), (u16::MAX, 0), false);
-            }
-            // Cells: row, column first; a run of them ends with its last column.
-            0x0006 | 0x00bd | 0x00be | 0x00fd | 0x0201 | 0x0203 | 0x0204 | 0x0205 | 0x027e => {
-                if let (Some(r), Some(c)) = (u16_at(0), u16_at(2)) {
-                    let last = if matches!(id, 0x00bd | 0x00be) { len.checked_sub(2).and_then(u16_at).unwrap_or(c) } else { c };
-                    rows = (rows.0.min(r), rows.1.max(r));
-                    cols = (cols.0.min(c), cols.1.max(last.max(c)));
-                    seen = true;
-                }
-            }
+            0x0085 => starts.extend(body.get(..4).map(|b| u32::from_le_bytes([b[0], b[1], b[2], b[3]]) as usize)),
+            0x000a => break,
             _ => {}
         }
-        at += 4 + len;
     }
-    // A stream cut short of its last EOF: that sheet is laid out all the same.
-    if seen {
-        total = total.saturating_add(((rows.1 - rows.0) as u64 + 1) * ((cols.1 - cols.0) as u64 + 1));
-        check(total, limits)?;
+    let mut total = 0u64;
+    for start in starts {
+        let (mut rows, mut cols, mut seen) = ((u16::MAX, 0u16), (u16::MAX, 0u16), false);
+        let mut add = |r: u16, c: u16, last: u16| {
+            rows = (rows.0.min(r), rows.1.max(r));
+            cols = (cols.0.min(c), cols.1.max(last.max(c)));
+            seen = true;
+        };
+        // A STRING record is a cell at the last formula's place; (0, 0) before any.
+        let mut formula = (0u16, 0u16);
+        let (mut bof, mut depth) = (false, 0usize);
+        for (id, body) in records(stream, start) {
+            let u16_at = |o: usize| body.get(o..o + 2).map(|b| u16::from_le_bytes([b[0], b[1]]));
+            if depth > 0 {
+                match id {
+                    0x0809 => depth += 1,
+                    0x000a => depth -= 1,
+                    _ => {}
+                }
+                continue;
+            }
+            let at = u16_at(0).zip(u16_at(2));
+            match id {
+                0x0809 if bof => depth = 1,
+                0x0809 => bof = true,
+                0x000a => break,
+                // Dimensions: calamine reserves what it claims, cells or no cells.
+                0x0200 => match dimensions(body) {
+                    Some(n) => check(total.saturating_add(n), limits)?,
+                    None => return Err(ParseError::corrupt("a sheet's dimensions end before they start")),
+                },
+                0x0006 => {
+                    if let Some((r, c)) = at {
+                        formula = (r, c);
+                        add(r, c, c);
+                    }
+                }
+                0x0207 => add(formula.0, formula.1, formula.1),
+                // A run of RK numbers ends with its last column.
+                0x00bd => {
+                    if let (Some((r, c)), Some(last)) = (at, body.len().checked_sub(2).and_then(u16_at)) {
+                        add(r, c, last);
+                    }
+                }
+                // The other cells calamine keeps: number, label, rich string, boolean or
+                // error, RK, shared-string label. (Blanks it drops.)
+                0x0203 | 0x0204 | 0x00d6 | 0x0205 | 0x027e | 0x00fd => {
+                    if let Some((r, c)) = at {
+                        add(r, c, c);
+                    }
+                }
+                _ => {}
+            }
+        }
+        if seen {
+            total = total.saturating_add(((rows.1 - rows.0) as u64 + 1) * ((cols.1 - cols.0) as u64 + 1));
+            check(total, limits)?;
+        }
     }
     Ok(())
 }
@@ -360,6 +410,77 @@ mod tests {
         stream.resize(4096, 0xA5);
         let e = xls_extent(&Shared(std::sync::Arc::new(compound(&stream))), &Limits::desktop()).unwrap_err();
         assert!(matches!(e, ParseError::Unsupported { .. }) && e.to_string().contains("password"), "{e}");
+    }
+
+    /// A workbook stream: globals naming sheets at the offsets `at` gives them, then the
+    /// sheets' records.
+    fn stream(sheets: &[Vec<u8>], names: usize, at: impl Fn(usize, &[usize]) -> usize) -> Vec<u8> {
+        let rec = |id: u16, body: &[u8]| [&id.to_le_bytes()[..], &(body.len() as u16).to_le_bytes(), body].concat();
+        let bof = |kind: u16| rec(0x0809, &[&0x0600u16.to_le_bytes()[..], &kind.to_le_bytes(), &[0; 12]].concat());
+        // The globals' length doesn't depend on the offsets in it.
+        let globals_len = bof(5).len() + names * rec(0x0085, &[0; 8]).len() + 4;
+        let mut starts = Vec::new();
+        let mut offset = globals_len;
+        for s in sheets {
+            starts.push(offset);
+            offset += s.len();
+        }
+        let mut out = bof(5);
+        for i in 0..names {
+            out.extend(rec(0x0085, &[&(at(i, &starts) as u32).to_le_bytes()[..], &[0, 0, 1, b'S']].concat()));
+        }
+        out.extend(rec(0x000a, &[]));
+        sheets.iter().for_each(|s| out.extend(s));
+        out
+    }
+
+    fn sheet(cells: &[(u16, u16, u16)]) -> Vec<u8> {
+        let rec = |id: u16, body: &[u8]| [&id.to_le_bytes()[..], &(body.len() as u16).to_le_bytes(), body].concat();
+        let mut out = rec(0x0809, &[&0x0600u16.to_le_bytes()[..], &0x10u16.to_le_bytes(), &[0; 12]].concat());
+        for &(id, r, c) in cells {
+            out.extend(match id {
+                0x0809 => rec(0x0809, &[&0x0600u16.to_le_bytes()[..], &0x20u16.to_le_bytes(), &[0; 12]].concat()),
+                0x000a => rec(0x000a, &[]),
+                0x0207 => rec(0x0207, &[1, 0, 0, b'x']),
+                id => rec(id, &[&r.to_le_bytes()[..], &c.to_le_bytes(), &[0; 10]].concat()),
+            });
+        }
+        out.extend(rec(0x000a, &[]));
+        out
+    }
+
+    /// Room for `cells` cells, as calamine holds them.
+    fn room(cells: u64) -> Limits {
+        let mut l = Limits::desktop();
+        l.allocation = cells * CELL;
+        l
+    }
+
+    #[test]
+    fn every_sheet_listed_is_laid_out_even_at_one_place() {
+        // 1,000 rows by 100 columns, named once and then fifty times.
+        let big = sheet(&[(0x0203, 0, 0), (0x0203, 999, 99)]);
+        assert!(sheets_extent(&stream(std::slice::from_ref(&big), 1, |_, s| s[0]), &room(200_000)).is_ok());
+        let e = sheets_extent(&stream(&[big], 50, |_, s| s[0]), &room(200_000)).unwrap_err();
+        assert!(matches!(e, ParseError::TooLarge(_)), "{e}");
+        // A sheet starting past the stream lays out nothing.
+        assert!(sheets_extent(&stream(&[], 1, |_, _| 1 << 30), &room(1)).is_ok());
+    }
+
+    #[test]
+    fn cells_counted_as_calamine_keeps_them() {
+        let fits = |cells: &[(u16, u16, u16)]| sheets_extent(&stream(&[sheet(cells)], 1, |_, s| s[0]), &room(10_000)).is_ok();
+        // A rich string far out widens the sheet as any cell does.
+        assert!(!fits(&[(0x0203, 0, 0), (0x00d6, 60_000, 200)]));
+        for id in [0x0006, 0x0203, 0x0204, 0x0205, 0x027e, 0x00fd] {
+            assert!(!fits(&[(0x0203, 0, 0), (id, 60_000, 200)]), "{id:#x}");
+        }
+        // Blanks calamine drops; an embedded chart's cells it passes over.
+        assert!(fits(&[(0x0203, 0, 0), (0x0201, 60_000, 200)]));
+        assert!(fits(&[(0x0203, 0, 0), (0x0809, 0, 0), (0x0203, 60_000, 200), (0x0809, 0, 0), (0x000a, 0, 0), (0x000a, 0, 0), (0x0203, 1, 1)]));
+        // A formula's text goes where the formula was; with none, at A1.
+        assert!(fits(&[(0x0006, 5_000, 200), (0x0207, 0, 0)]));
+        assert!(!fits(&[(0x0203, 5_000, 200), (0x0207, 0, 0)]));
     }
 
     #[test]

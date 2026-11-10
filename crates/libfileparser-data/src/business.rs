@@ -545,7 +545,9 @@ pub(crate) fn looks_like_bare_mt(header: &[u8]) -> bool {
     let field = |l: &str| {
         let Some(rest) = l.strip_prefix(':') else { return false };
         let tag = rest.split(':').next().unwrap_or("");
-        rest.len() > tag.len() && (2..=4).contains(&tag.len()) && tag[..2].bytes().all(|c| c.is_ascii_digit()) && tag[2..].bytes().all(|c| c.is_ascii_uppercase())
+        // By bytes: a tag of two to four bytes may cut a character in half.
+        let t = tag.as_bytes();
+        rest.len() > tag.len() && (2..=4).contains(&t.len()) && t[..2].iter().all(u8::is_ascii_digit) && t[2..].iter().all(u8::is_ascii_uppercase)
     };
     let mut lines = text.lines().map(str::trim).filter(|l| !l.is_empty()).take(6);
     lines.any(field)

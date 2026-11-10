@@ -577,7 +577,7 @@ fn wkt(text: &str, cx: &ParseContext) -> Result<Vec<Wkt>> {
             break;
         }
         let start = i;
-        if text[i..].len() >= 5 && text[i..i + 5].eq_ignore_ascii_case("SRID=") {
+        if b[i..].len() >= 5 && b[i..i + 5].eq_ignore_ascii_case(b"SRID=") {
             i = text[i..].find(';').map_or(b.len(), |p| i + p + 1);
             while i < b.len() && b[i].is_ascii_whitespace() {
                 i += 1;
@@ -590,7 +590,9 @@ fn wkt(text: &str, cx: &ParseContext) -> Result<Vec<Wkt>> {
         let kind = text[word_start..i].to_ascii_uppercase();
         let known = ["POINT", "MULTIPOINT", "LINESTRING", "MULTILINESTRING", "POLYGON", "MULTIPOLYGON", "GEOMETRYCOLLECTION", "TRIANGLE", "TIN", "POLYHEDRALSURFACE", "CIRCULARSTRING", "COMPOUNDCURVE", "CURVEPOLYGON", "MULTICURVE", "MULTISURFACE"];
         if !known.contains(&kind.as_str()) {
-            return Err(ParseError::corrupt_at(format!("WKT: expected a geometry, found {:?}", &text[word_start..i.max(word_start + 1).min(text.len())]), libfileparser_core::Position::in_text(b, word_start)));
+            // The word, or when there's none the character there (whole, however many bytes).
+            let found: String = if i > word_start { text[word_start..i].to_string() } else { text[word_start..].chars().next().map(String::from).unwrap_or_default() };
+            return Err(ParseError::corrupt_at(format!("WKT: expected a geometry, found {found:?}"), libfileparser_core::Position::in_text(b, word_start)));
         }
         // ` Z`, ` M`, ` ZM`, then `EMPTY` or a parenthesised list, nested.
         let mut points = Vec::new();
