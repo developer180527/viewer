@@ -570,6 +570,7 @@ impl ViewerApp {
                 ui.text_with(&format!("Couldn't open: {err}"), 14.0, danger);
             });
         }
+        self.fallback_notice(ui);
         if let Some(model) = self.blocked_banner(ui) {
             self.open_folder_for(model);
         }
@@ -591,6 +592,22 @@ impl ViewerApp {
 }
 
 impl ViewerApp {
+    /// When the reader for this kind of file couldn't read it and something more
+    /// general is showing it instead (a damaged workbook as hex, bad JSON as text, a
+    /// password-protected document), one line over the content says so and why. The
+    /// info panel lists every reader that was tried.
+    fn fallback_notice(&self, ui: &mut Ui) {
+        let Some(page) = self.stack.last() else { return };
+        let Some((id, why)) = page.attempts.first() else { return };
+        let name = |id: &str| crate::formats::registry().get(id).map_or_else(|| id.to_string(), |l| l.name().to_string());
+        let why = why.trim_start_matches("damaged or not understood: ").trim_end_matches('.');
+        let pal = ui.theme.palette;
+        let frame = Frame { fill: pal.surface, border: pal.warning, border_width: 1.0, ..Frame::none() };
+        ui.container_id(Id::from_name("fallback notice"), Layout::row().padding(Insets::xy(12.0, 8.0)), frame, |ui| {
+            ui.paragraph(&format!("Couldn't read this as {}: {why}. Showing it as {} instead.", name(id), name(page.loader)));
+        });
+    }
+
     /// When the page's file names files Viewer isn't allowed to read (on iOS: the user
     /// picked the model alone, so its textures are out of reach), a banner over the
     /// content says so and offers the fix. Returns the model to reopen when its

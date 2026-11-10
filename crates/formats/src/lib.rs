@@ -28,10 +28,12 @@ pub fn registry() -> &'static Registry {
         };
         Registry::new(&[
             adapt(::libfileparser::Category::Images),
-            adapt(::libfileparser::Category::Archives),
-            adapt(::libfileparser::Category::Data),
+            // Before archives, as in libfileparser's own order: the zip reader also
+            // lists `.epub` and its kind, and a tie must go to the format.
             adapt(::libfileparser::Category::Docs),
             adapt(::libfileparser::Category::Sheets),
+            adapt(::libfileparser::Category::Archives),
+            adapt(::libfileparser::Category::Data),
             viewer_fmt_doc::LOADERS,
             adapt(::libfileparser::Category::ThreeD),
         ])

@@ -1686,11 +1686,13 @@ dependencies = [
 name = "libfileparser-images"
 version = "0.3.1"
 dependencies = [
+ "exr",
  "image",
  "libfileparser-core",
  "libfileparser-testkit",
  "png",
  "resvg",
+ "smallvec",
 ]
 
 [[package]]

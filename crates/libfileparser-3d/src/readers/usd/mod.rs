@@ -177,7 +177,8 @@ pub fn load(src: &FileSource, cx: &ParseContext, deps: &Dependencies) -> Result<
     let extra_layers = layers.len() - 1;
     let root = layers.into_iter().next().unwrap_or_default();
     let (scene, mut builder) = crate::build::new_scene(cx);
-    let has_prims = !layer.root_prims().is_empty();
+    // A stage that only brings in other layers is USD content too, found or not.
+    let has_prims = !layer.root_prims().is_empty() || !arcs.is_empty();
     let mut c = Converter {
         layer: &layer,
         files: &files,

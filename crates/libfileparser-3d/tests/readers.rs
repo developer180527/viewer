@@ -636,3 +636,15 @@ fn a_file_with_nothing_to_draw_still_opens_as_itself() {
     let empty = FileSource::from_bytes("b.usda", b"#usda 1.0\n".to_vec());
     assert!(UsdReader.open(&empty, &cx).is_err());
 }
+
+#[test]
+fn a_stage_of_layers_it_cant_find_still_opens_as_usd() {
+    // Its only content is a sublayer outside what may be read: still a USD stage, with
+    // the layer listed as a dependency, not a text file.
+    let cx = ParseContext::new();
+    let src = FileSource::from_bytes("a.usda", b"#usda 1.0\n(\n    subLayers = [\n        @../../common/axis.usda@\n    ]\n)\n".to_vec());
+    let doc = UsdReader.open(&src, &cx).expect("opens");
+    assert_eq!(doc.format().reader, "usd");
+    assert!(doc.facets().any(|f| f.name == "Stage"));
+    assert!(!doc.dependencies().list().is_empty(), "the layer is recorded");
+}

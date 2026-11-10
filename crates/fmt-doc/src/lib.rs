@@ -12,6 +12,9 @@ pub static LOADERS: &[&dyn FormatLoader] = &[&TextLoader];
 /// Files above this size are shown without highlighting so they open instantly.
 const HIGHLIGHT_LIMIT: usize = 512 * 1024;
 
+/// Files with a line longer than this are shown without highlighting.
+const LONG_LINE: usize = 20_000;
+
 /// Extensions we claim without sniffing. Kept as a static list so probing never
 /// has to load syntect's syntax set.
 const TEXT_EXTS: &[&str] = &[
@@ -54,7 +57,11 @@ impl FormatLoader for TextLoader {
         line_starts.extend(memchr::memchr_iter(b'\n', bytes).map(|i| i + 1).filter(|&i| i < bytes.len()));
 
         let mut doc = TextDoc { source: src.clone(), line_starts, syntax: None, highlights: None };
-        if bytes.len() <= HIGHLIGHT_LIMIT {
+        // A minified file is one line of hundreds of kilobytes: highlighting it takes
+        // over a second and colours nothing anyone can read.
+        let longest = doc.line_starts.windows(2).map(|w| w[1] - w[0]).chain(doc.line_starts.last().map(|&l| bytes.len() - l)).max().unwrap_or(0);
+        let long_lines = longest > LONG_LINE;
+        if bytes.len() <= HIGHLIGHT_LIMIT && !long_lines {
             let ss = syntax_set();
             if let Some(syntax) = find_syntax(ss, src) {
                 doc.syntax = Some(syntax.name.clone());
@@ -69,6 +76,9 @@ impl FormatLoader for TextLoader {
             .with_meta("Encoding", if std::str::from_utf8(bytes).is_ok() { "UTF-8" } else { "binary / non-UTF-8" });
         if bytes.len() > HIGHLIGHT_LIMIT {
             out = out.with_meta("Highlighting", "off (file too large)");
+        }
+        if long_lines && bytes.len() <= HIGHLIGHT_LIMIT {
+            out = out.with_meta("Highlighting", "off (very long lines)");
         }
         Ok(out)
     }

@@ -444,3 +444,14 @@ fn a_character_cut_by_a_byte_offset_is_no_panic() {
         }
     }
 }
+
+/// A date field of six bytes that aren't six characters was sliced mid-character.
+#[test]
+fn an_nmea_date_that_isnt_ascii_is_left_out_not_a_panic() {
+    let text = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,\u{20ac}\u{20ac},003.1,W*6A\n";
+    let src = libfileparser_core::FileSource::from_bytes("a.nmea", text.as_bytes().to_vec());
+    let cx = libfileparser_core::ParseContext::new();
+    if let Ok(doc) = libfileparser_data::open(&src, &cx) {
+        libfileparser_testkit::exercise(&doc, &cx);
+    }
+}

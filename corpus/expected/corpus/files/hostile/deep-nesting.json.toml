@@ -1,12 +1,12 @@
 loader = "text"
 failed = ["json"]
-format = "JSON source"
+format = "Plain text"
 model = "Text"
 
 [text]
 lines = 1
-syntax = "JSON"
 
 [metadata]
 Lines = "1"
 Encoding = "UTF-8"
+Highlighting = "off (very long lines)"

@@ -742,7 +742,7 @@ fn fix(kind: &str, f: &[&str]) -> Fix {
         // RMC: time, status, lat, N/S, lon, E/W, speed (knots), course, date, …
         "RMC" => (
             get(0).and_then(clock),
-            get(8).filter(|d| d.len() == 6).map(|d| format!("20{}-{}-{}", &d[4..6], &d[2..4], &d[..2])),
+            get(8).filter(|d| d.len() == 6 && d.is_ascii()).map(|d| format!("20{}-{}-{}", &d[4..6], &d[2..4], &d[..2])),
             get(2).and_then(|v| degrees(v, get(3)?, 2)),
             get(4).and_then(|v| degrees(v, get(5)?, 3)),
             None,

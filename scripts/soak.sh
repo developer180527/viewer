@@ -13,6 +13,8 @@
 set -uo pipefail
 cd "$(dirname "$0")/.."
 ROOT=$PWD
+# Cores: nproc on Linux, sysctl on macOS and the BSDs.
+CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 HOURS=${HOURS:-8}
 SECS=${SECS:-$((HOURS * 3600))}
 OUT=$ROOT/soak
@@ -25,7 +27,7 @@ report() {
   {
     echo "# Soak report"
     echo
-    echo "Host: $(hostname), $(nproc) cores. Finished $(date -u +%Y-%m-%dT%H:%MZ). Commit: $(cat "$OUT/commit" 2>/dev/null || echo unknown)."
+    echo "Host: $(hostname), $CORES cores. Finished $(date -u +%Y-%m-%dT%H:%MZ). Commit: $(cat "$OUT/commit" 2>/dev/null || echo unknown)."
     echo
     echo "| Target | Runs | Coverage | Corpus | Crashes | Timeouts | Out of memory |"
     echo "|---|---|---|---|---|---|---|"
@@ -71,7 +73,7 @@ if [ "${1:-}" = report ]; then report; exit 0; fi
 
 mkdir -p "$OUT/logs"
 echo "${SOAK_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || date -u +%F)}" > "$OUT/commit"
-export CARGO_BUILD_JOBS=$(nproc)
+export CARGO_BUILD_JOBS=$CORES
 echo "building the fuzz targets..."
 (cd fuzz && nice -n 10 cargo +nightly fuzz build -O) > "$OUT/logs/build.log" 2>&1 || { echo "build failed: $OUT/logs/build.log"; exit 1; }
 if [ -z "$(ls fuzz/corpus 2>/dev/null)" ]; then

@@ -48,6 +48,49 @@ fn corrupt(e: impl std::fmt::Display) -> ParseError {
     ParseError::corrupt(e)
 }
 
+/// EXR files without RGB channels, shown as their first channel in grey: `Y`, or
+/// whichever the file has (a roughness or depth map).
+mod exr_channel {
+    use exr::prelude::*;
+
+    /// (width, height, channel name) of the first layer.
+    pub fn size(bytes: &[u8]) -> Option<(u32, u32, String)> {
+        let meta = MetaData::read_from_buffered(std::io::Cursor::new(bytes), false).ok()?;
+        let header = meta.headers.iter().find(|h| !h.deep)?;
+        let channel = pick(header.channels.list.iter().map(|c| c.name.to_string()))?;
+        Some((u32::try_from(header.layer_size.width()).ok()?, u32::try_from(header.layer_size.height()).ok()?, channel))
+    }
+
+    fn pick(names: impl Iterator<Item = String>) -> Option<String> {
+        let names: Vec<String> = names.collect();
+        names.iter().find(|n| n.as_str() == "Y").or(names.first()).cloned()
+    }
+
+    pub fn decode(bytes: &[u8], max_alloc: u64) -> Option<image::DynamicImage> {
+        let (w, h, channel) = size(bytes)?;
+        if (w as u64) * (h as u64) * 8 > max_alloc {
+            return None;
+        }
+        let image = read().no_deep_data().largest_resolution_level().all_channels().first_valid_layer().all_attributes().non_parallel().from_buffered(std::io::Cursor::new(bytes)).ok()?;
+        let layer = image.layer_data;
+        let (lw, lh) = (layer.size.width(), layer.size.height());
+        let samples = &layer.channel_data.list.iter().find(|c| c.name.to_string() == channel)?.sample_data;
+        let mut grey = Vec::with_capacity(lw * lh);
+        for i in 0..lw * lh {
+            let v = match samples {
+                FlatSamples::F16(s) => s.get(i)?.to_f32(),
+                FlatSamples::F32(s) => *s.get(i)?,
+                FlatSamples::U32(s) => *s.get(i)? as f32,
+            };
+            // Linear to sRGB, as `image` shows an RGB EXR.
+            let v = v.clamp(0.0, 1.0);
+            let v = if v <= 0.003_130_8 { v * 12.92 } else { 1.055 * v.powf(1.0 / 2.4) - 0.055 };
+            grey.push((v * 255.0 + 0.5) as u8);
+        }
+        image::GrayImage::from_raw(lw as u32, lh as u32, grey).map(image::DynamicImage::ImageLuma8)
+    }
+}
+
 // ---------------------------------------------------------------- raster formats
 
 /// Everything the `image` crate decodes.
@@ -87,9 +130,14 @@ impl Reader for ImageReader {
         cx.cancel.check()?;
         let format = format_of(src).ok_or(ParseError::NotThisFormat)?;
         // The header alone: size and colour type, nothing decoded.
-        let decoder = image::ImageReader::with_format(Cursor::new(src.bytes()), format).into_decoder().map_err(corrupt)?;
-        let (width, height) = decoder.dimensions();
-        let color = format!("{:?}", decoder.color_type());
+        let (width, height, color) = match image::ImageReader::with_format(Cursor::new(src.bytes()), format).into_decoder() {
+            Ok(decoder) => (decoder.dimensions().0, decoder.dimensions().1, format!("{:?}", decoder.color_type())),
+            // `image` reads only RGB(A) EXR files.
+            Err(e) => match (format == ImageFormat::OpenExr).then(|| exr_channel::size(src.bytes())).flatten() {
+                Some((w, h, channel)) => (w, h, format!("{channel} (one channel)")),
+                None => return Err(corrupt(e)),
+            },
+        };
         cx.limits.check(Limit::ImagePixels, width as u64 * height as u64)?;
         let source = ImageBands { src: src.clone(), format, width, height, max_alloc: cx.limits.allocation };
         Ok(Document::new(FormatInfo::new("image", format_name(format, src.header()), Category::Images))
@@ -130,7 +178,10 @@ impl ImageBands {
         let mut limits = image::Limits::default();
         limits.max_alloc = Some(self.max_alloc);
         reader.limits(limits);
-        reader.decode().map_err(corrupt)
+        match reader.decode() {
+            Ok(image) => Ok(image),
+            Err(e) => (self.format == ImageFormat::OpenExr).then(|| exr_channel::decode(self.src.bytes(), self.max_alloc)).flatten().ok_or_else(|| corrupt(e)),
+        }
     }
 }
 
@@ -452,5 +503,21 @@ mod tests {
         let bands: Vec<_> = source.bands().unwrap().collect();
         assert!(bands.len() >= 2 && bands[0].as_ref().is_ok_and(|b| !b.rgba.is_empty()), "{:?}", bands.iter().map(|b| b.is_ok()).collect::<Vec<_>>());
         assert!(bands.last().unwrap().is_err());
+    }
+
+    #[test]
+    fn an_exr_of_one_channel_is_shown_in_grey() {
+        use exr::prelude::*;
+        // A roughness map: one channel, not called R, G or B. `image` refuses these.
+        let mut bytes = Vec::new();
+        let channel = AnyChannel::new("roughness", FlatSamples::F32(vec![0.0, 1.0, 0.5, 0.25]));
+        let layer = Layer::new((2, 2), LayerAttributes::default(), Encoding::UNCOMPRESSED, AnyChannels::sort(smallvec::smallvec![channel]));
+        Image::from_layer(layer).write().to_buffered(Cursor::new(&mut bytes)).unwrap();
+        let doc = ImageReader.open(&FileSource::from_bytes("r.exr", bytes), &ParseContext::new()).unwrap();
+        let r = raster(&doc);
+        assert_eq!((r.width(), r.height()), (2, 2));
+        let rgba = r.decode().unwrap();
+        assert_eq!((rgba[0], rgba[4]), (0, 255), "black, then white");
+        assert!(doc.metadata().iter().any(|(k, v)| k == "Color" && v.contains("roughness")));
     }
 }

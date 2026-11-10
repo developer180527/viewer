@@ -39,7 +39,11 @@ impl FormatLoader for ReaderLoader {
             // What the content proves outranks an extension, as in libfileparser's own
             // order: an OpenAPI description named `.yaml` is OpenAPI, not YAML.
             Confidence::Content => viewer_core::Confidence(viewer_core::Confidence::EXTENSION.0 + 5),
-            Confidence::Magic => viewer_core::Confidence::MAGIC,
+            // Two readers sure of the same bytes (a zip that is also an `.ods` whose
+            // `mimetype` part isn't first): the one that owns the name wins, as in
+            // libfileparser's own order.
+            Confidence::Magic if self.0.info().matches_extension(name) => viewer_core::Confidence::MAGIC,
+            Confidence::Magic => viewer_core::Confidence(viewer_core::Confidence::MAGIC.0 - 1),
             // A format inside a generic container (USDZ, DOCX) outranks the container.
             Confidence::Certain => viewer_core::Confidence(viewer_core::Confidence::MAGIC.0 + 1),
             _ => viewer_core::Confidence::NONE,
@@ -187,6 +191,19 @@ mod tests {
         let doc = crate::registry().get("usd").unwrap().open(&src).unwrap();
         let facets = doc.facets.unwrap();
         facets.doc.facets().nth(facets.shown).unwrap().name.clone()
+    }
+
+    /// A zip is certain it's a zip; an `.ods` or `.epub` whose `mimetype` part isn't
+    /// first is only as sure as that. The format the name says must still go first,
+    /// as in libfileparser's own order: these opened as zip listings.
+    #[test]
+    fn a_format_in_a_zip_outranks_the_zip_by_its_name() {
+        for (name, id) in [("a.ods", "ods"), ("a.epub", "epub"), ("a.zip", "zip"), ("a.bin", "zip")] {
+            let mut bytes = b"PK\x03\x04".to_vec();
+            bytes.extend_from_slice(&[0; 60]);
+            let first = crate::registry().candidates(&FileSource::from_bytes(name, bytes))[0].1.id();
+            assert_eq!(first, id, "{name}");
+        }
     }
 
     #[test]
