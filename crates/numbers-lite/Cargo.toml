@@ -1,0 +1,10 @@
+[package]
+name = "numbers-lite"
+description = "Reads Apple Numbers spreadsheets (.numbers, 2013 and later) into sheets, tables and cells."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }

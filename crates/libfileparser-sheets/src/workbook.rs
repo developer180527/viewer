@@ -260,6 +260,9 @@ fn calm<T>(f: impl FnOnce() -> Result<T>) -> Result<T> {
     std::panic::catch_unwind(std::panic::AssertUnwindSafe(f)).unwrap_or_else(|_| Err(ParseError::corrupt("the workbook's structure is damaged")))
 }
 
+/// In the warning for a sheet that failed when its workbook opened.
+pub const UNREADABLE: &str = "couldn't be read";
+
 /// Opens a workbook whose bytes passed `guard`'s checks.
 pub fn open(src: &FileSource, bytes: Shared, reader: &'static str, format: &'static str, cx: &ParseContext) -> Result<Document> {
     calm(|| open_workbook(src, bytes, reader, format, cx))
@@ -304,7 +307,7 @@ fn open_workbook(src: &FileSource, bytes: Shared, reader: &'static str, format: 
             }
             Err(e @ (ParseError::Cancelled | ParseError::TooLarge(_))) => return Err(e),
             Err(e) => {
-                warnings.push(Warning::new(format!("Sheet “{name}” couldn't be read: {e}")));
+                warnings.push(Warning::new(format!("Sheet “{name}” {UNREADABLE}: {e}")));
                 first_error.get_or_insert(e);
             }
         }

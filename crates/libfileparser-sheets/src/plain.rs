@@ -1,9 +1,10 @@
 //! The workbooks our own crates read: ODS and flat FODS (`ods-lite`), SYLK, DIF, bare
-//! BIFF streams (`biff-lite`: Excel 2 to 5) and XML Spreadsheet 2003 (`xmlss-lite`).
+//! BIFF streams (`biff-lite`: Excel 2 to 5), XML Spreadsheet 2003 (`xmlss-lite`) and Apple
+//! Numbers (`numbers-lite`).
 
 use std::sync::Arc;
 
-use libfileparser_core::{Category, Cell, Confidence, Content, Detection, Document, FileSource, FormatInfo, Limit, OwnedTable, ParseContext, ParseError, Reader, ReaderInfo, Result, Role};
+use libfileparser_core::{Category, Cell, Confidence, Content, Detection, Document, FileSource, FormatInfo, Limit, OwnedTable, ParseContext, ParseError, Reader, ReaderInfo, Result, Role, Warning};
 
 use crate::workbook::{Sheet, column_name, number};
 
@@ -57,6 +58,13 @@ type Cells = Vec<(u32, u32, Cell)>;
 
 fn many(src: &FileSource, reader: &'static str, format: impl Into<String>, sheets: Vec<(String, Cells)>, formulas: Vec<Vec<Cell>>, names: Vec<(String, String)>, cx: &ParseContext) -> Result<Document> {
     let count = sheets.len();
+    counted(src, reader, format, sheets, count, formulas, names, cx)
+}
+
+/// As [`many`], for a format whose tables aren't its sheets (Numbers: a sheet holds any
+/// number of tables): `count` is how many sheets it has.
+#[allow(clippy::too_many_arguments)]
+fn counted(src: &FileSource, reader: &'static str, format: impl Into<String>, sheets: Vec<(String, Cells)>, count: usize, formulas: Vec<Vec<Cell>>, names: Vec<(String, String)>, cx: &ParseContext) -> Result<Document> {
     let mut sheets = sheets.into_iter();
     let (name, cells) = sheets.next().ok_or_else(|| ParseError::corrupt("a workbook with no sheets"))?;
     let mut doc = Document::new(FormatInfo::new(reader, format, Category::Sheets)).with_facet(Role::Primary, name, Content::Table(Arc::new(Sheet::new(cells, cx)?)));
@@ -315,5 +323,112 @@ impl Reader for XmlssReader {
             })
             .collect();
         many(src, "xmlss", "XML Spreadsheet 2003", sheets, formulas, book.names, cx)
+    }
+}
+
+static NUMBERS: ReaderInfo = ReaderInfo::new("numbers", "Numbers spreadsheet", Category::Sheets).extensions(&["numbers"]).mime_types(&["application/vnd.apple.numbers"]);
+
+pub struct NumbersReader;
+
+/// A length of time as Numbers shows one: `1h 30m`, `2d 4h 0m 5s`.
+fn duration(seconds: f64) -> String {
+    if !seconds.is_finite() || seconds.abs() >= 1e15 {
+        return format!("{seconds}s");
+    }
+    let total = seconds.abs().round() as u64;
+    let parts = [(total / 86_400, "d"), (total / 3600 % 24, "h"), (total / 60 % 60, "m"), (total % 60, "s")];
+    // From the largest unit that isn't zero to the smallest that isn't.
+    let first = parts.iter().position(|p| p.0 > 0).unwrap_or(3);
+    let last = parts.iter().rposition(|p| p.0 > 0).unwrap_or(3);
+    let text: Vec<String> = parts[first..=last].iter().map(|(n, unit)| format!("{n}{unit}")).collect();
+    format!("{}{}", if seconds < 0.0 && total > 0 { "-" } else { "" }, text.join(" "))
+}
+
+impl Reader for NumbersReader {
+    fn info(&self) -> &ReaderInfo {
+        &NUMBERS
+    }
+
+    /// A zip named as one: certain, so it outranks the zip reader. (A document saved as
+    /// a package is a folder, which the folder listing shows.)
+    fn detect(&self, header: &[u8], name: &str) -> Detection {
+        if header.starts_with(PK) && NUMBERS.matches_extension(name) { Detection::new(Confidence::Certain) } else { Detection::NONE }
+    }
+
+    fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
+        cx.cancel.check()?;
+        if !src.header().starts_with(PK) {
+            return Err(ParseError::NotThisFormat);
+        }
+        let l = &cx.limits;
+        let limits = numbers_lite::Limits::default().with_cells(l.memory / 64).with_text(l.memory).with_part_bytes(l.allocation).with_unpack(l.unpack_ratio, l.unpack_always);
+        let book = numbers_lite::read(src.bytes(), &limits).map_err(|e| match e {
+            numbers_lite::Error::NotNumbers => ParseError::NotThisFormat,
+            numbers_lite::Error::Encrypted => crate::locked(),
+            numbers_lite::Error::TooLarge { value, max, .. } => ParseError::too_large(Limit::Memory, value, max),
+            e => ParseError::corrupt(e),
+        })?;
+        let sheets = book.sheets.len();
+        let tables: usize = book.sheets.iter().map(|s| s.tables.len()).sum();
+        if tables == 0 {
+            return Err(ParseError::unsupported("This spreadsheet has no tables: only charts, pictures or text, which can't be shown yet."));
+        }
+        let unread: u32 = book.sheets.iter().flat_map(|s| &s.tables).map(|t| t.unread_rows).sum();
+        let mut out = Vec::with_capacity(tables);
+        for sheet in book.sheets {
+            // A sheet is a canvas of tables: each is a table here, named with its sheet
+            // when there is more than one.
+            for table in sheet.tables {
+                cx.cancel.check()?;
+                let name = if sheets > 1 { format!("{} · {}", sheet.name, table.name) } else { table.name };
+                let cells = table
+                    .cells
+                    .into_iter()
+                    .filter_map(|c| {
+                        use numbers_lite::Value as V;
+                        let v = match c.value {
+                            V::Number(n) => number(n),
+                            V::Text(t) => Cell::Text(t),
+                            V::Bool(b) => Cell::Bool(b),
+                            V::Date(d) => Cell::Date(d),
+                            V::Duration(s) => Cell::Text(duration(s)),
+                            V::Error => Cell::Error("#ERROR!".into()),
+                            _ => return None,
+                        };
+                        Some((c.row, c.col, v))
+                    })
+                    .collect();
+                out.push((name, cells));
+            }
+        }
+        let mut doc = counted(src, "numbers", "Numbers spreadsheet", out, sheets, Vec::new(), Vec::new(), cx)?.with_meta("Tables", tables);
+        if unread > 0 {
+            doc = doc.with_warning(Warning::new(format!("{unread} row(s) are stored the way Numbers wrote them before version 5.1, which isn't read; they're missing.")));
+        }
+        if book.unread_parts > 0 {
+            doc = doc.with_warning(Warning::new(format!("{} part(s) of the document are damaged and were passed over; rows may be missing.", book.unread_parts)));
+        }
+        Ok(doc)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::duration;
+
+    #[test]
+    fn durations_in_their_units() {
+        assert_eq!(duration(0.0), "0s");
+        assert_eq!(duration(59.4), "59s");
+        assert_eq!(duration(90.0), "1m 30s");
+        assert_eq!(duration(5400.0), "1h 30m");
+        assert_eq!(duration(3600.0), "1h");
+        assert_eq!(duration(3605.0), "1h 0m 5s");
+        assert_eq!(duration(187_205.0), "2d 4h 0m 5s");
+        assert_eq!(duration(86_400.0), "1d");
+        assert_eq!(duration(-90.0), "-1m 30s");
+        assert_eq!(duration(-0.2), "0s");
+        assert_eq!(duration(f64::INFINITY), "infs");
+        assert_eq!(duration(1e15), "1000000000000000s");
     }
 }

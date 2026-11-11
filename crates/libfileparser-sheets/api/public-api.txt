@@ -9,6 +9,11 @@ impl libfileparser_core::reader::Reader for libfileparser_sheets::FodsReader
 pub fn libfileparser_sheets::FodsReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_sheets::FodsReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_sheets::FodsReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_sheets::NumbersReader
+impl libfileparser_core::reader::Reader for libfileparser_sheets::NumbersReader
+pub fn libfileparser_sheets::NumbersReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_sheets::NumbersReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_sheets::NumbersReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_sheets::OdsReader
 impl libfileparser_core::reader::Reader for libfileparser_sheets::OdsReader
 pub fn libfileparser_sheets::OdsReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection

@@ -128,6 +128,10 @@ path = "corpus/files/sheets/sample-biff4.xls"
 [[file]]
 path = "corpus/files/sheets/sample-xmlss.xml"
 
+# From masaccio/numbers-parser's tests (MIT): issue-18.numbers.
+[[file]]
+path = "corpus/files/sheets/sample.numbers"
+
 # ---------------------------------------------------------------- data
 
 [[file]]

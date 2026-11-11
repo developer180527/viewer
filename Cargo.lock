@@ -1727,6 +1727,7 @@ dependencies = [
  "dif-lite",
  "libfileparser-core",
  "libfileparser-testkit",
+ "numbers-lite",
  "ods-lite",
  "sylk-lite",
  "xmlss-lite",
@@ -2248,6 +2249,13 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.119",
+]
+
+[[package]]
+name = "numbers-lite"
+version = "0.3.1"
+dependencies = [
+ "zip",
 ]
 
 [[package]]

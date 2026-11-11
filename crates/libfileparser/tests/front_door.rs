@@ -224,6 +224,7 @@ fn categories_follow_convention() {
         ("sheets/sample.xlsx", Sheets),
         ("sheets/sample.xlsb", Sheets),
         ("sheets/sample.ods", Sheets),
+        ("sheets/sample.numbers", Sheets),
         ("3d/tri.usdz", ThreeD),
         ("data/geo/places.kmz", Data),
         // XML that is a workbook, a picture, a map, a feed.

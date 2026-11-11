@@ -1,17 +1,18 @@
 //! Workbooks (docs/design/libfileparser.md §2.1): every sheet a table of typed cells,
 //! the workbook's formulas and defined names as tables of their own. XLSX, XLSB and XLS
-//! are read by calamine; ODS, FODS, SYLK, DIF, XML Spreadsheet 2003 and the bare BIFF of
-//! Excel 2 to 5 by our own crates.
+//! are read by calamine; ODS, FODS, SYLK, DIF, XML Spreadsheet 2003, Apple Numbers and the
+//! bare BIFF of Excel 2 to 5 by our own crates.
 //!
 //! A new format is one more [`Reader`] and one more line in [`readers`].
 
 use libfileparser_core::{Category, Confidence, Detection, Document, FileSource, ParseContext, ParseError, Reader, ReaderInfo, Result};
 
 mod guard;
+mod mend;
 mod plain;
 mod workbook;
 
-pub use plain::{DifReader, FodsReader, OdsReader, SylkReader, XmlssReader};
+pub use plain::{DifReader, FodsReader, NumbersReader, OdsReader, SylkReader, XmlssReader};
 
 use workbook::Shared;
 
@@ -20,7 +21,7 @@ const OLE: &[u8] = b"\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1";
 
 /// Every reader here, in the order they're tried.
 pub fn readers() -> &'static [&'static dyn Reader] {
-    &[&XlsxReader, &XlsbReader, &XlsReader, &OdsReader, &FodsReader, &SylkReader, &DifReader, &XmlssReader]
+    &[&XlsxReader, &XlsbReader, &XlsReader, &OdsReader, &FodsReader, &SylkReader, &DifReader, &XmlssReader, &NumbersReader]
 }
 
 /// Whether an OLE file holds an encrypted Office package: how a password-protected
@@ -49,7 +50,25 @@ fn open_ooxml(src: &FileSource, cx: &ParseContext, reader: &'static str, format:
         return Err(ParseError::NotThisFormat);
     }
     guard::zip_size(&bytes, &cx.limits)?;
-    workbook::open(src, bytes, reader, format, cx)
+    let first = workbook::open(src, bytes.clone(), reader, format, cx);
+    // calamine refuses some workbooks whole for something small (mend.rs): one that
+    // failed, or opened without a sheet, is mended and tried once more.
+    let failed = match &first {
+        Err(ParseError::Corrupt { .. }) => true,
+        Ok(doc) => doc.warnings().iter().any(|w| w.message.contains(workbook::UNREADABLE)),
+        Err(_) => false,
+    };
+    if reader == "xlsx"
+        && failed
+        && let Some(mended) = mend::mend(bytes.as_ref(), &cx.limits)
+    {
+        let again = Shared(std::sync::Arc::new(mended.bytes));
+        guard::zip_size(&again, &cx.limits)?;
+        if let Ok(doc) = workbook::open(src, again, reader, format, cx) {
+            return Ok(doc.with_warnings(mended.notes.into_iter().map(libfileparser_core::Warning::new)));
+        }
+    }
+    first
 }
 
 static XLSX: ReaderInfo = ReaderInfo::new("xlsx", "Excel workbook", Category::Sheets)

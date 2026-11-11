@@ -19,11 +19,11 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
           "pptx": "pptx", "html": "html", "htm": "html",
           # Spreadsheets.
           "xlsx": "xlsx", "xlsm": "xlsx", "xltx": "xlsx", "xltm": "xlsx", "xlam": "xlsx", "xlsb": "xlsb",
-          "xls": "xls", "xla": "xls", "xlt": "xls", "ods": "ods", "ots": "ods", "fods": "fods", "slk": "sylk", "dif": "dif"}
+          "xls": "xls", "xla": "xls", "xlt": "xls", "ods": "ods", "ots": "ods", "fods": "fods", "slk": "sylk", "dif": "dif", "numbers": "numbers"}
 # Category folders, as corpus/real is laid out: data/, docs/, sheets/ (3d/ is
 # fetch-real-3d.sh's).
 DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odt", "org", "pdf", "pptx", "rst", "rtf", "textile", "xps", "comic"}
-SHEETS = {"dif", "fods", "ods", "sylk", "xls", "xlsb", "xlsx", "xmlss"}
+SHEETS = {"dif", "fods", "numbers", "ods", "sylk", "xls", "xlsb", "xlsx", "xmlss"}
 counts = {}
 for repo in [os.path.basename(clone)]:
     root = clone

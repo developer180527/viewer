@@ -3,7 +3,7 @@
 use std::io::Write;
 
 use libfileparser_core::{Cell, Content, FileSource, Limits, ParseContext, ParseError, Reader, Result};
-use libfileparser_sheets::{DifReader, FodsReader, OdsReader, SylkReader, XlsReader, XlsbReader, XlsxReader, XmlssReader, readers};
+use libfileparser_sheets::{DifReader, FodsReader, NumbersReader, OdsReader, SylkReader, XlsReader, XlsbReader, XlsxReader, XmlssReader, readers};
 use libfileparser_testkit::{Sample, assert_conforms};
 
 fn sample(name: &str) -> Vec<u8> {
@@ -20,7 +20,8 @@ fn every_reader_conforms() {
     assert_conforms(&SylkReader, &[Sample::new("sample.slk", sample("sample.slk")).fits_tiny_limits()]);
     assert_conforms(&DifReader, &[Sample::new("sample.dif", sample("sample.dif")).fits_tiny_limits()]);
     assert_conforms(&XmlssReader, &[Sample::new("sample-xmlss.xml", sample("sample-xmlss.xml")).fits_tiny_limits()]);
-    assert_eq!(readers().len(), 8);
+    assert_conforms(&NumbersReader, &[Sample::new("sample.numbers", sample("sample.numbers"))]);
+    assert_eq!(readers().len(), 9);
 }
 
 /// A minimal XLSX with these rows of the first sheet's `<sheetData>`.
@@ -156,11 +157,74 @@ fn an_xml_spreadsheet_opens_with_its_sheets_formulas_and_names() {
     assert_eq!(facets[..4], ["Sales", "Notes", "Formulas", "Defined names"]);
 }
 
+#[test]
+fn a_numbers_document_opens_with_its_tables() {
+    let cx = ParseContext::new();
+    let bytes = sample("sample.numbers");
+    assert_eq!(NumbersReader.detect(&bytes, "budget.numbers").confidence, libfileparser_core::Confidence::Certain);
+    let doc = NumbersReader.open(&FileSource::from_bytes("budget.numbers", bytes), &cx).unwrap();
+    assert_eq!(doc.format().name, "Numbers spreadsheet");
+    assert_eq!(doc.facets().next().unwrap().name, "Table 1");
+    let Content::Table(t) = doc.facet(0, &cx).unwrap() else { panic!("a table") };
+    assert_eq!((t.info().rows.known(), t.info().columns.len()), (4, 5));
+    let rows = t.rows(0..4).unwrap();
+    assert_eq!((rows[0][0].clone(), rows[0][4].clone(), rows[2][1].clone()), (Cell::Text("SheetJS".into()), Cell::Text("E1".into()), Cell::Text("B3:D3".into())));
+    assert!(doc.metadata().iter().any(|(k, v)| k == "Sheets" && v == "1") && doc.metadata().iter().any(|(k, v)| k == "Tables" && v == "1"));
+    assert!(doc.warnings().is_empty());
+}
+
+/// Four things calamine refuses a whole workbook for, in one: a visibility Excel doesn't
+/// define, a macro sheet, a sheet listed with nothing behind it, and a size given as
+/// whole rows. Mended (mend.rs), it opens with every sheet that has cells.
+#[test]
+fn a_workbook_calamine_refuses_for_something_small_is_mended() {
+    let mut out = Vec::new();
+    {
+        let mut zip = zip::ZipWriter::new(std::io::Cursor::new(&mut out));
+        let mut add = |name: &str, body: &str| {
+            zip.start_file(name, zip::write::SimpleFileOptions::default()).unwrap();
+            zip.write_all(body.as_bytes()).unwrap();
+        };
+        let rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+        add("_rels/.rels", &format!(r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/officeDocument" Target="xl/workbook.xml"/></Relationships>"#));
+        add(
+            "xl/workbook.xml",
+            &format!(
+                r#"<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="{rel}"><sheets><sheet name="Data" sheetId="1" state="show" r:id="rId1"/><sheet name="Module" sheetId="2" r:id=""/><sheet name="Macros" sheetId="3" r:id="rId2"/></sheets></workbook>"#
+            ),
+        );
+        add(
+            "xl/_rels/workbook.xml.rels",
+            &format!(
+                r#"<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="{rel}/worksheet" Target="worksheets/sheet1.xml"/><Relationship Id="rId2" Type="http://schemas.microsoft.com/office/2006/relationships/xlMacrosheet" Target="macrosheets/sheet1.xml"/></Relationships>"#
+            ),
+        );
+        add("xl/worksheets/sheet1.xml", r#"<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><dimension ref="1:2"/><sheetData><row r="1"><c r="A1"><v>7</v></c></row></sheetData></worksheet>"#);
+        add(
+            "xl/macrosheets/sheet1.xml",
+            r#"<xm:macrosheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:xm="http://schemas.microsoft.com/office/excel/2006/main"><sheetData><row r="1"><c r="A1"><v>9</v></c></row></sheetData></xm:macrosheet>"#,
+        );
+    }
+    let cx = ParseContext::new();
+    let doc = XlsxReader.open(&FileSource::from_bytes("a.xlsx", out), &cx).unwrap();
+    let names: Vec<String> = doc.facets().map(|f| f.name.clone()).collect();
+    assert_eq!(names[..2], ["Data", "Macros"], "{names:?}");
+    for (facet, value) in [(0, 7), (1, 9)] {
+        let Content::Table(t) = doc.facet(facet, &cx).unwrap() else { panic!("a table") };
+        assert_eq!(t.rows(0..1).unwrap()[0][0], Cell::Int(value));
+    }
+    let said: Vec<&str> = doc.warnings().iter().map(|w| w.message.as_str()).collect();
+    assert!(said.iter().any(|w| w.contains("macro")) && said.iter().any(|w| w.contains("Module")) && said.iter().any(|w| w.contains("visibility")) && said.iter().any(|w| w.contains("whole rows")), "{said:?}");
+    // A workbook with nothing wrong isn't mended.
+    let plain = XlsxReader.open(&FileSource::from_bytes("a.xlsx", xlsx(r#"<row r="1"><c r="A1"><v>1</v></c></row>"#)), &cx).unwrap();
+    assert!(plain.warnings().is_empty());
+}
+
 /// Damaged thousands of ways (`LFP_FUZZ_ITERATIONS` for more), every workbook opens or
 /// fails cleanly, every sheet and the formulas included: no panic, no hang, no abort.
 #[test]
 fn every_reader_survives_fuzzing() {
-    let all = ["sample.xlsx", "sample.xlsb", "sample.xls", "sample-biff4.xls", "sample.ods", "sample.fods", "sample.slk", "sample.dif", "sample-xmlss.xml"];
+    let all = ["sample.xlsx", "sample.xlsb", "sample.xls", "sample-biff4.xls", "sample.ods", "sample.fods", "sample.slk", "sample.dif", "sample-xmlss.xml", "sample.numbers"];
     libfileparser_testkit::assert_fuzz_clean(readers(), |id| {
         let ext = match id {
             "sylk" => "slk",

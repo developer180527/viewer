@@ -1,0 +1,107 @@
+pub mod numbers_lite
+#[non_exhaustive] pub enum numbers_lite::Error
+pub numbers_lite::Error::Damaged(&'static str)
+pub numbers_lite::Error::Encrypted
+pub numbers_lite::Error::NotNumbers
+pub numbers_lite::Error::TooLarge
+pub numbers_lite::Error::TooLarge::max: u64
+pub numbers_lite::Error::TooLarge::value: u64
+pub numbers_lite::Error::TooLarge::what: &'static str
+pub numbers_lite::Error::Zip(alloc::string::String)
+impl core::clone::Clone for numbers_lite::Error
+pub fn numbers_lite::Error::clone(&self) -> numbers_lite::Error
+impl core::cmp::Eq for numbers_lite::Error
+impl core::cmp::PartialEq for numbers_lite::Error
+pub fn numbers_lite::Error::eq(&self, &numbers_lite::Error) -> bool
+impl core::error::Error for numbers_lite::Error
+impl core::fmt::Debug for numbers_lite::Error
+pub fn numbers_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for numbers_lite::Error
+pub fn numbers_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for numbers_lite::Error
+#[non_exhaustive] pub enum numbers_lite::Value
+pub numbers_lite::Value::Bool(bool)
+pub numbers_lite::Value::Date(alloc::string::String)
+pub numbers_lite::Value::Duration(f64)
+pub numbers_lite::Value::Error
+pub numbers_lite::Value::Number(f64)
+pub numbers_lite::Value::Text(alloc::string::String)
+impl core::clone::Clone for numbers_lite::Value
+pub fn numbers_lite::Value::clone(&self) -> numbers_lite::Value
+impl core::cmp::PartialEq for numbers_lite::Value
+pub fn numbers_lite::Value::eq(&self, &numbers_lite::Value) -> bool
+impl core::fmt::Debug for numbers_lite::Value
+pub fn numbers_lite::Value::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for numbers_lite::Value
+#[non_exhaustive] pub struct numbers_lite::Cell
+pub numbers_lite::Cell::col: u32
+pub numbers_lite::Cell::row: u32
+pub numbers_lite::Cell::value: numbers_lite::Value
+impl core::clone::Clone for numbers_lite::Cell
+pub fn numbers_lite::Cell::clone(&self) -> numbers_lite::Cell
+impl core::cmp::PartialEq for numbers_lite::Cell
+pub fn numbers_lite::Cell::eq(&self, &numbers_lite::Cell) -> bool
+impl core::fmt::Debug for numbers_lite::Cell
+pub fn numbers_lite::Cell::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for numbers_lite::Cell
+#[non_exhaustive] pub struct numbers_lite::Limits
+pub numbers_lite::Limits::cells: u64
+pub numbers_lite::Limits::part_bytes: u64
+pub numbers_lite::Limits::text: u64
+pub numbers_lite::Limits::unpack_always: u64
+pub numbers_lite::Limits::unpack_ratio: u64
+impl numbers_lite::Limits
+pub fn numbers_lite::Limits::with_cells(self, u64) -> Self
+pub fn numbers_lite::Limits::with_part_bytes(self, u64) -> Self
+pub fn numbers_lite::Limits::with_text(self, u64) -> Self
+pub fn numbers_lite::Limits::with_unpack(self, u64, u64) -> Self
+impl core::clone::Clone for numbers_lite::Limits
+pub fn numbers_lite::Limits::clone(&self) -> numbers_lite::Limits
+impl core::default::Default for numbers_lite::Limits
+pub fn numbers_lite::Limits::default() -> Self
+impl core::fmt::Debug for numbers_lite::Limits
+pub fn numbers_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for numbers_lite::Limits
+#[non_exhaustive] pub struct numbers_lite::Sheet
+pub numbers_lite::Sheet::name: alloc::string::String
+pub numbers_lite::Sheet::tables: alloc::vec::Vec<numbers_lite::Table>
+impl core::clone::Clone for numbers_lite::Sheet
+pub fn numbers_lite::Sheet::clone(&self) -> numbers_lite::Sheet
+impl core::cmp::PartialEq for numbers_lite::Sheet
+pub fn numbers_lite::Sheet::eq(&self, &numbers_lite::Sheet) -> bool
+impl core::default::Default for numbers_lite::Sheet
+pub fn numbers_lite::Sheet::default() -> numbers_lite::Sheet
+impl core::fmt::Debug for numbers_lite::Sheet
+pub fn numbers_lite::Sheet::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for numbers_lite::Sheet
+#[non_exhaustive] pub struct numbers_lite::Table
+pub numbers_lite::Table::cells: alloc::vec::Vec<numbers_lite::Cell>
+pub numbers_lite::Table::columns: u32
+pub numbers_lite::Table::header_columns: u32
+pub numbers_lite::Table::header_rows: u32
+pub numbers_lite::Table::name: alloc::string::String
+pub numbers_lite::Table::rows: u32
+pub numbers_lite::Table::unread_rows: u32
+impl core::clone::Clone for numbers_lite::Table
+pub fn numbers_lite::Table::clone(&self) -> numbers_lite::Table
+impl core::cmp::PartialEq for numbers_lite::Table
+pub fn numbers_lite::Table::eq(&self, &numbers_lite::Table) -> bool
+impl core::default::Default for numbers_lite::Table
+pub fn numbers_lite::Table::default() -> numbers_lite::Table
+impl core::fmt::Debug for numbers_lite::Table
+pub fn numbers_lite::Table::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for numbers_lite::Table
+#[non_exhaustive] pub struct numbers_lite::Workbook
+pub numbers_lite::Workbook::sheets: alloc::vec::Vec<numbers_lite::Sheet>
+pub numbers_lite::Workbook::unread_parts: u32
+impl core::clone::Clone for numbers_lite::Workbook
+pub fn numbers_lite::Workbook::clone(&self) -> numbers_lite::Workbook
+impl core::cmp::PartialEq for numbers_lite::Workbook
+pub fn numbers_lite::Workbook::eq(&self, &numbers_lite::Workbook) -> bool
+impl core::default::Default for numbers_lite::Workbook
+pub fn numbers_lite::Workbook::default() -> numbers_lite::Workbook
+impl core::fmt::Debug for numbers_lite::Workbook
+pub fn numbers_lite::Workbook::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for numbers_lite::Workbook
+pub fn numbers_lite::read(&[u8], &numbers_lite::Limits) -> numbers_lite::Result<numbers_lite::Workbook>
+pub type numbers_lite::Result<T> = core::result::Result<T, numbers_lite::Error>

@@ -1,0 +1,13 @@
+loader = "numbers"
+format = "Numbers spreadsheet"
+model = "Table"
+
+[table]
+rows = 4
+columns = 5
+headers = ["A", "B", "C", "D", "E"]
+kinds = ["Unknown", "Unknown", "Unknown", "Unknown", "Unknown"]
+
+[metadata]
+Sheets = "1"
+Tables = "1"
