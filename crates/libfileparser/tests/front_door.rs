@@ -204,3 +204,57 @@ fn the_front_door_survives_fuzzing() {
     });
     assert!(failures.is_empty(), "{} fuzz failures:\n{}", failures.len(), failures.iter().map(|f| format!("  {f}")).collect::<Vec<_>>().join("\n"));
 }
+
+/// Convention decides a format's category, not what it is made of
+/// (docs/design/libfileparser.md §2.1): a zip of XML that is a workbook is a
+/// spreadsheet, XML that is a picture an image, text that is a model 3D. The reader
+/// that wins detection for each of these is its conventional category's.
+#[test]
+fn categories_follow_convention() {
+    use libfileparser::Category::{Archives, Data, Docs, Images, Sheets, Text, ThreeD};
+    let samples = corpus().join("../../samples");
+    let cases = [
+        // Zips and tars that are documents, workbooks, a scene, a map.
+        ("docs/sample.docx", Docs),
+        ("docs/sample.odt", Docs),
+        ("docs/sample.epub", Docs),
+        ("docs/sample.cbz", Docs),
+        ("docs/sample.cbt", Docs),
+        ("docs/sample.xps", Docs),
+        ("sheets/sample.xlsx", Sheets),
+        ("sheets/sample.xlsb", Sheets),
+        ("sheets/sample.ods", Sheets),
+        ("3d/tri.usdz", ThreeD),
+        ("data/geo/places.kmz", Data),
+        // XML that is a workbook, a picture, a map, a feed.
+        ("sheets/sample.fods", Sheets),
+        ("sheets/sample-xmlss.xml", Sheets),
+        ("../../samples/logo.svg", Images),
+        ("data/geo/run.gpx", Data),
+        ("data/feeds/feed.xml", Data),
+        // Plain text that is a document, a workbook, a model.
+        ("docs/sample.org", Docs),
+        ("docs/sample.rtf", Docs),
+        ("docs/two-pages.pdf", Docs),
+        ("sheets/sample.slk", Sheets),
+        ("sheets/sample.dif", Sheets),
+        ("3d/cube-gltf/cube.gltf", ThreeD),
+        ("3d/shapes.usda", ThreeD),
+        // Judgement calls: tables of values and records of events are data, not
+        // spreadsheets or text.
+        ("data/delimited/people.tsv", Data),
+        ("data/logs/app.log", Data),
+        // Nothing more than their syntax or container.
+        ("../../samples/data.json", Data),
+        ("../../samples/bundle.zip", Archives),
+        ("../../samples/archive.tar.gz", Archives),
+        ("../../samples/main.rs", Text),
+    ];
+    assert!(samples.exists());
+    for (file, category) in cases {
+        let src = FileSource::open(corpus().join(file)).unwrap();
+        let found = libfileparser::detect(src.header(), src.name());
+        let (reader, _) = found.first().unwrap_or_else(|| panic!("{file}: nothing detects it"));
+        assert_eq!(reader.info().category, category, "{file} is detected as {}", reader.info().id);
+    }
+}

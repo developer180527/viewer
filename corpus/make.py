@@ -421,7 +421,7 @@ RTF = r"""{\rtf1\ansi\ansicpg1252{\fonttbl{\f0 Helvetica;}}{\stylesheet{\s1 head
 
 
 def docs():
-    write("pdf/two-pages.pdf", pdf([(612, 792, "Corpus page one"), (842, 595, "Page two, landscape")]))
+    write("docs/two-pages.pdf", pdf([(612, 792, "Corpus page one"), (842, 595, "Page two, landscape")]))
     write("docs/sample.docx", docx())
     write("docs/sample.odt", odt())
     write("docs/sample.epub", epub())

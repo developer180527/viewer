@@ -68,7 +68,7 @@ golden = true
 # ---------------------------------------------------------------- documents
 
 [[file]]
-path = "corpus/files/pdf/two-pages.pdf"
+path = "corpus/files/docs/two-pages.pdf"
 golden = true
 # No PDF backend on Windows yet (docs/design/pdf.md §10 step 7).
 skip_on = ["windows"]

@@ -22,7 +22,8 @@ Every open runs on its own thread with a time limit, so a hang fails the test in
 
 - `samples/`, the app's own sample files.
 - `files/`, committed, by libfileparser category, and for data by family:
-  - `3d/`, `images/`, `pdf/`: models (with and without their textures), images, a PDF, written by `make.py` (standard library only).
+  - `3d/`, `images/`, `docs/`, `sheets/`: models (with and without their textures), images, documents (the PDF among them) and workbooks; most written by `make.py` (standard library only).
+  - A file goes under the category its format belongs to by convention, not by what it is made of (docs/design/libfileparser.md §2.1): a PDF is under `docs/`, an XML spreadsheet under `sheets/`.
   - `data/structured/`, `delimited/`, `config/`, `logs/`, `geo/`, `feeds/`, `l10n/`, `records/`, `sql/`, `schemas/`, `rdf/`, `graphs/`, `business/`, `science/`: a file or more per reader.
   - `data/science/genbank/`: real GenBank, GenPept and FASTA files from Biopython's test suite (its README says so).
   - `hostile/`: files that must fail cleanly.

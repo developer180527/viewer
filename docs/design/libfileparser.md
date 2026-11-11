@@ -43,7 +43,7 @@ optional, beside them:
 | **`-core`** | — | Defines everything below | Nothing heavy |
 | **`-images`** | PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, SVG; later HEIC, RAW, JPEG XL, PSD | Raster | A leaf |
 | **`-3d`** | glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDA/USDC/USDZ, `.blend`; later CAD, point clouds | Scene | `-images`, ufbx, `usd-lite` |
-| **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown; later reStructuredText, AsciiDoc, PPTX, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`) |
+| **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown; later HTML, reStructuredText, AsciiDoc, PPTX, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`) |
 | **`-data`** | Data written as text: structured, config, delimited tables, schemas, RDF, graphs, geo, logs, science records, SQL, contacts and calendars, business messages, localization, feeds (§2.1) | Tree, Table | Pure Rust, a feature per family |
 | **`-sheets`** | ✅ XLSX, XLSM, XLSB, XLS (and Excel 2–5's bare BIFF), XML Spreadsheet 2003, ODS, FODS, SYLK, DIF; later Numbers | Tables, one per sheet, with Formulas and Defined names | calamine; `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`; zip |
 | **`-datasets`** | HDF5, NetCDF, FITS, MATLAB, R, SAS, Stata, SPSS, Parquet, ORC, Feather, SQLite | Table, Tree | Heavy readers, as features |
@@ -66,8 +66,14 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 
 **The rule.**
 
-0. **Parsers parse; viewing isn't their job** (2026-11-08). A parser says what is in a file, as content models and facets, and gives hooks to read it; how anything looks or plays is a viewer's (libviewer, an app). So a category is decided by **what parsing produces**, never by how a file is shown: `-data` produces structures of values (trees, tables), `-text` lines with a language, `-docs` structures of prose (headings, paragraphs, lists, tables, emphasis, links) or fixed pages. Which category owns a format is still a judgement call, because any file can be parsed into more than one shape; that's why a format has one owner and others may also read it (items 1–2), and why its document has several facets.
-1. **One owner per format:** the category whose kind of result matches what the file is *for*. HTML is data (2026-11-08: parsing it gives a DOM tree, as XML does; showing it as a web page is a viewer's layout engine, never the parser's, so a parser never runs its scripts or fetches anything); SVG an image; subtitles media; Markdown a document (parsing gives prose structure; fonts and spacing are the viewer's). In the front door, the owner's reading is the document and its primary facet.
+0. **Convention decides the category; technique doesn't** (2026-11-11, replacing "a category is decided by what parsing produces"). A format belongs where the people who make and use such files would put it, whatever it is made of. A PDF is text and binary streams, an XLSX a zip of XML, an SVG XML, an EPUB a zip of HTML: they are a document, a spreadsheet, an image and a book, and that is their category. The questions, in order:
+   1. **What do its users call it, and which kind of program do they open it in?** A word processor or reader: `-docs`. A spreadsheet program: `-sheets`. An image viewer or editor: `-images`. A 3D tool: `-3d`. A player: `-media`. An archiver: `-archives`. A code or text editor, to read as written: `-text`.
+   2. **What it is made of never decides.** Zip, XML, JSON, plain text and OLE are containers and syntaxes, not kinds. Only a file that is *nothing more* than its syntax (a `.json`, a `.xml`, a `.zip`) belongs to the syntax's category.
+   3. **No program of its own, but records, settings or a description of data:** `-data`. Config, schemas, logs, feeds, calendars, bank statements, gene sequences: files a person inspects for their values rather than reads as prose or looks at as a picture.
+   4. **Still unsure:** the category whose model shows what the file is *for* with the least lost; the others' readings are facets (item 2 below).
+
+   Convention picks the owner; it doesn't limit what is shown. **Parsers parse; viewing isn't their job** (2026-11-08): a parser says what is in a file, as content models and facets, and how anything looks or plays is a viewer's (libviewer, an app). Any file can honestly be parsed into more than one shape, which is why a format has one owner, others may also read it, and its document has several facets: the "technically it's also…" views are kept, after the conventional one.
+1. **One owner per format,** by item 0. HTML is a document (2026-11-11: a web page is read. No `-docs` reader exists yet, so it opens as `-data`'s DOM tree, which stays afterwards as a Structure facet; a parser never runs its scripts or fetches anything); SVG an image; subtitles and playlists media; Markdown a document; CSV data. In the front door, the owner's reading is the document and its primary facet.
 2. **Others may also read it,** from their own angle, when their model says something useful: `-data` reads an SVG as an XML tree. Used alone, that category opens the file that way, so "reads any file of its kind" means every format it owns plus every format its model fits. In the front door it doesn't compete: the Library asks it as a facet provider, and its facets come after the owner's, before Source and Raw, made only when asked for.
 3. **No owner enabled or built yet:** the best other reading opens the file instead. Subtitles open as `-data`'s cue table until `-media` exists; then the media facet goes in front and the cue table stays. Adding an owner later is a minor version (§5).
 4. **Text needs no claim:** `-core` gives every text file Source and Raw (§2, boundary 2), so `-text` owns plain text and code only, never JSON, SQL or logs.
@@ -124,7 +130,7 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 | Instructions | Source | Each page's content stream, decoded: the drawing operators as text | ⬜ |
 | Text | Source | The plain text of each page, in reading order | ⬜ |
 
-The same rule gives HTML a DOM tree (owner), its source, and later prose; DOCX its prose (owner), its XML parts and the zip.
+The same rule gives HTML its prose (owner, later), its DOM tree and its source; DOCX its prose (owner), its XML parts and the zip.
 
 **The formatted-text model** (planned, `-core`): the parsed structure of prose (blocks: headings, paragraphs, lists, tables, quotes, code, images; inlines: emphasis, code, links), never a layout. Markdown moves onto it from today's line-based facet, then reStructuredText, AsciiDoc, Org, DOCX, ODT, RTF, EPUB, and PDF's Document facet; libviewer gives it one view.
 
@@ -132,7 +138,9 @@ The same rule gives HTML a DOM tree (owner), its source, and later prose; DOCX i
 
 | Formats | Owner | `-data` adds |
 |---|---|---|
-| `.html` `.htm` `.xhtml` | `-data` (owner since 2026-11-08), not `-docs` | — (`-data` owns it: DOM tree; `-docs` may also read it as prose, a "reader mode" Structure facet, later) |
+| `.html` `.htm` `.xhtml` | `-docs` (2026-11-11, by convention: a web page is a document; `-data` from 2026-11-08 until then) | DOM tree; opens them until `-docs` reads them |
+| `.m3u` `.m3u8` `.pls` `.xspf` | `-media` (2026-11-11, by convention: a playlist opens in a player) | Table of entries; opens them until `-media` exists |
+| `.ipynb` | `-docs` (a notebook is read; later) | JSON tree; opens it until then |
 | `.md` `.markdown` | `-docs` (`-text` until then) | Front matter as a Tree |
 | `.rst` `.adoc` `.org` `.textile` `.rtf` | `-docs` | Nothing |
 | `.svg` | `-images` | XML tree |
@@ -155,6 +163,37 @@ The same rule gives HTML a DOM tree (owner), its source, and later prose; DOCX i
 | `.ent` | PDB, or an XML entity file | PDB record names; otherwise text |
 | `.fin` | SWIFT MT message, or anything | `{1:` block; otherwise Raw |
 | `.strings` | Text or binary plist | `bplist` signature |
+
+**Judged by convention** (2026-11-11). Every reader was checked against item 0. Where what a format is made of and what it is disagree, convention won; the test `categories_follow_convention` (`crates/libfileparser/tests/`) holds these.
+
+| Format | Made of | Category | Why |
+|---|---|---|---|
+| PDF, XPS | Text and binary streams; a zip of XML | `-docs` | Documents with pages |
+| DOCX, ODT, EPUB, CBZ, CBT | Zip or tar of XML, HTML or images | `-docs` | A word-processor document, a book, a comic |
+| Markdown, Org, RTF; later reStructuredText, AsciiDoc, Textile, HTML | Plain text with markup | `-docs` | Written to be read as prose |
+| XLSX, XLSB, ODS | Zip of XML or binary parts | `-sheets` | Workbooks |
+| FODS, XML Spreadsheet 2003 | One XML file | `-sheets` | Workbooks; never the XML reader's |
+| SYLK, DIF | Plain text | `-sheets` | Spreadsheet interchange: cells at rows and columns |
+| SVG | XML | `-images` | A picture |
+| glTF (`.gltf`), USDA, OBJ, ASCII STL and PLY | JSON or plain text | `-3d` | Models and scenes |
+| USDZ | Zip | `-3d` | A scene with its textures |
+| KMZ | Zip | `-data` | A map file (KML inside); the zip is a Package facet |
+| gzip of one file | Compression | `-archives` | Unpacked with an archiver |
+
+Judgement calls, and how they went:
+
+| Format | Could be | Category | Why |
+|---|---|---|---|
+| CSV, TSV, fixed-width | `-sheets` (opens in a spreadsheet program) | `-data` | The usual form of a data set, written and read by programs; no sheets, formulas or typed cells. A workbook is what `-sheets` means |
+| Logs | `-text` (read in a text editor) | `-data` | Records of events, one after another; a log of no known shape isn't claimed and stays text |
+| SQL, SPARQL, GraphQL; Protocol Buffers, Thrift and the other schema languages | `-text` (written in a code editor) | `-data` | What they hold is a description of data: tables, types, fields, a dump's rows. Source keeps them as code |
+| HCL, CUE, Dhall, Nickel | `-text` (they can compute) | `-data` | Used as configuration; shown as written, never evaluated |
+| PDB, mmCIF | `-3d` (a molecule's shape) | `-data` | Records of atoms, as their users call them (the Protein *Data* Bank); a molecule Scene from `-3d` is an also-reads facet, later |
+| Playlists | `-data` (a list of entries) | `-media`, when it exists | Opened in a player; `-data`'s table until then |
+| vCard, iCalendar, feeds | A category of their own | `-data` | Records with no program family here; item 0.3 |
+| PPTX, ODP, legacy `.doc` (none read yet) | A presentations category | `-docs` | Office documents; slides are pages |
+
+The corpus follows the same rule: `corpus/files/<category>/` and `corpus/real/<category>/<reader>/` are named by the owner's category, so a PDF is under `docs/`, an XML spreadsheet under `sheets/`.
 
 ## 3. `-core`: the contracts
 
