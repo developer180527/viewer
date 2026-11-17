@@ -72,4 +72,14 @@ fetch tafia/calamine '/tests/'
 fetch masaccio/numbers-parser '/tests/data/*.numbers'
 fetch LibreOffice/core '/sc/qa/unit/data/ods/' '/sc/qa/unit/data/xlsx/' '/sc/qa/unit/data/xls/' '/sc/qa/unit/data/fods/' '/sc/qa/unit/data/slk/' '/sc/qa/unit/data/dif/'
 
+# Molecules and crystals, and signals (libfileparser-data, science). Open Babel's tests
+# are GPL, the others BSD or MIT; kept out of git like the rest.
+fetch openbabel/openbabel '/test/files/'
+fetch rdkit/rdkit '/Code/GraphMol/FileParsers/test_data/*.mol' '/Code/GraphMol/FileParsers/test_data/*.sdf' '/Code/GraphMol/FileParsers/test_data/*.smi' '/Code/GraphMol/FileParsers/test_data/*.xyz'
+fetch OpenChemistry/avogadrodata '/data/**/*.cjson' '/data/**/*.xyz' '/data/**/*.molden' '/data/**/*.sdf' '/data/**/*.mol'
+fetch MolSSI/QCSchema '/tests/'
+fetch cclib/cclib '/data/Turbomole/' '/data/Molden/' '/data/regression/Molden/'
+fetch materialsproject/pymatgen '/test-files/**/POSCAR*' '/test-files/**/CONTCAR*' '/test-files/**/*.vasp' '!/test-files/**/*.gz' '!/test-files/**/*.bz2' '!/test-files/**/*.xz'
+fetch gtkwave/gtkwave '/**/*.vcd'
+
 for d in real/*/; do printf '%-24s %s\n' "$(basename "$d")" "$(ls "$d" | wc -l | tr -d ' ')"; done

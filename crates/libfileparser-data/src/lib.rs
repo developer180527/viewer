@@ -1201,7 +1201,7 @@ static POSCAR: Data = Data {
     // Known by name more than extension: `POSCAR`, `CONTCAR`, `POSCAR_relaxed`.
     info: ReaderInfo::new("poscar", "VASP POSCAR", Category::Data).extensions(&["poscar", "contcar", "vasp"]),
     language: "poscar",
-    detect: |info, header, name| if chem_lite::by_extension(name) == Some(chem_lite::Format::Poscar) { Confidence::Extension } else { by_extension(info, header, name) },
+    detect: |info, header, name| if chem_lite::by_extension(name) == Some(chem_lite::Format::Poscar) { Confidence::Extension } else { ext_or(info, header, name, chem_is(header, chem_lite::Format::Poscar)) },
     open: chem::poscar,
 };
 

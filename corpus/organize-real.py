@@ -13,6 +13,10 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
           "ttl": "turtle", "nt": "turtle", "nq": "turtle", "trig": "turtle", "rdf": "rdfxml", "hl7": "hl7", "qif": "qif",
           "po": "po", "pot": "po", "mo": "mo", "kml": "kml", "yaml": "yaml", "xbrl": "xbrl", "proto": "protobuf",
           "sta": "swift", "edi": "edifact",
+          # Molecules and crystals, and signals (science).
+          "xyz": "xyz", "extxyz": "xyz", "mol": "mol", "sdf": "mol", "sd": "mol", "smi": "smiles", "smiles": "smiles",
+          "vasp": "poscar", "cjson": "cjson", "qcjson": "qcschema", "molden": "molden", "mold": "molden", "vcd": "vcd",
+          "pdb": "pdb", "ent": "pdb", "cif": "cif", "mmcif": "cif",
           # Documents.
           "pdf": "pdf", "md": "markdown", "markdown": "markdown", "rst": "rst", "asciidoc": "asciidoc", "adoc": "asciidoc",
           "org": "org", "textile": "textile", "docx": "docx", "odt": "odt", "rtf": "rtf", "epub": "epub", "doc": "doc",
@@ -45,6 +49,15 @@ for repo in [os.path.basename(clone)]:
             # Excel 2003's XML, whatever it's named (often .xls).
             if ext in ("xls", "xml") and head.lstrip(b"\xef\xbb\xbf").startswith(b"<?xml") and b"urn:schemas-microsoft-com:office:spreadsheet" in head:
                 reader = "xmlss"
+            # Known by name: VASP's POSCAR and CONTCAR, Turbomole's coord.
+            low = f.lower()
+            # Whatever follows: `POSCAR.relax`, `CONTCAR.MD` (a dynamics run, not Markdown).
+            if low.startswith(("poscar", "contcar")) and ext not in ("gz", "bz2", "xz"):
+                reader = "poscar"
+            elif low == "coord":
+                reader = "turbomole"
+            elif ext == "json" and (b'"qcschema_' in head or b'"qc_schema_' in head):
+                reader = "qcschema"
             if repo.startswith("WoLpH_mt940") and ext not in ("sta", "txt"):
                 reader = None
             if reader is None:

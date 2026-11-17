@@ -5,12 +5,15 @@
 
 use crate::{Atom, Bond, Budget, File, Molecule, Result, damaged, elements, number};
 
-/// A counts line, fourth, naming its version.
+fn is_counts(l: &str) -> bool {
+    let l = l.trim_end();
+    l.ends_with("V2000") || l.ends_with("V3000")
+}
+
+/// A counts line naming its version, fourth (or, where a writer left out the name line,
+/// third).
 pub fn looks_like(text: &str) -> bool {
-    text.lines().nth(3).is_some_and(|l| {
-        let l = l.trim_end();
-        l.ends_with("V2000") || l.ends_with("V3000")
-    })
+    text.lines().take(4).skip(2).any(is_counts)
 }
 
 /// V2000's charge field, 1 to 7 for +3 to −3, 4 a radical.
@@ -28,7 +31,18 @@ fn field(line: &str, from: usize, to: usize) -> &str {
 
 /// One record's lines, from its name to `M  END` (or the record's end).
 fn record(lines: &[&str], budget: &mut Budget) -> Result<Molecule> {
-    let mut m = Molecule { name: lines.first().map_or("", |l| l.trim()).to_string(), ..Molecule::default() };
+    // The counts line is fourth, after the name and two lines about the molecule; some
+    // writers leave one of those out.
+    let at = if lines.get(3).is_some_and(|l| is_counts(l)) || !lines.get(2).is_some_and(|l| is_counts(l)) { 3 } else { 2 };
+    let mut m = Molecule { name: if at == 3 { lines.first().map_or("", |l| l.trim()).to_string() } else { String::new() }, ..Molecule::default() };
+    // Without its name line, one is put back so the counts line is fourth as usual.
+    let restored: Vec<&str>;
+    let lines = if at == 2 {
+        restored = std::iter::once("").chain(lines.iter().copied()).collect();
+        &restored[..]
+    } else {
+        lines
+    };
     let counts = lines.get(3).ok_or_else(|| damaged("MOL: no counts line"))?;
     if counts.trim_end().ends_with("V3000") {
         return v3000(lines, m, budget);
@@ -78,6 +92,42 @@ fn record(lines: &[&str], budget: &mut Budget) -> Result<Molecule> {
     Ok(m)
 }
 
+/// A V3000 line's values: words, or `"…"` with spaces in it (`"NOT [O]"`, an atom that
+/// is a query), `""` a quote within.
+fn words(line: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut chars = line.chars().peekable();
+    while let Some(&c) = chars.peek() {
+        if c.is_whitespace() {
+            chars.next();
+        } else if c == '"' {
+            chars.next();
+            let mut w = String::new();
+            while let Some(c) = chars.next() {
+                if c == '"' {
+                    if chars.peek() == Some(&'"') {
+                        chars.next();
+                        w.push('"');
+                    } else {
+                        break;
+                    }
+                } else {
+                    w.push(c);
+                }
+            }
+            out.push(w);
+        } else {
+            let mut w = String::new();
+            while let Some(&c) = chars.peek().filter(|c| !c.is_whitespace()) {
+                w.push(c);
+                chars.next();
+            }
+            out.push(w);
+        }
+    }
+    out
+}
+
 fn v3000(lines: &[&str], mut m: Molecule, budget: &mut Budget) -> Result<Molecule> {
     // `M  V30 ` lines, a trailing `-` joining one to the next.
     let mut joined: Vec<String> = Vec::new();
@@ -94,12 +144,13 @@ fn v3000(lines: &[&str], mut m: Molecule, budget: &mut Budget) -> Result<Molecul
         }
         open = more;
     }
-    let mut section = "";
+    let mut section = String::new();
     for l in &joined {
-        let f: Vec<&str> = l.split_whitespace().collect();
+        let f = words(l);
+        let f: Vec<&str> = f.iter().map(String::as_str).collect();
         match f.as_slice() {
-            ["BEGIN", s, ..] => section = s,
-            ["END", ..] => section = "",
+            ["BEGIN", s, ..] => section = s.to_string(),
+            ["END", ..] => section.clear(),
             ["COUNTS", atoms, ..] => budget.atoms(atoms.parse().unwrap_or(0))?,
             _ if section == "ATOM" && f.len() >= 5 => {
                 let p: Vec<f64> = f[2..5].iter().filter_map(|v| number(v)).collect();
@@ -125,16 +176,28 @@ fn v3000(lines: &[&str], mut m: Molecule, budget: &mut Budget) -> Result<Molecul
     Ok(m)
 }
 
+/// A molfile, or an SD file's records. A record that's damaged is skipped and counted,
+/// as long as others aren't; a file of nothing else is damaged, with the first error.
 pub fn read(text: &str, budget: &mut Budget) -> Result<File> {
     let lines: Vec<&str> = text.lines().collect();
     let mut file = File::default();
+    let (mut skipped, mut first_error) = (0usize, None);
     let mut start = 0;
     while start < lines.len() {
         let end = lines[start..].iter().position(|l| l.trim_end() == "$$$$").map_or(lines.len(), |p| start + p);
         let chunk = &lines[start..end];
         if chunk.iter().any(|l| !l.trim().is_empty()) {
             budget.molecule()?;
-            let mut m = record(chunk, budget)?;
+            let mut m = match record(chunk, budget) {
+                Ok(m) => m,
+                Err(e @ crate::Error::TooLarge { .. }) => return Err(e),
+                Err(e) => {
+                    skipped += 1;
+                    first_error.get_or_insert(e);
+                    start = end + 1;
+                    continue;
+                }
+            };
             // An SD file's data fields: `> <NAME>` (or `>  <NAME>  (1)`), then lines to a
             // blank one.
             let after = chunk.iter().position(|l| l.starts_with("M  END")).map_or(chunk.len(), |p| p + 1);
@@ -155,8 +218,16 @@ pub fn read(text: &str, budget: &mut Budget) -> Result<File> {
         }
         start = end + 1;
     }
+    if file.molecules.is_empty()
+        && let Some(e) = first_error
+    {
+        return Err(e);
+    }
     if file.molecules.len() > 1 {
         file.notes.push(("Records".into(), file.molecules.len().to_string()));
+    }
+    if skipped > 0 {
+        file.notes.push(("Damaged records, skipped".into(), skipped.to_string()));
     }
     Ok(file)
 }
@@ -191,6 +262,11 @@ M  END
         assert_eq!(f.molecules[0].properties, [("MW".to_string(), "46.07".to_string()), ("NOTE".to_string(), "two\nlines".to_string())]);
         // M  CHG sets the first atom's charge, and others' from the atom block go.
         assert_eq!(f.molecules[1].atoms.iter().map(|a| a.charge).collect::<Vec<_>>(), [1, 0, -1]);
+        // A damaged record among good ones is skipped and counted (RDKit's tests have one).
+        let bad = format!("{ETHANOL}$$$$\n{}$$$$\n{ETHANOL}", ETHANOL.replace("  3  2  0", "foo  2  0"));
+        let f = read(bad.as_bytes(), Format::Mol, &Limits::default()).unwrap();
+        assert_eq!(f.molecules.len(), 2);
+        assert!(f.notes.contains(&("Damaged records, skipped".to_string(), "1".to_string())));
         assert!(matches!(read(b"x\n\n\n  5  0\n", Format::Mol, &Limits::default()), Err(crate::Error::Damaged(_))));
         assert!(matches!(read(b"x\n\n\nnope\n", Format::Mol, &Limits::default()), Err(crate::Error::Damaged(_))));
         assert!(matches!(read(b"x\n\n", Format::Mol, &Limits::default()), Err(crate::Error::Damaged(_))));
@@ -204,5 +280,19 @@ M  END
         assert_eq!(m.bonds.iter().map(|b| (b.a, b.b, b.order)).collect::<Vec<_>>(), [(0, 1, 4), (1, 2, 2)]);
         assert!(matches!(read(text.replace("COUNTS 3", "COUNTS 300").as_bytes(), Format::Mol, &Limits::default().with_atoms(10)), Err(crate::Error::TooLarge { .. })));
         assert!(matches!(read(text.replace("2 C 1.4", "2 C x").as_bytes(), Format::Mol, &Limits::default()), Err(crate::Error::Damaged(_))));
+        // A query atom, quoted, with spaces in it (from RDKit's tests).
+        let query = text.replace("M  V30 3 N 2.8", "M  V30 3 \"NOT [O]\" 2.8");
+        let m = &read(query.as_bytes(), Format::Mol, &Limits::default()).unwrap().molecules[0];
+        assert_eq!((m.atoms[2].element, m.atoms[2].label.as_str(), m.atoms[2].position[0]), (0, "NOT [O]", 2.8));
+        assert_eq!(super::words(r#"a "b c" "say ""hi""" d"#), ["a", "b c", "say \"hi\"", "d"]);
+    }
+
+    #[test]
+    fn a_molfile_without_its_name_line() {
+        // Marvin writes this: the program line first.
+        let headless = ETHANOL.split_once('\n').unwrap().1;
+        assert!(super::looks_like(headless));
+        let m = &read(headless.as_bytes(), Format::Mol, &Limits::default()).unwrap().molecules[0];
+        assert_eq!((m.name.as_str(), m.atoms.len(), m.bonds.len()), ("", 3, 2));
     }
 }

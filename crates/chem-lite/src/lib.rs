@@ -14,9 +14,9 @@
 //! | CIF and mmCIF (`.cif`, `.mmcif`) | `_atom_site`: Cartesian, or fractional in the cell | found |
 //!
 //! "Found" is by distance: two atoms closer than their covalent radii together, and a
-//! little more, are bonded ([`find_bonds`]). SMILES has no coordinates, so its atoms are
-//! given some ([`layout`]): a plausible shape, not a computed one, which
-//! [`Molecule::laid_out`] says.
+//! little more, are bonded ([`find_bonds`]). SMILES has no coordinates: its atoms are at
+//! the origin, [`Molecule::laid_out`] says so, and [`layout`] gives them a plausible
+//! shape when they're to be drawn.
 
 use std::fmt;
 
@@ -80,7 +80,7 @@ pub struct Molecule {
     pub cell: Option<[[f64; 3]; 3]>,
     /// Bonds were found by distance, not given.
     pub bonds_found: bool,
-    /// Positions were made up ([`layout`]), the file having none.
+    /// The file gives no positions: they're all zero until [`layout`] makes some up.
     pub laid_out: bool,
     /// What the file says about it besides atoms: an SDF record's fields, an XYZ
     /// comment, an energy.
@@ -216,6 +216,9 @@ pub fn detect(header: &[u8]) -> Option<Format> {
     if mol::looks_like(&text) {
         return Some(Format::Mol);
     }
+    if poscar::looks_like(&text) {
+        return Some(Format::Poscar);
+    }
     if xyz::looks_like(&text) {
         return Some(Format::Xyz);
     }
@@ -264,10 +267,10 @@ pub fn read(bytes: &[u8], format: Format, limits: &Limits) -> Result<File> {
     if file.molecules.is_empty() {
         return Err(damaged("no atoms"));
     }
+    // A molecule without coordinates keeps them at zero: laying one out costs (a few
+    // milliseconds a molecule, minutes for a file of thousands), and only a drawing of it
+    // needs it, which calls [`layout`].
     for m in &mut file.molecules {
-        if m.laid_out {
-            layout(m);
-        }
         if m.bonds.is_empty() && !m.laid_out {
             m.bonds = find_bonds(&m.atoms);
             m.bonds_found = !m.bonds.is_empty();

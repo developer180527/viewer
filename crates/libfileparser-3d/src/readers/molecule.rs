@@ -194,12 +194,10 @@ impl Reader for MoleculeReader {
         &MOLECULE
     }
 
+    /// By name or by content, never more than an extension's worth: `-data` owns these
+    /// files, and a reader that only also reads them mustn't outrank it (§2.1, item 6).
     fn detect(&self, header: &[u8], name: &str) -> Detection {
-        match (chem_lite::by_extension(name), chem_lite::detect(header)) {
-            (Some(_), _) => Detection::new(Confidence::Extension),
-            (None, Some(_)) => Detection::new(Confidence::Content),
-            _ => Detection::NONE,
-        }
+        if format(header, name).is_some() { Detection::new(Confidence::Extension) } else { Detection::NONE }
     }
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
@@ -213,7 +211,10 @@ impl Reader for MoleculeReader {
             e => ParseError::corrupt(e),
         })?;
         let count = file.molecules.len();
-        let molecule = file.molecules.into_iter().next().ok_or(ParseError::NotThisFormat)?;
+        let mut molecule = file.molecules.into_iter().next().ok_or(ParseError::NotThisFormat)?;
+        if molecule.laid_out {
+            chem_lite::layout(&mut molecule);
+        }
         cx.cancel.check()?;
         let (atoms, bonds, cell) = meshes(&molecule);
         let (scene, mut builder) = build::new_scene(cx);

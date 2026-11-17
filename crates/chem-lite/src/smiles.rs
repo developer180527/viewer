@@ -124,7 +124,12 @@ pub fn parse(smiles: &str) -> Result<Molecule> {
                 i = end + 1;
             }
             '%' | '0'..='9' => {
-                let (n, len) = if c == '%' {
+                let (n, len) = if c == '%' && s.get(i + 1) == Some(&b'(') {
+                    // `%(123)`: OpenSMILES's ring numbers past 99.
+                    let close = smiles[i..].find(')').ok_or_else(|| damaged("SMILES: `%(` with no `)`"))?;
+                    let n = smiles[i + 2..i + close].parse::<u32>().map_err(|_| damaged("SMILES: `%(…)` without a number"))?;
+                    (n, close + 1)
+                } else if c == '%' {
                     let digits = smiles.get(i + 1..i + 3).filter(|d| d.bytes().all(|b| b.is_ascii_digit())).ok_or_else(|| damaged("SMILES: `%` without two digits"))?;
                     (digits.parse::<u32>().unwrap(), 3)
                 } else {
@@ -215,22 +220,41 @@ pub fn parse(smiles: &str) -> Result<Molecule> {
     Ok(m)
 }
 
+/// A file of SMILES, one a line with a name after it. A line that isn't SMILES (a
+/// header, a formula, a typo) is skipped and counted, as long as some lines are; a
+/// file of none is damaged, with the first line's error.
 pub fn read_file(text: &str, budget: &mut Budget) -> Result<File> {
     let mut file = File::default();
+    let (mut skipped, mut first_error) = (0usize, None);
     for line in text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#')) {
         let (smiles, name) = line.split_once(char::is_whitespace).map_or((line, ""), |(s, n)| (s, n.trim()));
         // A header line (`SMILES Name`) isn't a molecule.
         if smiles.eq_ignore_ascii_case("smiles") {
             continue;
         }
+        let mut m = match parse(smiles) {
+            Ok(m) => m,
+            Err(e) => {
+                skipped += 1;
+                first_error.get_or_insert(e);
+                continue;
+            }
+        };
         budget.molecule()?;
-        let mut m = parse(smiles)?;
         budget.atoms(m.atoms.len() as u64)?;
         m.name = if name.is_empty() { format!("Molecule {}", file.molecules.len() + 1) } else { name.to_string() };
         file.molecules.push(m);
     }
+    if file.molecules.is_empty()
+        && let Some(e) = first_error
+    {
+        return Err(e);
+    }
     if file.molecules.len() > 1 {
         file.notes.push(("Molecules".into(), file.molecules.len().to_string()));
+    }
+    if skipped > 0 {
+        file.notes.push(("Lines that aren't SMILES".into(), skipped.to_string()));
     }
     Ok(file)
 }
@@ -267,6 +291,7 @@ mod tests {
             ("CS(=O)(=O)C", "H6C2O2S1"),
             ("C1CC2CCC1C2", "H12C7"),
             ("C%10CC%10", "H6C3"),
+            ("C%(100)CC%(100)", "H6C3"),
             ("[13CH3]C", "H6C2"),
             ("F/C=C/F", "H2C2F2"),
             ("[Fe@@]", "Fe1"),
@@ -290,7 +315,7 @@ mod tests {
 
     #[test]
     fn mistakes_are_damage() {
-        for bad in ["C(C", "CC)", "C1CC", "[Na", "Xx", "C%1", "1CC", "[Qq]", "C^C", "[]"] {
+        for bad in ["C(C", "CC)", "C1CC", "[Na", "Xx", "C%1", "1CC", "[Qq]", "C^C", "[]", "C%(12", "C%()C"] {
             assert!(matches!(parse(bad), Err(crate::Error::Damaged(_))), "{bad}");
         }
     }
@@ -300,13 +325,21 @@ mod tests {
         let f = read(b"# comment\nSMILES Name\nCCO ethanol\n\nc1ccccc1\n", Format::Smiles, &Limits::default()).unwrap();
         assert_eq!(f.molecules.iter().map(|m| m.name.as_str()).collect::<Vec<_>>(), ["ethanol", "Molecule 2"]);
         assert_eq!(f.notes, [("Molecules".to_string(), "2".to_string())]);
-        let e = &f.molecules[0];
-        assert!(e.laid_out && !e.bonds_found && e.atoms.iter().all(|a| a.position.iter().all(|c| c.is_finite())));
+        let mut e = f.molecules[0].clone();
+        // No positions until a drawing asks for them.
+        assert!(e.laid_out && !e.bonds_found && e.atoms.iter().all(|a| a.position == [0.0; 3]));
+        crate::layout(&mut e);
+        assert!(e.atoms.iter().all(|a| a.position.iter().all(|c| c.is_finite())));
         // The C–O bond came out about its length.
         let d: f64 = (0..3).map(|c| (e.atoms[1].position[c] - e.atoms[2].position[c]).powi(2)).sum::<f64>().sqrt();
         assert!((d - 1.42).abs() < 0.2, "{d}");
         assert_eq!(e.properties[0], ("SMILES".to_string(), "CCO".to_string()));
         assert!(matches!(read(b"CCO\nCCO\n", Format::Smiles, &Limits::default().with_molecules(1)), Err(crate::Error::TooLarge { .. })));
+        // Lines that aren't SMILES are skipped and counted; a file of nothing else isn't one.
+        let f = read(b"CCO\nC(C bad\nUx formula\nCC\n", Format::Smiles, &Limits::default()).unwrap();
+        assert_eq!(f.molecules.len(), 2);
+        assert!(f.notes.contains(&("Lines that aren't SMILES".to_string(), "2".to_string())));
+        assert!(matches!(read(b"C(C\nXx\n", Format::Smiles, &Limits::default()), Err(crate::Error::Damaged(e)) if e.contains("`(`")));
         assert!(matches!(read(b"CCCCCC\n", Format::Smiles, &Limits::default().with_atoms(5)), Err(crate::Error::TooLarge { .. })));
     }
 }

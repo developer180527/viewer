@@ -23,9 +23,11 @@ fn text(v: Option<&Value>) -> Option<String> {
 
 /// Chemical JSON: `atoms.elements.number` (or `.symbol`), `atoms.coords.3d` (Å) or
 /// `.3dFractional` with `unitCell`; `bonds.connections.index` in pairs and
-/// `bonds.order`.
+/// `bonds.order`. Its first version spelled some keys out (`"unit cell"`, `"3d
+/// fractional"`), as Avogadro 1 wrote them: those are read too.
 pub fn chemical_json(text_in: &str, budget: &mut Budget) -> Result<File> {
-    let v = parse(text_in)?;
+    let mut v = parse(text_in)?;
+    respell(&mut v);
     let atoms = v.get("atoms").ok_or_else(|| damaged("Chemical JSON: no atoms"))?;
     let els = atoms.get("elements");
     let mut zs: Vec<u8> = numbers(els.and_then(|e| e.get("number"))).iter().map(|z| *z as u8).collect();
@@ -75,6 +77,24 @@ pub fn chemical_json(text_in: &str, budget: &mut Budget) -> Result<File> {
         m.properties.extend(props.iter().filter_map(|(k, v)| Some((k.clone(), text(Some(v))?))));
     }
     Ok(File { molecules: vec![m], notes: Vec::new() })
+}
+
+/// The first version's keys as the current ones: `"unit cell"` is `"unitCell"`.
+fn respell(v: &mut Value) {
+    match v {
+        Value::Object(map) => {
+            for (old, new) in [("unit cell", "unitCell"), ("3d fractional", "3dFractional"), ("cell vectors", "cellVectors"), ("formal charges", "formalCharges"), ("chemical json", "chemicalJson")] {
+                if !map.contains_key(new)
+                    && let Some(x) = map.remove(old)
+                {
+                    map.insert(new.into(), x);
+                }
+            }
+            map.values_mut().for_each(respell);
+        }
+        Value::Array(items) => items.iter_mut().for_each(respell),
+        _ => {}
+    }
 }
 
 /// QCSchema: a molecule, at the top or under `molecule` (in an input or output): its
@@ -140,6 +160,11 @@ mod tests {
         // Coordinates that don't come in threes: whole triples only (found by fuzzing).
         let ragged = r#"{"atoms": {"elements": {"number": [6]}, "coords": {"3d": [1, 2, 3, 4]}}}"#;
         assert_eq!(read(ragged.as_bytes(), Format::ChemicalJson, &Limits::default()).unwrap().molecules[0].atoms[0].position, [1.0, 2.0, 3.0]);
+        // The first version's spelling (Avogadro's rutile).
+        let old = r#"{"chemical json": 0, "unit cell": {"a": 2, "b": 2, "c": 2, "alpha": 90, "beta": 90, "gamma": 90}, "atoms": {"elements": {"number": [22]}, "coords": {"3d fractional": [0.5, 0.5, 0.5]}}}"#;
+        assert_eq!(detect(old.as_bytes()), Some(Format::ChemicalJson));
+        let m = &read(old.as_bytes(), Format::ChemicalJson, &Limits::default()).unwrap().molecules[0];
+        assert!((m.atoms[0].position[0] - 1.0).abs() < 1e-9 && m.cell.is_some());
         let vectors = r#"{"atoms": {"elements": {"number": [6]}, "coords": {"3dFractional": [0.5, 0, 0]}}, "unitCell": {"cellVectors": [2, 0, 0, 0, 2, 0, 0, 0, 2]}}"#;
         assert_eq!(read(vectors.as_bytes(), Format::ChemicalJson, &Limits::default()).unwrap().molecules[0].atoms[0].position, [1.0, 0.0, 0.0]);
         for bad in [r#"{"x": 1}"#, r#"{"atoms": {"elements": {"number": [6]}}}"#, "{", r#"{"atoms": {"elements": {"number": [6]}, "coords": {"3dFractional": [0, 0, 0]}}}"#] {

@@ -4,6 +4,23 @@
 
 use crate::{Atom, Budget, File, Molecule, Result, damaged, elements, number};
 
+/// A comment, a scale (one number or three), three cell vectors of three numbers, then
+/// counts of whole numbers, perhaps after a line of element names: a POSCAR whatever
+/// it's called (`POSCAR.relax`, `structure_7`, a renamed copy).
+pub fn looks_like(text: &str) -> bool {
+    let lines: Vec<&str> = text.lines().take(7).collect();
+    if lines.len() < 6 {
+        return false;
+    }
+    let scale = numbers(lines[1]).len();
+    let whole = |l: &str| {
+        let w: Vec<&str> = l.split_whitespace().collect();
+        !w.is_empty() && w.iter().all(|x| x.parse::<u64>().is_ok())
+    };
+    let counts = whole(lines[5]) || (lines.get(6).is_some_and(|l| whole(l)) && lines[5].split_whitespace().all(|w| w.starts_with(|c: char| c.is_ascii_alphabetic())));
+    (scale == 1 || scale == 3) && lines[1].split_whitespace().count() == scale && lines[2..5].iter().all(|l| numbers(l).len() == 3 && l.split_whitespace().count() == 3) && counts
+}
+
 fn numbers(l: &str) -> Vec<f64> {
     l.split_whitespace().map_while(number).collect()
 }
@@ -107,6 +124,18 @@ mod tests {
         assert_eq!(read(unnamed.as_bytes(), Format::Poscar, &Limits::default()).unwrap().molecules[0].atoms[1].label, "Type 2");
         for name in ["POSCAR", "CONTCAR", "x/POSCAR_relaxed", "a.vasp", "b.poscar"] {
             assert_eq!(by_extension(name), Some(Format::Poscar), "{name}");
+        }
+    }
+
+    #[test]
+    fn known_by_content() {
+        use super::looks_like;
+        assert!(looks_like(NACL));
+        assert!(looks_like(&NACL.replace("Na Cl\n", "")));
+        assert!(looks_like(&NACL.replace("\n1.0\n", "\n1 1 1\n")));
+        assert_eq!(crate::detect(NACL.as_bytes()), Some(Format::Poscar));
+        for not in ["a\nb\nc\n", "x\n1.0\n1 0 0\n0 1 0\n0 0\nNa\n1\n", "x\n1.0\n1 0 0\n0 1 0\n0 0 1\nNa\nmany\n", "x\n1.0 2.0\n1 0 0\n0 1 0\n0 0 1\n1\n", "x\n1.0\n1 0 0 4\n0 1 0\n0 0 1\n1\n", "x\nnope\n1 0 0\n0 1 0\n0 0 1\n1\n"] {
+            assert!(!looks_like(not), "{not:?}");
         }
     }
 
