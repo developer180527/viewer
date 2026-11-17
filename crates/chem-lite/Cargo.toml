@@ -1,0 +1,10 @@
+[package]
+name = "chem-lite"
+description = "Reads molecules and crystals (XYZ, MOL/SDF, SMILES, POSCAR, Turbomole, Chemical JSON, QCSchema, Molden, PDB, CIF) into atoms and bonds, with bonds found and SMILES laid out where a file has none."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+serde_json = "1"

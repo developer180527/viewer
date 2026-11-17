@@ -1,0 +1,15 @@
+loader = "cjson"
+format = "Chemical JSON"
+model = "Table"
+
+[table]
+rows = 9
+columns = 7
+headers = ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Name = "ethanol"
+Formula = "C2H6O"
+Atoms = "9"
+Bonds = "8"

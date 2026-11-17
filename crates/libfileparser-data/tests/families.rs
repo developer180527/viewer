@@ -455,3 +455,52 @@ fn an_nmea_date_that_isnt_ascii_is_left_out_not_a_panic() {
         libfileparser_testkit::exercise(&doc, &cx);
     }
 }
+
+/// Molecules and crystals, read by chem-lite: atoms, bonds, the file's fields.
+#[test]
+fn molecules_as_tables_of_atoms() {
+    let water = open("water.xyz", b"3\nwater\nO 0 0 0\nH 0.96 0 0\nH -0.24 0.93 0\n");
+    assert_eq!(water.format().reader, "xyz");
+    let (info, rows) = table(&water);
+    assert_eq!(info.columns.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]);
+    assert_eq!((rows[1][1].clone(), rows[1][3].clone()), (t("H"), Cell::Float(0.96)));
+    assert_eq!((meta(&water, "Formula"), meta(&water, "Bonds")), (Some("H2O"), Some("2")));
+    assert!(water.warnings().iter().any(|w| w.message.contains("found by distance")));
+    assert!(water.facets().any(|f| f.name == "Bonds"));
+
+    let sdf = "a\n\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0\nM  END\n> <MW>\n16\n\n$$$$\nb\n\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 N   0  0\nM  END\n$$$$\n";
+    let doc = open("two.sdf", sdf.as_bytes());
+    assert_eq!((doc.format().reader, doc.format().name.as_str(), meta(&doc, "Records")), ("mol", "SD file", Some("2")));
+    let (_, rows) = table(&doc);
+    assert_eq!((rows[0][0].clone(), rows[1][0].clone()), (t("a"), t("b")));
+    assert!(doc.facets().any(|f| f.name == "Fields"));
+
+    let smiles = open("acid.smi", b"CC(=O)O acetic acid\n");
+    let (_, rows) = table(&smiles);
+    assert_eq!((rows.len(), rows[0][3].clone()), (8, Cell::Null));
+    assert_eq!(meta(&smiles, "Formula"), Some("C2H4O2"));
+    assert!(smiles.warnings().iter().any(|w| w.message.contains("no coordinates")));
+
+    let poscar = open("run/POSCAR", b"salt\n1.0\n5.64 0 0\n0 5.64 0\n0 0 5.64\nNa Cl\n1 1\nDirect\n0 0 0\n0.5 0.5 0.5\n");
+    assert_eq!((poscar.format().reader, meta(&poscar, "Cell (Å)")), ("poscar", Some("5.640 × 5.640 × 5.640")));
+    assert_eq!(open("coord", b"$coord\n0 0 0 c\n2.9 0 0 o\n$end\n").format().reader, "turbomole");
+    assert_eq!(open("m.cjson", br#"{"chemicalJson": 1, "atoms": {"elements": {"number": [6]}, "coords": {"3d": [0, 0, 0]}}}"#).format().reader, "cjson");
+    // QCSchema in a `.json`: its schema name outranks the JSON reader.
+    assert_eq!(open("in.json", br#"{"schema_name": "qcschema_molecule", "symbols": ["He"], "geometry": [0, 0, 0]}"#).format().reader, "qcschema");
+    assert_eq!(open("w.mold", b"[Molden Format]\n[Atoms] Angs\nO 1 8 0 0 0\n").format().reader, "molden");
+}
+
+/// A digital circuit's signals over time.
+#[test]
+fn value_change_dumps() {
+    let vcd = "$date today $end\n$timescale 1ns $end\n$scope module top $end\n$var wire 1 ! clk $end\n$var reg 4 \" data [3:0] $end\n$scope module sub $end\n$var wire 1 ! clk_alias $end\n$upscope $end\n$upscope $end\n$enddefinitions $end\n$dumpvars\n0!\nbx \"\n$end\n#5\n1!\nb1010 \"\n#10\n0!\nq?\n";
+    let doc = open("sim.vcd", vcd.as_bytes());
+    assert_eq!(doc.format().reader, "vcd");
+    let (_, rows) = table(&doc);
+    assert_eq!(rows.len(), 5);
+    assert_eq!(rows[0], [Cell::Int(0), t("top.clk, top.sub.clk_alias"), t("0")]);
+    assert_eq!(rows[3], [Cell::Int(5), t("top.data[3:0]"), t("1010")]);
+    assert_eq!(rows[1], [Cell::Int(0), t("top.data[3:0]"), t("x")]);
+    assert_eq!((meta(&doc, "Signals"), meta(&doc, "Changes"), meta(&doc, "Last time"), meta(&doc, "Timescale")), (Some("3"), Some("5"), Some("10"), Some("1ns")));
+    assert!(doc.warnings().iter().any(|w| w.message.contains("1 change")));
+}

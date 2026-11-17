@@ -217,6 +217,27 @@ fn samples(id: &str) -> Vec<Sample> {
         "cron" => vec![small("a.cron", b"0 2 * * * /backup.sh\n"), big("big.cron", many("", "{i} * * * * job{i}", "\n", "\n", 30))],
         "sgml" => vec![small("a.sgml", b"<doc><p>hi</doc>"), big("big.sgml", many("<doc>", "<p>{i}</p>", "", "</doc>", 30))],
         "fixed-width" => vec![small("a.fwf", b"NAME  AGE\nAnn    42\n"), big("big.fwf", many("NAME  AGE\n", "Ann    {i}", "\n", "\n", 30))],
+        "xyz" => vec![small("a.xyz", b"2\nwater-ish\nO 0 0 0\nH 0.96 0 0\n"), big("big.xyz", many("30\n\n", "C {i}.5 0 0", "\n", "\n", 30))],
+        "mol" => vec![
+            small("a.mol", b"a\n\n\n  2  1  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0\n    1.2000    0.0000    0.0000 O   0  0\n  1  2  2  0\nM  END\n"),
+            big("big.sdf", many("", "m{i}\n\n\n  1  0  0  0  0  0  0  0  0  0999 V2000\n    0.0000    0.0000    0.0000 C   0  0\nM  END", "\n$$$$\n", "\n$$$$\n", 30)),
+        ],
+        "smiles" => vec![small("a.smi", b"CO methanol\n"), big("big.smi", many("", "C", "", " long\n", 30))],
+        "poscar" => vec![small("POSCAR", b"salt\n1.0\n5.64 0 0\n0 5.64 0\n0 0 5.64\nNa Cl\n1 1\nDirect\n0 0 0\n0.5 0.5 0.5\n"), big("CONTCAR", many("c\n1.0\n40 0 0\n0 40 0\n0 0 40\nC\n30\nCartesian\n", "{i}.0 0 0", "\n", "\n", 30))],
+        "turbomole" => vec![small("coord", b"$coord\n0 0 0 o\n1.8 0 0 h\n$end\n"), big("big.coord", many("$coord\n", "{i}.0 0 0 c", "\n", "\n$end\n", 30))],
+        "cjson" => vec![
+            small("a.cjson", br#"{"chemicalJson": 1, "atoms": {"elements": {"number": [8, 1]}, "coords": {"3d": [0, 0, 0, 0.96, 0, 0]}}}"#),
+            big("big.cjson", [&br#"{"chemicalJson": 1, "atoms": {"elements": {"number": ["#[..], &many("", "6", ", ", "", 30), br#"]}, "coords": {"3d": ["#, &many("", "{i}, 0, 0", ", ", "", 30), b"]}}}"].concat()),
+        ],
+        "qcschema" => vec![
+            small("a.qcjson", br#"{"schema_name": "qcschema_molecule", "symbols": ["H", "H"], "geometry": [0, 0, 0, 1.4, 0, 0]}"#),
+            big("big.qcjson", [&br#"{"schema_name": "qcschema_molecule", "symbols": ["#[..], &many("", "\"C\"", ", ", "", 30), br#"], "geometry": ["#, &many("", "{i}, 0, 0", ", ", "", 30), b"]}"].concat()),
+        ],
+        "molden" => vec![small("a.molden", b"[Molden Format]\n[Atoms] Angs\nO 1 8 0 0 0\nH 2 1 0.96 0 0\n"), big("big.molden", many("[Molden Format]\n[Atoms] Angs\n", "C {i} 6 {i}.0 0 0", "\n", "\n", 30))],
+        "vcd" => vec![
+            small("a.vcd", b"$timescale 1ns $end\n$scope module t $end\n$var wire 1 ! clk $end\n$upscope $end\n$enddefinitions $end\n#0\n0!\n#5\n1!\n"),
+            big("big.vcd", many("$timescale 1ns $end\n$var wire 1 ! clk $end\n$enddefinitions $end\n", "#{i}\n1!", "\n", "\n", 30)),
+        ],
         other => panic!("no samples for {other}"),
     }
 }

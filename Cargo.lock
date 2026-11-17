@@ -499,6 +499,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
+name = "chem-lite"
+version = "0.3.1"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
 name = "chrono"
 version = "0.4.45"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1612,6 +1619,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "blend-lite",
+ "chem-lite",
  "exr",
  "gltf-lite",
  "image",
@@ -1648,6 +1656,7 @@ dependencies = [
 name = "libfileparser-data"
 version = "0.3.1"
 dependencies = [
+ "chem-lite",
  "csv",
  "libfileparser-core",
  "libfileparser-testkit",

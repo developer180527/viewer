@@ -19,7 +19,7 @@ sql = []
 schemas = []
 rdf = ["dep:oxttl", "dep:oxrdfxml", "dep:oxrdf"]
 graphs = []
-science = []
+science = ["dep:chem-lite"]
 business = []
 
 [dependencies]
@@ -30,6 +30,8 @@ toml = { version = "1", default-features = false, features = ["std", "parse", "p
 saphyr-parser = "0.0.6"
 quick-xml = "0.41"
 plist = { version = "1", default-features = false }
+# Molecules and crystals (feature `science`).
+chem-lite = { workspace = true, optional = true }
 # KMZ (feature `geo`): pure-Rust inflate only.
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"], optional = true }
 

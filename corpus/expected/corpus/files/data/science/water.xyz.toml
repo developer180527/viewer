@@ -1,0 +1,14 @@
+loader = "xyz"
+format = "XYZ coordinates"
+model = "Table"
+
+[table]
+rows = 3
+columns = 7
+headers = ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Formula = "H2O"
+Atoms = "3"
+Bonds = "2"

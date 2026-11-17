@@ -1,0 +1,15 @@
+loader = "smiles"
+format = "SMILES"
+model = "Table"
+
+[table]
+rows = 45
+columns = 8
+headers = ["Molecule", "#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Text", "Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Formula = "C8H10N4O2"
+Atoms = "45"
+Bonds = "46"
+Molecules = "2"

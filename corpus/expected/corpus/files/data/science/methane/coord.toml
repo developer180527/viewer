@@ -1,0 +1,15 @@
+loader = "turbomole"
+format = "Turbomole coordinates"
+model = "Table"
+
+[table]
+rows = 5
+columns = 7
+headers = ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Name = "Turbomole coordinates"
+Formula = "CH4"
+Atoms = "5"
+Bonds = "4"

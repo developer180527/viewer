@@ -125,11 +125,17 @@ fn corpus() {
 /// write ourselves yet), so CI doesn't exercise them. Shrink this list.
 const LOCAL_ONLY: &[&str] = &[];
 
+/// Loaders that never open a file themselves: they only add a facet to another
+/// category's document (docs/design/libfileparser.md §2.1). Checked where that facet
+/// is: `molecule`, the ball-and-stick Scene of -data's molecules, in
+/// crates/libfileparser/tests/front_door.rs.
+const FACETS_ONLY: &[&str] = &["molecule"];
+
 /// The corpus checks the app's own registry: every loader it ships opens at least one
 /// committed corpus file, so a new loader without one shows up as a failure.
 #[test]
 fn every_loader_has_a_corpus_file() {
-    let mut used: std::collections::BTreeSet<String> = LOCAL_ONLY.iter().map(|s| s.to_string()).collect();
+    let mut used: std::collections::BTreeSet<String> = LOCAL_ONLY.iter().chain(FACETS_ONLY).map(|s| s.to_string()).collect();
     for entry in manifest().unwrap().into_iter().filter(|e| !e.optional) {
         if let Ok(text) = std::fs::read_to_string(expected(&entry, "toml")) {
             let t: toml::Table = text.parse().unwrap();

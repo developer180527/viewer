@@ -259,3 +259,31 @@ fn categories_follow_convention() {
         assert_eq!(reader.info().category, category, "{file} is detected as {}", reader.info().id);
     }
 }
+
+/// A molecule opens as its atoms, owned by `-data`, with `-3d`'s ball and stick after:
+/// for every format chem-lite reads, PDB and CIF included, and for the file names
+/// some are known by alone.
+#[test]
+fn molecules_are_tables_with_a_ball_and_stick_scene() {
+    let cx = cx();
+    for (file, reader) in [
+        ("data/science/water.xyz", "xyz"),
+        ("data/science/benzene.sdf", "mol"),
+        ("data/science/caffeine.smi", "smiles"),
+        ("data/science/nacl/POSCAR", "poscar"),
+        ("data/science/methane/coord", "turbomole"),
+        ("data/science/ethanol.cjson", "cjson"),
+        ("data/science/ammonia.qcjson", "qcschema"),
+        ("data/science/water.molden", "molden"),
+        ("data/science/1abc.pdb", "pdb"),
+        ("data/science/1abc.cif", "cif"),
+    ] {
+        let doc = libfileparser::open(&FileSource::open(corpus().join(file)).unwrap(), &cx).unwrap();
+        assert_eq!(doc.format().reader, reader, "{file}");
+        let names = names(&doc);
+        let scene = names.iter().position(|n| n == "Molecule").unwrap_or_else(|| panic!("{file}: no Molecule facet in {names:?}"));
+        assert!(scene > 0 && names.last().map(String::as_str) == Some("Raw"), "{file}: {names:?}");
+        let Ok(Content::Scene(s)) = doc.facet(scene, &cx) else { panic!("{file}: the Molecule facet isn't a scene") };
+        assert!(s.scene().read().meshes().len() >= 2, "{file}: atoms and bonds");
+    }
+}

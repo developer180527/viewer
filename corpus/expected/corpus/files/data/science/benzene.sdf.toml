@@ -1,0 +1,15 @@
+loader = "mol"
+format = "SD file"
+model = "Table"
+
+[table]
+rows = 12
+columns = 7
+headers = ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Name = "benzene"
+Formula = "C6H6"
+Atoms = "12"
+Bonds = "12"

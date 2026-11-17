@@ -1,0 +1,15 @@
+loader = "qcschema"
+format = "QCSchema"
+model = "Table"
+
+[table]
+rows = 4
+columns = 7
+headers = ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Name = "ammonia"
+Formula = "H3N"
+Atoms = "4"
+Bonds = "3"

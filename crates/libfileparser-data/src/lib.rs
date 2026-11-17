@@ -42,7 +42,11 @@ mod records;
 #[cfg(feature = "schemas")]
 mod schemas;
 #[cfg(feature = "science")]
+mod chem;
+#[cfg(feature = "science")]
 mod science;
+#[cfg(feature = "science")]
+mod vcd;
 #[cfg(feature = "sql")]
 mod sql;
 #[cfg(feature = "logs")]
@@ -188,6 +192,24 @@ pub fn readers() -> &'static [&'static dyn Reader] {
         &PDB,
         #[cfg(feature = "science")]
         &CIF,
+        #[cfg(feature = "science")]
+        &XYZ,
+        #[cfg(feature = "science")]
+        &MOL,
+        #[cfg(feature = "science")]
+        &SMILES,
+        #[cfg(feature = "science")]
+        &POSCAR,
+        #[cfg(feature = "science")]
+        &TURBOMOLE,
+        #[cfg(feature = "science")]
+        &CJSON,
+        #[cfg(feature = "science")]
+        &QCSCHEMA,
+        #[cfg(feature = "science")]
+        &MOLDEN,
+        #[cfg(feature = "science")]
+        &VCD,
         #[cfg(feature = "science")]
         &ARFF,
         #[cfg(feature = "science")]
@@ -1142,6 +1164,86 @@ static CIF: Data = Data {
     language: "cif",
     detect: |info, header, name| ext_or(info, header, name, header.starts_with(b"data_")),
     open: science::cif,
+};
+
+/// A molecule format told from content: `chem-lite`'s sniffing.
+#[cfg(feature = "science")]
+fn chem_is(header: &[u8], format: chem_lite::Format) -> bool {
+    chem_lite::detect(header) == Some(format)
+}
+
+#[cfg(feature = "science")]
+static XYZ: Data = Data {
+    info: ReaderInfo::new("xyz", "XYZ coordinates", Category::Data).extensions(&["xyz", "extxyz"]),
+    language: "xyz",
+    detect: |info, header, name| ext_or(info, header, name, chem_is(header, chem_lite::Format::Xyz)),
+    open: chem::xyz,
+};
+
+#[cfg(feature = "science")]
+static MOL: Data = Data {
+    info: ReaderInfo::new("mol", "MDL molfile", Category::Data).extensions(&["mol", "sdf", "sd", "mdl"]).mime_types(&["chemical/x-mdl-molfile", "chemical/x-mdl-sdfile"]),
+    language: "mol",
+    detect: |info, header, name| ext_or(info, header, name, chem_is(header, chem_lite::Format::Mol)),
+    open: chem::mol,
+};
+
+#[cfg(feature = "science")]
+static SMILES: Data = Data {
+    info: ReaderInfo::new("smiles", "SMILES", Category::Data).extensions(&["smi", "smiles", "ism", "can"]).mime_types(&["chemical/x-daylight-smiles"]),
+    language: "smiles",
+    detect: by_extension,
+    open: chem::smiles,
+};
+
+#[cfg(feature = "science")]
+static POSCAR: Data = Data {
+    // Known by name more than extension: `POSCAR`, `CONTCAR`, `POSCAR_relaxed`.
+    info: ReaderInfo::new("poscar", "VASP POSCAR", Category::Data).extensions(&["poscar", "contcar", "vasp"]),
+    language: "poscar",
+    detect: |info, header, name| if chem_lite::by_extension(name) == Some(chem_lite::Format::Poscar) { Confidence::Extension } else { by_extension(info, header, name) },
+    open: chem::poscar,
+};
+
+#[cfg(feature = "science")]
+static TURBOMOLE: Data = Data {
+    info: ReaderInfo::new("turbomole", "Turbomole coordinates", Category::Data).extensions(&["coord", "tmol"]),
+    language: "turbomole",
+    detect: |info, header, name| ext_or(info, header, name, chem_is(header, chem_lite::Format::Turbomole)),
+    open: chem::turbomole,
+};
+
+#[cfg(feature = "science")]
+static CJSON: Data = Data {
+    info: ReaderInfo::new("cjson", "Chemical JSON", Category::Data).extensions(&["cjson"]),
+    language: "json",
+    detect: |info, header, name| ext_or(info, header, name, chem_is(header, chem_lite::Format::ChemicalJson)),
+    open: chem::cjson,
+};
+
+#[cfg(feature = "science")]
+static QCSCHEMA: Data = Data {
+    // Also as `.json`: its schema name says so, outranking the JSON reader.
+    info: ReaderInfo::new("qcschema", "QCSchema", Category::Data).extensions(&["qcjson"]),
+    language: "json",
+    detect: |info, header, name| ext_or(info, header, name, chem_is(header, chem_lite::Format::QcSchema)),
+    open: chem::qcschema,
+};
+
+#[cfg(feature = "science")]
+static MOLDEN: Data = Data {
+    info: ReaderInfo::new("molden", "Molden", Category::Data).extensions(&["molden", "mold"]),
+    language: "molden",
+    detect: |info, header, name| ext_or(info, header, name, chem_is(header, chem_lite::Format::Molden)),
+    open: chem::molden,
+};
+
+#[cfg(feature = "science")]
+static VCD: Data = Data {
+    info: ReaderInfo::new("vcd", "Value Change Dump", Category::Data).extensions(&["vcd"]),
+    language: "vcd",
+    detect: |info, header, name| ext_or(info, header, name, vcd::looks_like(header)),
+    open: vcd::open,
 };
 
 #[cfg(feature = "science")]

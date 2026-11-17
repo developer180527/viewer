@@ -327,6 +327,35 @@ path = "corpus/files/data/graphs/web.gexf"
 
 # ---------------------------------------------------------------- science
 
+# Molecules and crystals (chem-lite), and a digital circuit's signals (VCD): written
+# for this corpus.
+[[file]]
+path = "corpus/files/data/science/water.xyz"
+
+[[file]]
+path = "corpus/files/data/science/benzene.sdf"
+
+[[file]]
+path = "corpus/files/data/science/caffeine.smi"
+
+[[file]]
+path = "corpus/files/data/science/nacl/POSCAR"
+
+[[file]]
+path = "corpus/files/data/science/methane/coord"
+
+[[file]]
+path = "corpus/files/data/science/ethanol.cjson"
+
+[[file]]
+path = "corpus/files/data/science/ammonia.qcjson"
+
+[[file]]
+path = "corpus/files/data/science/water.molden"
+
+[[file]]
+path = "corpus/files/data/science/counter.vcd"
+
 [[file]]
 path = "corpus/files/data/science/1abc.cif"
 

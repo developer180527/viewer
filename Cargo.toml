@@ -36,6 +36,7 @@ dif-lite = { path = "crates/dif-lite" }
 biff-lite = { path = "crates/biff-lite" }
 xmlss-lite = { path = "crates/xmlss-lite" }
 numbers-lite = { path = "crates/numbers-lite" }
+chem-lite = { path = "crates/chem-lite" }
 docx-lite = { path = "crates/docx-lite" }
 odt-lite = { path = "crates/odt-lite" }
 libfileparser-mupdf = { path = "crates/libfileparser-mupdf" }

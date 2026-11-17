@@ -1,0 +1,17 @@
+loader = "molden"
+format = "Molden"
+model = "Table"
+
+[table]
+rows = 3
+columns = 7
+headers = ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Name = "water, HF/STO-3G"
+Formula = "H2O"
+Atoms = "3"
+Bonds = "2"
+"Molecular orbitals" = "2"
+"Vibrational frequencies" = "3"

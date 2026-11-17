@@ -1,0 +1,17 @@
+loader = "vcd"
+format = "Value Change Dump"
+model = "Table"
+
+[table]
+rows = 28
+columns = 3
+headers = ["Time", "Signal", "Value"]
+kinds = ["Number", "Text", "Text"]
+
+[metadata]
+Date = "2026-11-17"
+Version = "Viewer corpus"
+Timescale = "1ns"
+Signals = "3"
+Changes = "28"
+"Last time" = "80"

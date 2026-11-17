@@ -121,8 +121,15 @@ impl ReaderInfo {
     }
 }
 
+/// Whether `name` ends in one of `extensions`, or is one with no extension at all: some
+/// formats are known by a file's whole name (VASP's `POSCAR`, Turbomole's `coord`).
 fn has_extension(extensions: &[&str], name: &str) -> bool {
-    Path::new(name).extension().and_then(|e| e.to_str()).is_some_and(|e| extensions.iter().any(|x| x.eq_ignore_ascii_case(e)))
+    let path = Path::new(name);
+    let matches = |e: Option<&std::ffi::OsStr>| e.and_then(|e| e.to_str()).is_some_and(|e| extensions.iter().any(|x| x.eq_ignore_ascii_case(e)));
+    match path.extension() {
+        Some(e) => matches(Some(e)),
+        None => matches(path.file_name()),
+    }
 }
 
 /// One format. Implement it to add a format to a category (docs/design/libfileparser.md §6).
@@ -189,4 +196,18 @@ pub(crate) fn panic_message(payload: &(dyn std::any::Any + Send)) -> String {
         .map(|s| s.to_string())
         .or_else(|| payload.downcast_ref::<String>().cloned())
         .unwrap_or_else(|| "unknown panic".into())
+}
+
+#[cfg(test)]
+mod extension_tests {
+    use super::*;
+
+    #[test]
+    fn extensions_and_whole_names() {
+        let info = ReaderInfo::new("x", "X", Category::Data).extensions(&["poscar", "xyz"]).also_reads(&["coord"], Model::Scene);
+        for (name, owns) in [("a.xyz", true), ("A.XYZ", true), ("dir/POSCAR", true), ("poscar", true), ("POSCAR.bak", false), ("a.txt", false), ("xyz.txt", false), ("", false)] {
+            assert_eq!(info.matches_extension(name), owns, "{name}");
+        }
+        assert!(info.matches_also_reads("run/coord") && !info.matches_also_reads("coord.txt") && !info.matches_extension("coord"));
+    }
 }

@@ -37,6 +37,11 @@ fn samples(reader: &str) -> Vec<Sample> {
             vec![sample("3d/tri.usda").fits_tiny_limits(), sample("3d/tri.usdz").fits_tiny_limits(), Sample::new("scene.usda", std::fs::read(fixture).unwrap())]
         }
         "blend" => vec![sample("3d/preview.blend").fits_tiny_limits(), sample("3d/packed.blend").fits_tiny_limits()],
+        // A sphere per atom is more than tiny limits' 16 vertices: none fits.
+        "molecule" => ["water.xyz", "benzene.sdf", "caffeine.smi", "nacl/POSCAR", "methane/coord", "ethanol.cjson", "ammonia.qcjson", "water.molden", "1abc.pdb", "1abc.cif"]
+            .iter()
+            .map(|f| sample(&format!("data/science/{f}")))
+            .collect(),
         _ => Vec::new(),
     }
 }

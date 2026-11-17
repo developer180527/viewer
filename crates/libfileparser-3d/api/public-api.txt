@@ -65,6 +65,11 @@ impl libfileparser_core::reader::Reader for libfileparser_3d::GltfReader
 pub fn libfileparser_3d::GltfReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_3d::GltfReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_3d::GltfReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_3d::MoleculeReader
+impl libfileparser_core::reader::Reader for libfileparser_3d::MoleculeReader
+pub fn libfileparser_3d::MoleculeReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_3d::MoleculeReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_3d::MoleculeReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_3d::ObjReader
 impl libfileparser_core::reader::Reader for libfileparser_3d::ObjReader
 pub fn libfileparser_3d::ObjReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection

@@ -1,0 +1,125 @@
+pub mod chem_lite
+pub mod chem_lite::elements
+pub const chem_lite::elements::LAST: u8
+pub fn chem_lite::elements::by_symbol(&str) -> core::option::Option<u8>
+pub fn chem_lite::elements::colour(u8) -> [f32; 3]
+pub fn chem_lite::elements::covalent_radius(u8) -> f64
+pub fn chem_lite::elements::parse(&str) -> core::option::Option<u8>
+pub fn chem_lite::elements::symbol(u8) -> &'static str
+#[non_exhaustive] pub enum chem_lite::Error
+pub chem_lite::Error::Damaged(alloc::string::String)
+pub chem_lite::Error::NotThisFormat
+pub chem_lite::Error::TooLarge
+pub chem_lite::Error::TooLarge::max: u64
+pub chem_lite::Error::TooLarge::value: u64
+pub chem_lite::Error::TooLarge::what: &'static str
+impl core::clone::Clone for chem_lite::Error
+pub fn chem_lite::Error::clone(&self) -> chem_lite::Error
+impl core::cmp::Eq for chem_lite::Error
+impl core::cmp::PartialEq for chem_lite::Error
+pub fn chem_lite::Error::eq(&self, &chem_lite::Error) -> bool
+impl core::error::Error for chem_lite::Error
+impl core::fmt::Debug for chem_lite::Error
+pub fn chem_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for chem_lite::Error
+pub fn chem_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for chem_lite::Error
+#[non_exhaustive] pub enum chem_lite::Format
+pub chem_lite::Format::ChemicalJson
+pub chem_lite::Format::Cif
+pub chem_lite::Format::Mol
+pub chem_lite::Format::Molden
+pub chem_lite::Format::Pdb
+pub chem_lite::Format::Poscar
+pub chem_lite::Format::QcSchema
+pub chem_lite::Format::Smiles
+pub chem_lite::Format::Turbomole
+pub chem_lite::Format::Xyz
+impl core::clone::Clone for chem_lite::Format
+pub fn chem_lite::Format::clone(&self) -> chem_lite::Format
+impl core::cmp::Eq for chem_lite::Format
+impl core::cmp::PartialEq for chem_lite::Format
+pub fn chem_lite::Format::eq(&self, &chem_lite::Format) -> bool
+impl core::fmt::Debug for chem_lite::Format
+pub fn chem_lite::Format::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::hash::Hash for chem_lite::Format
+pub fn chem_lite::Format::hash<__H: core::hash::Hasher>(&self, &mut __H)
+impl core::marker::Copy for chem_lite::Format
+impl core::marker::StructuralPartialEq for chem_lite::Format
+#[non_exhaustive] pub struct chem_lite::Atom
+pub chem_lite::Atom::charge: i8
+pub chem_lite::Atom::element: u8
+pub chem_lite::Atom::label: alloc::string::String
+pub chem_lite::Atom::position: [f64; 3]
+impl chem_lite::Atom
+pub fn chem_lite::Atom::new(u8, impl core::convert::Into<alloc::string::String>, [f64; 3]) -> Self
+impl core::clone::Clone for chem_lite::Atom
+pub fn chem_lite::Atom::clone(&self) -> chem_lite::Atom
+impl core::cmp::PartialEq for chem_lite::Atom
+pub fn chem_lite::Atom::eq(&self, &chem_lite::Atom) -> bool
+impl core::fmt::Debug for chem_lite::Atom
+pub fn chem_lite::Atom::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for chem_lite::Atom
+#[non_exhaustive] pub struct chem_lite::Bond
+pub chem_lite::Bond::a: u32
+pub chem_lite::Bond::b: u32
+pub chem_lite::Bond::order: u8
+impl chem_lite::Bond
+pub fn chem_lite::Bond::new(u32, u32, u8) -> Self
+impl core::clone::Clone for chem_lite::Bond
+pub fn chem_lite::Bond::clone(&self) -> chem_lite::Bond
+impl core::cmp::Eq for chem_lite::Bond
+impl core::cmp::PartialEq for chem_lite::Bond
+pub fn chem_lite::Bond::eq(&self, &chem_lite::Bond) -> bool
+impl core::fmt::Debug for chem_lite::Bond
+pub fn chem_lite::Bond::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for chem_lite::Bond
+impl core::marker::StructuralPartialEq for chem_lite::Bond
+#[non_exhaustive] pub struct chem_lite::File
+pub chem_lite::File::molecules: alloc::vec::Vec<chem_lite::Molecule>
+pub chem_lite::File::notes: alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
+impl core::clone::Clone for chem_lite::File
+pub fn chem_lite::File::clone(&self) -> chem_lite::File
+impl core::cmp::PartialEq for chem_lite::File
+pub fn chem_lite::File::eq(&self, &chem_lite::File) -> bool
+impl core::default::Default for chem_lite::File
+pub fn chem_lite::File::default() -> chem_lite::File
+impl core::fmt::Debug for chem_lite::File
+pub fn chem_lite::File::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for chem_lite::File
+#[non_exhaustive] pub struct chem_lite::Limits
+pub chem_lite::Limits::atoms: u64
+pub chem_lite::Limits::molecules: u64
+impl chem_lite::Limits
+pub fn chem_lite::Limits::with_atoms(self, u64) -> Self
+pub fn chem_lite::Limits::with_molecules(self, u64) -> Self
+impl core::clone::Clone for chem_lite::Limits
+pub fn chem_lite::Limits::clone(&self) -> chem_lite::Limits
+impl core::default::Default for chem_lite::Limits
+pub fn chem_lite::Limits::default() -> Self
+impl core::fmt::Debug for chem_lite::Limits
+pub fn chem_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for chem_lite::Limits
+#[non_exhaustive] pub struct chem_lite::Molecule
+pub chem_lite::Molecule::atoms: alloc::vec::Vec<chem_lite::Atom>
+pub chem_lite::Molecule::bonds: alloc::vec::Vec<chem_lite::Bond>
+pub chem_lite::Molecule::bonds_found: bool
+pub chem_lite::Molecule::cell: core::option::Option<[[f64; 3]; 3]>
+pub chem_lite::Molecule::laid_out: bool
+pub chem_lite::Molecule::name: alloc::string::String
+pub chem_lite::Molecule::properties: alloc::vec::Vec<(alloc::string::String, alloc::string::String)>
+impl core::clone::Clone for chem_lite::Molecule
+pub fn chem_lite::Molecule::clone(&self) -> chem_lite::Molecule
+impl core::cmp::PartialEq for chem_lite::Molecule
+pub fn chem_lite::Molecule::eq(&self, &chem_lite::Molecule) -> bool
+impl core::default::Default for chem_lite::Molecule
+pub fn chem_lite::Molecule::default() -> chem_lite::Molecule
+impl core::fmt::Debug for chem_lite::Molecule
+pub fn chem_lite::Molecule::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for chem_lite::Molecule
+pub fn chem_lite::by_extension(&str) -> core::option::Option<chem_lite::Format>
+pub fn chem_lite::detect(&[u8]) -> core::option::Option<chem_lite::Format>
+pub fn chem_lite::find_bonds(&[chem_lite::Atom]) -> alloc::vec::Vec<chem_lite::Bond>
+pub fn chem_lite::layout(&mut chem_lite::Molecule)
+pub fn chem_lite::read(&[u8], chem_lite::Format, &chem_lite::Limits) -> chem_lite::Result<chem_lite::File>
+pub type chem_lite::Result<T> = core::result::Result<T, chem_lite::Error>

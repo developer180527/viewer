@@ -1,0 +1,20 @@
+[Molden Format]
+[Title]
+ water, HF/STO-3G
+[Atoms] Angs
+O     1    8    0.000000    0.000000    0.117300
+H     2    1    0.000000    0.757200   -0.469200
+H     3    1    0.000000   -0.757200   -0.469200
+[FREQ]
+ 2170.0
+ 4140.1
+ 4391.5
+[MO]
+ Sym= A1
+ Ene= -20.2516
+ Spin= Alpha
+ Occup= 2.0
+ Sym= A1
+ Ene= -1.2578
+ Spin= Alpha
+ Occup= 2.0

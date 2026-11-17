@@ -1,0 +1,16 @@
+loader = "poscar"
+format = "VASP POSCAR"
+model = "Table"
+
+[table]
+rows = 8
+columns = 7
+headers = ["#", "Element", "Label", "X (Å)", "Y (Å)", "Z (Å)", "Charge"]
+kinds = ["Number", "Text", "Text", "Number", "Number", "Number", "Number"]
+
+[metadata]
+Name = "NaCl rock salt"
+Formula = "Cl4Na4"
+Atoms = "8"
+Bonds = "12"
+"Cell (Å)" = "5.640 × 5.640 × 5.640"
