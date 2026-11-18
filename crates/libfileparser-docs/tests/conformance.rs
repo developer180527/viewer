@@ -57,6 +57,30 @@ fn flowing_documents() {
     }
 }
 
+/// PowerPoint and Word 97–2003, through office_oxide: slides as headings, their text,
+/// a Slides table; a Word document's text.
+#[test]
+fn office_documents() {
+    use libfileparser_docs::{DocReader, PptReader, PptxReader};
+    for (reader, file, slides) in [(&PptxReader as &dyn Reader, "sample.pptx", Some(2)), (&PptReader, "sample.ppt", Some(2)), (&DocReader, "sample.doc", None)] {
+        assert_conforms(reader, &[corpus(file)]);
+        let cx = ParseContext::new();
+        let doc = reader.open(&FileSource::from_bytes(file, corpus_bytes(file)), &cx).unwrap();
+        let Ok(Content::Flow(flow)) = doc.facet(0, &cx) else { panic!("{file}: not formatted text") };
+        let blocks = flow.blocks(0..1000).unwrap();
+        assert!(blocks.len() > 2, "{file}: {blocks:?}");
+        let names: Vec<String> = doc.facets().map(|f| f.name.clone()).collect();
+        match slides {
+            Some(n) => {
+                assert_eq!(doc.metadata().iter().find(|(k, _)| k == "Slides").map(|(_, v)| v.clone()), Some(n.to_string()), "{file}");
+                assert!(names.contains(&"Slides".to_string()), "{file}: {names:?}");
+                assert_eq!(blocks.iter().filter(|b| matches!(b, libfileparser_core::Block::Heading { level: 2, .. })).count(), n, "{file}");
+            }
+            None => assert!(!names.contains(&"Slides".to_string())),
+        }
+    }
+}
+
 /// A document with more blocks than the limit allows stops with `TooLarge`, in every
 /// formatted-text reader (they share the builder that counts).
 #[test]
@@ -112,6 +136,9 @@ fn fuzz() {
         "rtf" => vec![corpus("sample.rtf")],
         "org" => vec![corpus("sample.org")],
         "html" => vec![corpus("sample.html")],
+        "pptx" => vec![corpus("sample.pptx")],
+        "ppt" => vec![corpus("sample.ppt")],
+        "doc" => vec![corpus("sample.doc")],
         _ => Vec::new(),
     });
 }

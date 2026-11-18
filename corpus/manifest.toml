@@ -91,6 +91,17 @@ path = "corpus/files/docs/sample.org"
 [[file]]
 path = "corpus/files/docs/sample.html"
 
+# From Apache POI's test data (Apache-2.0): SampleShow.pptx, basic_test_ppt_file.ppt,
+# 57843.doc.
+[[file]]
+path = "corpus/files/docs/sample.pptx"
+
+[[file]]
+path = "corpus/files/docs/sample.ppt"
+
+[[file]]
+path = "corpus/files/docs/sample.doc"
+
 [[file]]
 path = "corpus/files/docs/sample.cbz"
 

@@ -1,0 +1,17 @@
+loader = "pptx"
+format = "PowerPoint presentation"
+model = "Rich text"
+
+[flow]
+blocks = 7
+kinds = ["Heading", "Paragraph", "Quote", "Heading", "List", "Quote"]
+
+[metadata]
+Slides = "2"
+Title = "SlideShow Sample"
+Author = "Nick Burch"
+Subject = "A sample slideshow"
+Description = "This is a sample slideshow, for use with testing etc"
+Created = "2008-01-04T11:58:07Z"
+Modified = "2018-04-18T15:37:10Z"
+Keywords = "Sample Testing"

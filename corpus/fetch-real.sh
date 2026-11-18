@@ -59,6 +59,8 @@ fetch py-pdf/sample-files '/**/*.pdf'
 fetch python-openxml/python-docx '/tests/test_files/*.docx'
 fetch apache/poi '/test-data/document/*.docx' '/test-data/document/*.rtf' '/test-data/document/*.doc' '/test-data/slideshow/*.pptx'
 fetch eea/odfpy '/tests/examples/*.odt' '/tests/examples/*.ods'
+fetch apache/poi '/test-data/slideshow/*.ppt'
+fetch LibreOffice/core '/sd/qa/unit/data/ppt/' '/sd/qa/unit/data/odp/' '/sd/qa/unit/data/pptx/'
 fetch w3c/epubcheck '/src/test/resources/**/*.epub'
 # Pandoc's tests: documents in many formats (GPL tests, kept out of git like the rest).
 fetch jgm/pandoc '/test/'

@@ -43,7 +43,7 @@ optional, beside them:
 | **`-core`** | — | Defines everything below | Nothing heavy |
 | **`-images`** | PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, SVG; later HEIC, RAW, JPEG XL, PSD | Raster | A leaf |
 | **`-3d`** | glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDA/USDC/USDZ, `.blend`; later CAD, point clouds | Scene | `-images`, ufbx, `usd-lite` |
-| **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown, HTML; later reStructuredText, AsciiDoc, PPTX, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`) |
+| **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown, HTML, PPTX, PPT, DOC (2026-11-18, office_oxide: slides as headings with their notes, and a Slides table); later reStructuredText, AsciiDoc, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`); office_oxide (MIT/Apache) for PowerPoint and Word 97–2003 |
 | **`-data`** | Data written as text: structured, config, delimited tables, schemas, RDF, graphs, geo, logs, science records, SQL, contacts and calendars, business messages, localization, feeds (§2.1) | Tree, Table | Pure Rust, a feature per family |
 | **`-sheets`** | ✅ XLSX, XLSM, XLSB, XLS (and Excel 2–5's bare BIFF), XML Spreadsheet 2003, ODS, FODS, SYLK, DIF, Numbers (2013 on; a table per table, as a sheet there holds several) | Tables, one per sheet, with Formulas and Defined names | calamine; `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`, `numbers-lite`; zip |
 | **`-datasets`** | HDF5, NetCDF, FITS, MATLAB, R, SAS, Stata, SPSS, Parquet, ORC, Feather, SQLite | Table, Tree | Heavy readers, as features |

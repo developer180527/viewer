@@ -17,6 +17,7 @@ mod comics;
 mod docx;
 mod epub;
 mod html;
+mod office;
 mod lite;
 mod markdown;
 mod odt;
@@ -35,6 +36,7 @@ pub use epub::EpubReader;
 pub use html::HtmlReader;
 pub use markdown::MarkdownReader;
 pub use odt::OdtReader;
+pub use office::{DocReader, PptReader, PptxReader};
 pub use org::OrgReader;
 pub use rtf::RtfReader;
 pub use pdf::PdfReader;
@@ -42,7 +44,7 @@ pub use xps::XpsReader;
 
 /// Every format this category reads, in the order ties are broken.
 pub fn readers() -> &'static [&'static dyn Reader] {
-    &[&PdfReader, &XpsReader, &ComicReader, &EpubReader, &DocxReader, &OdtReader, &RtfReader, &OrgReader, &MarkdownReader, &HtmlReader]
+    &[&PdfReader, &XpsReader, &ComicReader, &EpubReader, &DocxReader, &PptxReader, &PptReader, &DocReader, &OdtReader, &RtfReader, &OrgReader, &MarkdownReader, &HtmlReader]
 }
 
 /// The readers that fit a file, best first.

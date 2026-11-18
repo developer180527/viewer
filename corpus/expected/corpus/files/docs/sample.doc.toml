@@ -1,0 +1,10 @@
+loader = "doc"
+format = "Word 97–2003 document"
+model = "Rich text"
+
+[flow]
+blocks = 21
+kinds = ["Heading", "Paragraph", "Heading", "Paragraph"]
+
+[metadata]
+Title = "Harold Koplow"

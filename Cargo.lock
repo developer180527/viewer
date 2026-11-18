@@ -1683,6 +1683,7 @@ dependencies = [
  "libfileparser-mupdf",
  "libfileparser-testkit",
  "odt-lite",
+ "office_oxide",
  "orgize",
  "pulldown-cmark",
  "rbook",
@@ -2593,6 +2594,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "office_oxide"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d1985d384db629099807a236b6aa07f7cc8f7d0b4e821e02b8aea7175de4e164"
+dependencies = [
+ "atoi_simd",
+ "encoding_rs",
+ "fast-float2",
+ "flate2",
+ "log",
+ "memchr",
+ "quick-xml 0.42.0",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "zip",
+]
+
+[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3051,6 +3071,7 @@ checksum = "41b1177fdf999d2321d3fb46ff47159d9c1fb9ad66a4879f8c50a0b504615e9b"
 dependencies = [
  "encoding_rs",
  "memchr",
+ "serde",
 ]
 
 [[package]]
