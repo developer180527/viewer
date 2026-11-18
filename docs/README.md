@@ -23,6 +23,7 @@ Then the design of each part, as needed:
 | [design/3d-renderer.md](design/3d-renderer.md) | RendererX, the wgpu 3D renderer | Built; milestones in §16 |
 | [design/responsive-ui.md](design/responsive-ui.md) | One layout from phone to desktop | Built in part |
 | [design/editing.md](design/editing.md) | Editing: one session shell for every format | Proposal; waits on the roadmap |
+| [design/apple-ui.md](design/apple-ui.md) | Apple platforms: a SwiftUI shell over the same Rust core, RealityKit on Vision Pro, libgui as an optional second interface | Proposal |
 
 Outside `docs/`: [../README.md](../README.md) (running and developing), [../corpus/README.md](../corpus/README.md) (the test corpus).
 
