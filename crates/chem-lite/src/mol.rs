@@ -296,3 +296,62 @@ M  END
         assert_eq!((m.name.as_str(), m.atoms.len(), m.bonds.len()), ("", 3, 2));
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+    use crate::{Format, Limits, read as read_any};
+
+    const ETHANOL: &str = "ethanol\n  test 3D\n\n  3  2  0  0  0  0  0  0  0  0999 V2000\n   -0.0187    1.5258    0.0104 C   0  0\n    0.0021   -0.0041    0.0020 C   0  0\n    1.2540   -0.5100    0.0300 O   0  0\n  1  2  1  0  0  0  0\n  2  3  2  0  0  0  0\nM  END\n";
+
+    fn mol(text: &str) -> crate::Result<Molecule> {
+        read_any(text.as_bytes(), Format::Mol, &Limits::default()).map(|f| f.molecules.into_iter().next().unwrap())
+    }
+
+    #[test]
+    fn charge_codes() {
+        assert_eq!([0, 1, 2, 3, 4, 5, 6, 7, 8].map(charge), [0, 3, 2, 1, 0, -1, -2, -3, 0]);
+    }
+
+    #[test]
+    fn bonds_where_the_file_puts_them() {
+        let m = mol(ETHANOL).unwrap();
+        assert_eq!(m.bonds.iter().map(|b| (b.a, b.b, b.order)).collect::<Vec<_>>(), [(0, 1, 1), (1, 2, 2)]);
+        // Two atoms and one bond; more bonds than atoms (tetrahedrane's carbons).
+        let pair = "x\n\n\n  2  1  0  0  0  0  0  0  0  0999 V2000\n    0.0 0.0 0.0 C\n    1.5 0.0 0.0 C\n  1  2  1\nM  END\n";
+        assert_eq!(mol(pair).unwrap().bonds.len(), 1);
+        let tetra = "x\n\n\n  4  6  0  0  0  0  0  0  0  0999 V2000\n    0 0 0 C\n    1.5 0 0 C\n    0.75 1.3 0 C\n    0.75 0.43 1.2 C\n  1  2  1\n  1  3  1\n  1  4  1\n  2  3  1\n  2  4  1\n  3  4  1\nM  END\n";
+        assert_eq!(mol(tetra).unwrap().bonds.len(), 6);
+    }
+
+    #[test]
+    fn what_a_molfile_may_leave_out() {
+        // No `V2000` (files before it was written), no `M  END`, atoms of four fields.
+        let old = ETHANOL.replace(" V2000", "");
+        assert_eq!(mol(&old).unwrap().atoms.len(), 3);
+        let unended = ETHANOL.replace("M  END\n", "");
+        assert_eq!(mol(&unended).unwrap().bonds.len(), 2);
+        assert_eq!(mol("x\n\n\n  1  0\n    0.0 0.0 0.0 C\n").unwrap().atoms[0].element, 6);
+        // But not an element, or the lines it counts.
+        assert!(matches!(mol("x\n\n\n  1  0\n    0.0 0.0 0.0\n"), Err(crate::Error::Damaged(_))));
+        assert!(matches!(mol("x\n\n\n  1  2\n    0.0 0.0 0.0 C\n"), Err(crate::Error::Damaged(_))));
+        assert!(read_any(ETHANOL.as_bytes(), Format::Mol, &Limits::default()).unwrap().notes.is_empty());
+    }
+
+    #[test]
+    fn sd_fields_and_endings() {
+        // A field as the file's last lines, with no blank line or `$$$$` after it; blank
+        // lines after the last record.
+        let f = read_any(format!("{ETHANOL}> <MW>\n46").as_bytes(), Format::Mol, &Limits::default()).unwrap();
+        assert_eq!(f.molecules[0].properties, [("MW".to_string(), "46".to_string())]);
+        let f = read_any(format!("{ETHANOL}$$$$\n\n\n").as_bytes(), Format::Mol, &Limits::default()).unwrap();
+        assert!(f.notes.is_empty() && f.molecules.len() == 1, "{:?}", f.notes);
+    }
+
+    #[test]
+    fn v3000_blocks_besides_atoms_and_bonds() {
+        let text = "x\n\n\n  0  0  0     0  0            999 V3000\nM  V30 BEGIN CTAB\nM  V30 COUNTS 2 1 0 0 0\nM  V30 BEGIN ATOM\nM  V30 1 C 0 0 0 0\nM  V30 2 C 1.5 0 0 0\nM  V30 END ATOM\nM  V30 7 C 9 9 9 0\nM  V30 BEGIN BOND\nM  V30 1 1 1 2 CFG=1\nM  V30 END BOND\nM  V30 BEGIN SGROUP\nM  V30 1 SUP 0\nM  V30 2 1 1 2\nM  V30 END SGROUP\nM  V30 END CTAB\nM  END\n";
+        let m = mol(text).unwrap();
+        assert_eq!((m.atoms.len(), m.bonds.len()), (2, 1));
+    }
+}

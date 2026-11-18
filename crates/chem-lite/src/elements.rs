@@ -104,3 +104,18 @@ mod tests {
         assert_eq!(colour(0), colour(110));
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+
+    /// Each channel converted on its own, dark ones on sRGB's straight segment.
+    #[test]
+    fn channels_from_srgb() {
+        // Rhodium is 0x0A7D8C: its red, 10/255, is in the straight segment.
+        assert!((colour(45)[0] - (10.0 / 255.0) / 12.92).abs() < 1e-6);
+        // Nitrogen's red, 0x30, is dark; its blue, 0xF8, bright.
+        let n = colour(7);
+        assert!(n[0] < 0.05 && n[2] > 0.9, "{n:?}");
+    }
+}

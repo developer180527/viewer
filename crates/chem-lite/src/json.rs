@@ -191,3 +191,42 @@ mod tests {
         assert!(matches!(read(top.as_bytes(), Format::QcSchema, &Limits::default().with_atoms(1)), Err(crate::Error::TooLarge { .. })));
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+    use crate::{BOHR, Format, Limits, read};
+
+    #[test]
+    fn chemical_json_edges() {
+        let read_c = |t: &str| read(t.as_bytes(), Format::ChemicalJson, &Limits::default());
+        // Too few coordinates, Cartesian or fractional, is damage.
+        assert!(matches!(read_c(r#"{"atoms": {"elements": {"number": [6, 6, 6]}, "coords": {"3d": [0, 0, 0, 1, 0, 0]}}}"#), Err(crate::Error::Damaged(_))));
+        assert!(matches!(
+            read_c(r#"{"atoms": {"elements": {"number": [6, 6, 6]}, "coords": {"3dFractional": [0, 0, 0]}}, "unitCell": {"cellVectors": [2, 0, 0, 0, 3, 0, 0, 0, 4]}}"#),
+            Err(crate::Error::Damaged(_))
+        ));
+        // Fractions in a cell that isn't cubic; a bond to an atom past the last; a flag.
+        let m = &read_c(r#"{"atoms": {"elements": {"number": [6, 6, 6]}, "coords": {"3dFractional": [0.5, 0.5, 0.5, 0, 0, 0, 0.5, 0, 0]}}, "unitCell": {"cellVectors": [2, 0, 0, 0, 3, 0, 0, 0, 4]}, "bonds": {"connections": {"index": [0, 1, 0, 3, 3, 0]}}, "properties": {"flag": true}}"#).unwrap().molecules[0];
+        assert_eq!(m.atoms[0].position, [1.0, 1.5, 2.0]);
+        assert_eq!(m.bonds.len(), 1);
+        assert_eq!(m.properties, [("flag".to_string(), "true".to_string())]);
+    }
+
+    #[test]
+    fn old_keys_inside_arrays() {
+        let mut v = serde_json::json!([{"unit cell": 1}]);
+        respell(&mut v);
+        assert_eq!(v[0]["unitCell"], 1);
+    }
+
+    #[test]
+    fn qcschema_edges() {
+        let read_q = |t: &str| read(t.as_bytes(), Format::QcSchema, &Limits::default());
+        assert!(matches!(read_q(r#"{"symbols": ["H", "H"], "geometry": [0, 0, 0, 1, 1]}"#), Err(crate::Error::Damaged(_))));
+        let m = &read_q(r#"{"symbols": ["H", "H"], "geometry": [0, 0, 0, 1, 2, 3], "connectivity": [[0, 1, 1], [0, 2, 1], [2, 0, 1]]}"#).unwrap().molecules[0];
+        let p = m.atoms[1].position;
+        assert!((p[1] - 2.0 * BOHR).abs() < 1e-9 && (p[2] - 3.0 * BOHR).abs() < 1e-9, "{p:?}");
+        assert_eq!(m.bonds.len(), 1);
+    }
+}

@@ -322,4 +322,18 @@ O 0 0 0
         assert_eq!(damaged("x").to_string(), "damaged: x");
         assert_eq!(Error::TooLarge { what: "atoms", value: 2, max: 1 }.to_string(), "atoms: 2, more than the 1 allowed");
     }
+
+    #[test]
+    fn limits_are_inclusive() {
+        let two = b"1\n\nC 0 0 0\n2\n\nC 0 0 0\nC 1.5 0 0\n";
+        assert!(read(two, Format::Xyz, &Limits::default().with_atoms(3).with_molecules(2)).is_ok());
+        assert!(read(two, Format::Xyz, &Limits::default().with_atoms(2)).is_err());
+    }
+
+    #[test]
+    fn every_qcschema_name_is_known() {
+        for name in ["qcschema_molecule", "qc_schema_input", "qcschema_output"] {
+            assert_eq!(detect(format!(r#"{{"schema_name": "{name}"}}"#).as_bytes()), Some(Format::QcSchema), "{name}");
+        }
+    }
 }

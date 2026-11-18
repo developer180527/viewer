@@ -193,3 +193,39 @@ mod tests {
         assert_eq!((value("1.5(3)"), value("?"), value(".")), (Some(1.5), None, None));
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+    use crate::{Format, Limits, read as read_any};
+
+    #[test]
+    fn quotes_at_either_end_of_a_line() {
+        assert_eq!(tokens("' a' b"), [" a", "b"]);
+        assert_eq!(tokens("x 'abc'"), ["x", "abc"]);
+        assert_eq!(tokens("'abc"), ["abc"]);
+        assert_eq!(tokens("'it's' z"), ["it's", "z"]);
+    }
+
+    #[test]
+    fn a_loop_at_the_very_end() {
+        let b = blocks("data_x\nloop_\n_a\n_b");
+        assert_eq!((b.len(), b[0].loops.len(), b[0].loops[0].1.len()), (1, 1, 0));
+    }
+
+    #[test]
+    fn cells_coordinates_and_where_a_block_starts() {
+        // A comment before the block; a cell that isn't cubic; fractional coordinates.
+        let text = "# from a test suite\ndata_x\n_cell_length_a 4\n_cell_length_b 5\n_cell_length_c 6\nloop_\n_atom_site_label\n_atom_site_fract_x\n_atom_site_fract_y\n_atom_site_fract_z\nC1 0.5 0.25 0.75\n";
+        let f = read_any(text.as_bytes(), Format::Cif, &Limits::default()).unwrap();
+        let m = &f.molecules[0];
+        assert!(m.cell.is_some());
+        let p = m.atoms[0].position;
+        assert!((p[0] - 2.0).abs() < 1e-9 && (p[1] - 1.25).abs() < 1e-9 && (p[2] - 4.5).abs() < 1e-9, "{p:?}");
+        assert!(f.notes.is_empty());
+        // A cell of 1 Å is a placeholder, not a cell: fractions can't be placed in it.
+        let placeholder = text.replace("_cell_length_a 4", "_cell_length_a 1.0");
+        assert!(matches!(read_any(placeholder.as_bytes(), Format::Cif, &Limits::default()), Err(crate::Error::Damaged(_))));
+        assert_eq!(read_any(b"no data here\n", Format::Cif, &Limits::default()), Err(crate::damaged("CIF: no data block")));
+    }
+}

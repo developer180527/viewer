@@ -79,9 +79,6 @@ pub fn molden(text: &str, budget: &mut Budget) -> Result<File> {
             if section == "atoms" {
                 scale = if unit.contains("au") || unit.contains("bohr") { BOHR } else { 1.0 };
             }
-            if section == "title" {
-                continue;
-            }
             continue;
         }
         let f: Vec<&str> = t.split_whitespace().collect();
@@ -165,5 +162,53 @@ mod tests {
     fn cells_from_angles() {
         let c = cell_vectors([2.0, 3.0, 4.0], [90.0, 90.0, 120.0]);
         assert!((c[1][0] + 1.5).abs() < 1e-9 && (c[1][1] - 3.0 * 0.75f64.sqrt()).abs() < 1e-9 && (c[2][2] - 4.0).abs() < 1e-9);
+    }
+}
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+    use crate::{Format, Limits, read};
+
+    fn angle(a: [f64; 3], b: [f64; 3]) -> f64 {
+        let dot: f64 = (0..3).map(|k| a[k] * b[k]).sum();
+        let len = |v: [f64; 3]| v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        (dot / (len(a) * len(b))).acos().to_degrees()
+    }
+
+    /// A triclinic cell: its edges' lengths and the angles between them as given.
+    #[test]
+    fn a_cell_from_any_lengths_and_angles() {
+        let [a, b, c] = cell_vectors([3.0, 4.0, 5.0], [70.0, 80.0, 100.0]);
+        let len = |v: [f64; 3]| v.iter().map(|x| x * x).sum::<f64>().sqrt();
+        assert!((len(a) - 3.0).abs() < 1e-9 && (len(b) - 4.0).abs() < 1e-9 && (len(c) - 5.0).abs() < 1e-9);
+        assert!((angle(b, c) - 70.0).abs() < 1e-9 && (angle(a, c) - 80.0).abs() < 1e-9 && (angle(a, b) - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn turbomole_in_full() {
+        let text = "$coord\n 1 2 3 c\n 0 0 0\n$cell\n 10 20 30 90 90 90\n$end\n";
+        let f = read(text.as_bytes(), Format::Turbomole, &Limits::default()).unwrap();
+        let m = &f.molecules[0];
+        assert_eq!((m.name.as_str(), m.atoms.len()), ("Turbomole coordinates", 1));
+        let p = m.atoms[0].position;
+        assert!((p[1] - 2.0 * BOHR).abs() < 1e-9 && (p[2] - 3.0 * BOHR).abs() < 1e-9);
+        let c = m.cell.unwrap();
+        assert!((c[0][0] - 10.0 * BOHR).abs() < 1e-9 && (c[1][1] - 20.0 * BOHR).abs() < 1e-9 && (c[2][2] - 30.0 * BOHR).abs() < 1e-9);
+    }
+
+    #[test]
+    fn molden_in_full() {
+        let text = "[Molden Format]\n[Title]\n\n first title line\n second\n[Atoms] AU\nC 1 6 1 2 3\nO 2 8 0 0\n[GEOMETRIES] XYZ\n1\n\nN 9 9 9\n[FREQ]\n 1600.0\n not a number\n";
+        let f = read(text.as_bytes(), Format::Molden, &Limits::default()).unwrap();
+        let m = &f.molecules[0];
+        // The first title line; atoms from [Atoms], not [GEOMETRIES]; short lines passed over.
+        assert_eq!((m.name.as_str(), m.atoms.len(), m.atoms[0].element), ("first title line", 1, 6));
+        let p = m.atoms[0].position;
+        assert!((p[1] - 2.0 * BOHR).abs() < 1e-9 && (p[2] - 3.0 * BOHR).abs() < 1e-9);
+        assert_eq!(f.notes, [("Vibrational frequencies".to_string(), "1".to_string())]);
+        // Neither orbitals nor frequencies: nothing to note.
+        let bare = read(b"[Molden Format]\n[Atoms] Angs\nC 1 6 0 0 0\n", Format::Molden, &Limits::default()).unwrap();
+        assert!(bare.notes.is_empty(), "{:?}", bare.notes);
     }
 }

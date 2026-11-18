@@ -343,3 +343,45 @@ mod tests {
         assert!(matches!(read(b"CCCCCC\n", Format::Smiles, &Limits::default().with_atoms(5)), Err(crate::Error::TooLarge { .. })));
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+
+    fn hydrogens(smiles: &str) -> usize {
+        parse(smiles).unwrap().atoms.iter().filter(|a| a.element == 1).count()
+    }
+
+    #[test]
+    fn every_valence_in_the_table() {
+        for (smiles, h) in [("B", 3), ("P", 3), ("S", 2), ("F", 1), ("Cl", 1), ("Br", 1), ("I", 1), ("O=P(O)(O)O", 3), ("CS(=O)C", 6)] {
+            assert_eq!(hydrogens(smiles), h, "{smiles}");
+        }
+    }
+
+    #[test]
+    fn bonds_written_out() {
+        // `$` (quadruple, drawn as triple) and `:` (aromatic) between any atoms.
+        let m = parse("[C]$[C]").unwrap();
+        assert_eq!(m.bonds[0].order, 3);
+        assert_eq!(parse("C:C").unwrap().bonds[0].order, 4);
+        // An aromatic bond between aliphatic atoms adds no extra valence.
+        assert_eq!(hydrogens("C:C"), 6);
+        // Toluene: the ring's bonds aromatic, the methyl's single.
+        let t = parse("c1ccccc1C").unwrap();
+        assert_eq!(t.bonds.iter().filter(|b| b.order == 4).count(), 6);
+        // An aromatic atom with no ring bonds is counted as written.
+        assert_eq!(hydrogens("c"), 4);
+    }
+
+    #[test]
+    fn where_a_smiles_ends_and_what_isnt_one() {
+        assert_eq!(parse("CC O").unwrap().atoms.iter().filter(|a| a.element == 6).count(), 2);
+        assert!(matches!(parse("C^C"), Err(crate::Error::Damaged(e)) if e.contains("isn't understood")));
+        // A chirality class closing its bracket.
+        assert_eq!(parse("[C@TH1]").unwrap().atoms[0].element, 6);
+        assert_eq!(parse("[Pt@SP1]").unwrap().atoms[0].element, 78);
+        let f = read_file("CCO\n", &mut crate::Budget::new(&crate::Limits::default())).unwrap();
+        assert!(f.notes.is_empty());
+    }
+}

@@ -147,3 +147,36 @@ mod tests {
         assert!(matches!(read(NACL.as_bytes(), Format::Poscar, &Limits::default().with_atoms(1)), Err(crate::Error::TooLarge { .. })));
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+    use crate::{Format, Limits, read as read_any};
+
+    fn det(c: [[f64; 3]; 3]) -> f64 {
+        c[0][0] * (c[1][1] * c[2][2] - c[1][2] * c[2][1]) - c[0][1] * (c[1][0] * c[2][2] - c[1][2] * c[2][0]) + c[0][2] * (c[1][0] * c[2][1] - c[1][1] * c[2][0])
+    }
+
+    #[test]
+    fn a_negative_scale_is_the_volume_of_a_skewed_cell() {
+        let text = "skewed\n-60.0\n2 0.5 0.3\n0.4 3 0.2\n0.1 0.6 4\nC\n1\nDirect\n0 0 0\n";
+        let m = &read_any(text.as_bytes(), Format::Poscar, &Limits::default()).unwrap().molecules[0];
+        assert!((det(m.cell.unwrap()).abs() - 60.0).abs() < 1e-9, "{}", det(m.cell.unwrap()));
+    }
+
+    #[test]
+    fn cartesian_names_and_scales() {
+        // `K` is Cartesian too; three scales, one per axis; the comment is its name.
+        // (A cell that isn't the identity, so Cartesian and direct differ.)
+        let text = "my crystal\n1 2 3\n2 0 0\n0 2 0\n0 0 2\nC\n1\nKartesian\n1 1 1\n";
+        let m = &read_any(text.as_bytes(), Format::Poscar, &Limits::default()).unwrap().molecules[0];
+        assert_eq!((m.name.as_str(), m.atoms[0].position), ("my crystal", [1.0, 2.0, 3.0]));
+    }
+
+    #[test]
+    fn known_by_content_at_its_shortest() {
+        assert!(looks_like("x\n1\n1 0 0\n0 1 0\n0 0 1\n2"));
+        assert!(!looks_like("x\n1\n1 0 0 x\n0 1 0\n0 0 1\n2"));
+        assert!(!looks_like("x\n1\n1 0 0\n0 1 0\n0 0 1"));
+    }
+}

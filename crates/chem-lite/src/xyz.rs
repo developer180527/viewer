@@ -135,3 +135,15 @@ mod tests {
         assert_eq!(pairs(r#" a=1  b="x y"  c"#), [("a".into(), "1".into()), ("b".into(), "x y".into()), ("c".into(), String::new())]);
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use crate::{Format, Limits, read};
+
+    /// Positions where Properties puts them, not where they usually are.
+    #[test]
+    fn positions_after_other_columns() {
+        let text = "1\nProperties=species:S:1:id:I:1:pos:R:3\nC 7 1.0 2.0 3.0\n";
+        assert_eq!(read(text.as_bytes(), Format::Xyz, &Limits::default()).unwrap().molecules[0].atoms[0].position, [1.0, 2.0, 3.0]);
+    }
+}

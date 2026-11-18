@@ -138,3 +138,40 @@ ENDMDL
         assert_eq!(m.atoms[0].charge, -1);
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use crate::{Format, Limits, read};
+
+    #[test]
+    fn elements_from_names_alone() {
+        // Old files without the element columns: ` CA ` an alpha carbon, `CU  ` copper (not
+        // uranium), `1HB ` a hydrogen, in ATOM and HETATM records.
+        let text = "\
+ATOM      1  CA  ALA A   1       0.000   0.000   0.000
+HETATM    2 CU   CU  A   2      10.000   0.000   0.000
+ATOM      3 1HB  ALA A   1      20.000   0.000   0.000
+HETATM    4 1HB  LIG A   3      30.000   0.000   0.000
+";
+        let m = &read(text.as_bytes(), Format::Pdb, &Limits::default()).unwrap().molecules[0];
+        assert_eq!(m.atoms.iter().map(|a| a.element).collect::<Vec<_>>(), [6, 29, 1, 1]);
+    }
+
+    #[test]
+    fn listed_bonds_found_already_and_placeholder_cells() {
+        let text = "\
+CRYST1    1.000    1.000    1.000  90.00  90.00  90.00 P 1           1
+MODEL        1
+HETATM    1  O   HOH A   1       0.000   0.000   0.000  1.00  0.00           O
+HETATM    2  H1  HOH A   1       0.960   0.000   0.000  1.00  0.00           H
+HETATM    3  H2  HOH A   1      -0.240   0.930   0.000  1.00  0.00           H
+CONECT    1    2    3
+ENDMDL
+";
+        let f = read(text.as_bytes(), Format::Pdb, &Limits::default()).unwrap();
+        assert_eq!(f.molecules[0].bonds.len(), 2);
+        // NMR structures give a cell of 1 Å: a placeholder.
+        assert!(f.molecules[0].cell.is_none());
+        assert!(f.notes.is_empty());
+    }
+}

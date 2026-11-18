@@ -85,3 +85,27 @@ mod tests {
         assert_eq!(find_bonds(&line).len(), 999);
     }
 }
+
+#[cfg(test)]
+mod edges {
+    use super::*;
+
+    fn atom(z: u8, p: [f64; 3]) -> Atom {
+        Atom::new(z, "", p)
+    }
+
+    /// Francium pairs 6 Å apart (their bonds may reach 6.24 Å), placed where a smaller
+    /// search cell would put the two ends two cells apart and miss the bond.
+    #[test]
+    fn the_longest_bonds_are_found_across_cells() {
+        for (a, b) in [(4.2, 10.2), (5.1, 11.1)] {
+            assert_eq!(find_bonds(&[atom(87, [a, 0.0, 0.0]), atom(87, [b, 0.0, 0.0])]).len(), 1, "{a}–{b}");
+        }
+    }
+
+    /// Two hydrogens close together in a bigger molecule aren't H₂.
+    #[test]
+    fn hydrogens_bond_to_each_other_only_alone() {
+        assert!(find_bonds(&[atom(1, [0.0; 3]), atom(1, [0.74, 0.0, 0.0]), atom(6, [50.0, 0.0, 0.0])]).is_empty());
+    }
+}
