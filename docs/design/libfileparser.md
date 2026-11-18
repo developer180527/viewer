@@ -43,7 +43,7 @@ optional, beside them:
 | **`-core`** | — | Defines everything below | Nothing heavy |
 | **`-images`** | PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, SVG; later HEIC, RAW, JPEG XL, PSD | Raster | A leaf |
 | **`-3d`** | glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDA/USDC/USDZ, `.blend`; later CAD, point clouds | Scene | `-images`, ufbx, `usd-lite` |
-| **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown; later HTML, reStructuredText, AsciiDoc, PPTX, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`) |
+| **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown, HTML; later reStructuredText, AsciiDoc, PPTX, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`) |
 | **`-data`** | Data written as text: structured, config, delimited tables, schemas, RDF, graphs, geo, logs, science records, SQL, contacts and calendars, business messages, localization, feeds (§2.1) | Tree, Table | Pure Rust, a feature per family |
 | **`-sheets`** | ✅ XLSX, XLSM, XLSB, XLS (and Excel 2–5's bare BIFF), XML Spreadsheet 2003, ODS, FODS, SYLK, DIF, Numbers (2013 on; a table per table, as a sheet there holds several) | Tables, one per sheet, with Formulas and Defined names | calamine; `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`, `numbers-lite`; zip |
 | **`-datasets`** | HDF5, NetCDF, FITS, MATLAB, R, SAS, Stata, SPSS, Parquet, ORC, Feather, SQLite | Table, Tree | Heavy readers, as features |
@@ -73,7 +73,7 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
    4. **Still unsure:** the category whose model shows what the file is *for* with the least lost; the others' readings are facets (item 2 below).
 
    Convention picks the owner; it doesn't limit what is shown. **Parsers parse; viewing isn't their job** (2026-11-08): a parser says what is in a file, as content models and facets, and how anything looks or plays is a viewer's (libviewer, an app). Any file can honestly be parsed into more than one shape, which is why a format has one owner, others may also read it, and its document has several facets: the "technically it's also…" views are kept, after the conventional one.
-1. **One owner per format,** by item 0. HTML is a document (2026-11-11: a web page is read. No `-docs` reader exists yet, so it opens as `-data`'s DOM tree, which stays afterwards as a Structure facet; a parser never runs its scripts or fetches anything); SVG an image; subtitles and playlists media; Markdown a document; CSV data. In the front door, the owner's reading is the document and its primary facet.
+1. **One owner per format,** by item 0. HTML is a document (2026-11-11: a web page is read. ✅ 2026-11-18, `-docs`' reader `html`: the page as formatted text, its elements as a tree (the data view) and its source (the text view), all from one html5ever parse; a parser never runs its scripts or fetches anything); SVG an image; subtitles and playlists media; Markdown a document; CSV data. In the front door, the owner's reading is the document and its primary facet.
 2. **Others may also read it,** from their own angle, when their model says something useful: `-data` reads an SVG as an XML tree. Used alone, that category opens the file that way, so "reads any file of its kind" means every format it owns plus every format its model fits. In the front door it doesn't compete: the Library asks it as a facet provider, and its facets come after the owner's, before Source and Raw, made only when asked for.
 3. **No owner enabled or built yet:** the best other reading opens the file instead. Subtitles open as `-data`'s cue table until `-media` exists; then the media facet goes in front and the cue table stays. Adding an owner later is a minor version (§5).
 4. **Text needs no claim:** `-core` gives every text file Source and Raw (§2, boundary 2), so `-text` owns plain text and code only, never JSON, SQL or logs.
@@ -130,7 +130,7 @@ Decided 2026-11-08. ✅ The rule is built (2026-11-08): `ReaderInfo::also_reads`
 | Instructions | Source | Each page's content stream, decoded: the drawing operators as text | ⬜ |
 | Text | Source | The plain text of each page, in reading order | ⬜ |
 
-The same rule gives HTML its prose (owner, later), its DOM tree and its source; DOCX its prose (owner), its XML parts and the zip.
+The same rule gives HTML its prose (owner), its elements tree and its source; DOCX its prose (owner), its XML parts and the zip.
 
 **The formatted-text model** (planned, `-core`): the parsed structure of prose (blocks: headings, paragraphs, lists, tables, quotes, code, images; inlines: emphasis, code, links), never a layout. Markdown moves onto it from today's line-based facet, then reStructuredText, AsciiDoc, Org, DOCX, ODT, RTF, EPUB, and PDF's Document facet; libviewer gives it one view.
 
@@ -138,7 +138,7 @@ The same rule gives HTML its prose (owner, later), its DOM tree and its source; 
 
 | Formats | Owner | `-data` adds |
 |---|---|---|
-| `.html` `.htm` `.xhtml` | `-docs` (2026-11-11, by convention: a web page is a document; `-data` from 2026-11-08 until then) | DOM tree; opens them until `-docs` reads them |
+| `.html` `.htm` `.xhtml` | `-docs` (2026-11-11, by convention: a web page is a document; ✅ built 2026-11-18) | Nothing: `-docs` gives the elements tree itself, from the same parse (item 7); `-data`'s XML tree also reads `.xhtml` |
 | `.m3u` `.m3u8` `.pls` `.xspf` | `-media` (2026-11-11, by convention: a playlist opens in a player) | Table of entries; opens them until `-media` exists |
 | `.ipynb` | `-docs` (a notebook is read; later) | JSON tree; opens it until then |
 | `.md` `.markdown` | `-docs` (`-text` until then) | Front matter as a Tree |

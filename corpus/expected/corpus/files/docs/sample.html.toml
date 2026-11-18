@@ -1,0 +1,17 @@
+loader = "html"
+format = "Web page"
+model = "Rich text"
+
+[flow]
+blocks = 11
+kinds = ["Paragraph", "Heading", "Paragraph", "Heading", "List", "Quote", "Code", "Table", "Image", "Paragraph"]
+
+[metadata]
+Title = "Viewer corpus page"
+Language = "en"
+Description = "A web page for the test corpus: every block and mark the reader keeps."
+Author = "Viewer"
+Links = "3"
+Images = "1"
+Scripts = "1"
+Forms = "1"

@@ -31,6 +31,8 @@ tar = { version = "0.4", default-features = false }
 # HTML and XHTML (EPUB chapters): html5ever, Servo's HTML parser, through scraper's DOM.
 scraper = { version = "0.29", default-features = false }
 ego-tree = "0.11"
+# A web page in the encoding it declares (`<meta charset>`).
+encoding_rs = "0.8"
 # EPUB 2 and 3: the container, package, spine, table of contents and resources.
 rbook = { version = "0.7", default-features = false, features = ["threadsafe"] }
 # Org: orgize's parse, through its HTML export.

@@ -78,7 +78,9 @@ echo "building the fuzz targets..."
 (cd fuzz && nice -n 10 cargo +nightly fuzz build -O) > "$OUT/logs/build.log" 2>&1 || { echo "build failed: $OUT/logs/build.log"; exit 1; }
 if [ -z "$(ls fuzz/corpus 2>/dev/null)" ]; then
   echo "seeding from corpus/..."
-  "$(ls -d fuzz/target/*/release | head -1)/seed" fuzz/corpus corpus/files corpus/real >> "$OUT/logs/build.log" 2>&1
+  # Built with AddressSanitizer, which aborts on a symbol two bundled C++ libraries
+  # both define (not ours to fix, and harmless to seeding).
+  ASAN_OPTIONS=detect_odr_violation=0 "$(ls -d fuzz/target/*/release | head -1)/seed" fuzz/corpus corpus/files corpus/real >> "$OUT/logs/build.log" 2>&1
 fi
 
 echo "fuzzing ${#TARGETS[@]} targets for $HOURS h..."

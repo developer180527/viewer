@@ -89,6 +89,9 @@ path = "corpus/files/docs/sample.rtf"
 path = "corpus/files/docs/sample.org"
 
 [[file]]
+path = "corpus/files/docs/sample.html"
+
+[[file]]
 path = "corpus/files/docs/sample.cbz"
 
 [[file]]

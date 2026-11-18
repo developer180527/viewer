@@ -235,6 +235,8 @@ fn categories_follow_convention() {
         ("data/feeds/feed.xml", Data),
         // Plain text that is a document, a workbook, a model.
         ("docs/sample.org", Docs),
+        // A web page is a document (2026-11-11), not text or a tree.
+        ("docs/sample.html", Docs),
         ("docs/sample.rtf", Docs),
         ("docs/two-pages.pdf", Docs),
         ("sheets/sample.slk", Sheets),

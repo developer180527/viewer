@@ -24,6 +24,11 @@ impl libfileparser_core::reader::Reader for libfileparser_docs::EpubReader
 pub fn libfileparser_docs::EpubReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::EpubReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::EpubReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::HtmlReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::HtmlReader
+pub fn libfileparser_docs::HtmlReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::HtmlReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::HtmlReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::MarkdownReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::MarkdownReader
 pub fn libfileparser_docs::MarkdownReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection

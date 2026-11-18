@@ -32,6 +32,7 @@ use libfileparser_core::{Bytes, Detection, Document, FileSource, Limit, ParseCon
 pub use comics::ComicReader;
 pub use docx::DocxReader;
 pub use epub::EpubReader;
+pub use html::HtmlReader;
 pub use markdown::MarkdownReader;
 pub use odt::OdtReader;
 pub use org::OrgReader;
@@ -41,7 +42,7 @@ pub use xps::XpsReader;
 
 /// Every format this category reads, in the order ties are broken.
 pub fn readers() -> &'static [&'static dyn Reader] {
-    &[&PdfReader, &XpsReader, &ComicReader, &EpubReader, &DocxReader, &OdtReader, &RtfReader, &OrgReader, &MarkdownReader]
+    &[&PdfReader, &XpsReader, &ComicReader, &EpubReader, &DocxReader, &OdtReader, &RtfReader, &OrgReader, &MarkdownReader, &HtmlReader]
 }
 
 /// The readers that fit a file, best first.

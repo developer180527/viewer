@@ -45,7 +45,7 @@ fn corpus(name: &str) -> Sample {
 
 #[test]
 fn flowing_documents() {
-    for (reader, file) in [(&DocxReader as &dyn Reader, "sample.docx"), (&OdtReader, "sample.odt"), (&EpubReader, "sample.epub"), (&RtfReader, "sample.rtf"), (&libfileparser_docs::OrgReader, "sample.org")] {
+    for (reader, file) in [(&DocxReader as &dyn Reader, "sample.docx"), (&OdtReader, "sample.odt"), (&EpubReader, "sample.epub"), (&RtfReader, "sample.rtf"), (&libfileparser_docs::OrgReader, "sample.org"), (&libfileparser_docs::HtmlReader, "sample.html")] {
         // Small documents fit tiny limits; `limits_stop_big_documents` checks a big one doesn't.
         assert_conforms(reader, &[corpus(file).fits_tiny_limits()]);
         let doc = reader.open(&FileSource::from_bytes(file, corpus_bytes(file)), &ParseContext::new()).unwrap();
@@ -111,6 +111,7 @@ fn fuzz() {
         "odt" => vec![corpus("sample.odt")],
         "rtf" => vec![corpus("sample.rtf")],
         "org" => vec![corpus("sample.org")],
+        "html" => vec![corpus("sample.html")],
         _ => Vec::new(),
     });
 }
