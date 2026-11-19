@@ -172,6 +172,20 @@ impl Spawn for TexturePool {
     }
 }
 
+/// An image a document embeds (a picture in a DOCX, a plot in a notebook), opened by
+/// the app's image readers with the app's limits, for libviewer's formatted-text view
+/// (`Host::image_opener`); `None` when it isn't an image or can't be read.
+pub fn open_image(file: &FileSource) -> Option<libfileparser_core::Raster> {
+    let cx = context();
+    let found = libfileparser_images::detect(file.header(), file.name());
+    let (reader, _) = found.first()?;
+    let doc = reader.open(file, &cx).ok()?;
+    match doc.facet(0, &cx).ok()? {
+        Content::Raster(r) => Some(r),
+        _ => None,
+    }
+}
+
 /// Viewer's hooks for one document.
 fn context() -> ParseContext {
     let limits = if cfg!(any(target_os = "ios", target_os = "android")) { Limits::mobile() } else { Limits::desktop() };

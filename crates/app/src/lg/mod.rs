@@ -231,6 +231,10 @@ struct Headless {
 }
 
 impl ViewHost for Headless {
+    fn image_opener(&self) -> Option<libviewer::ImageOpener> {
+        Some(std::sync::Arc::new(viewer_formats::open_image))
+    }
+
     fn max_side(&self) -> u32 {
         8192
     }
@@ -386,6 +390,10 @@ struct Gpu<'a> {
 }
 
 impl ViewHost for Gpu<'_> {
+    fn image_opener(&self) -> Option<libviewer::ImageOpener> {
+        Some(std::sync::Arc::new(viewer_formats::open_image))
+    }
+
     fn trackpad_pinch(&self) -> f32 {
         self.pinch
     }

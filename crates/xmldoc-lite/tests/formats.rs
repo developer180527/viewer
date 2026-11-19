@@ -34,8 +34,12 @@ fn tei_and_fictionbook() {
     has(&t.html, &["<h1>A Poem</h1>", "<h1>One</h1>", "<em>i</em>", "<sup>[n]</sup>", "<br>", "<blockquote><p>line</p></blockquote>"]);
     let f = fictionbook(r##"<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><author><first-name>A</first-name><last-name>B</last-name></author><book-title>Book</book-title></title-info></description><body><section><title><p>Ch</p></title><p><strong>s</strong><a l:href="#n1">1</a></p><image l:href="#p.jpg"/></section></body><binary id="p.jpg">AAAA</binary></FictionBook>"##);
     assert_eq!(f.title.as_deref(), Some("Book"));
-    has(&f.html, &["<h1>Book</h1>", "<em>A B</em>", "<h1>Ch</h1>", "<strong>s</strong>", "<sup>1</sup>", "[Image: p.jpg]"]);
+    has(&f.html, &["<h1>Book</h1>", "<em>A B</em>", "<h1>Ch</h1>", "<strong>s</strong>", "<sup>1</sup>", "<img src=\"p.jpg\""]);
     assert!(!f.html.contains("AAAA"));
+    let images = xmldoc_lite::fictionbook_images(r##"<FictionBook><binary id="p.jpg" content-type="image/jpeg">/9j/
+4AAQ</binary><binary id="bad">!!!</binary></FictionBook>"##);
+    assert_eq!(images.len(), 1);
+    assert_eq!((images[0].id.as_str(), images[0].content_type.as_str(), &images[0].bytes[..]), ("p.jpg", "image/jpeg", &[0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10][..]));
 }
 
 #[test]

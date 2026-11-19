@@ -466,6 +466,8 @@ NOTEBOOK = {
     "cells": [
         {"cell_type": "markdown", "metadata": {}, "source": ["# Corpus Notebook\n", "Some **bold** and *italic*, with [a link](https://example.org)."]},
         {"cell_type": "code", "execution_count": 1, "metadata": {}, "source": ["print(1)"], "outputs": [{"output_type": "stream", "name": "stdout", "text": ["1\n"]}]},
+        # A plot: a PNG, base64, as Jupyter writes one.
+        {"cell_type": "code", "execution_count": 2, "metadata": {}, "source": ["plot()"], "outputs": [{"output_type": "display_data", "metadata": {}, "data": {"image/png": "PNG", "text/plain": ["<Figure>"]}}]},
     ],
 }
 
@@ -484,7 +486,7 @@ TEI = """<?xml version="1.0" encoding="utf-8"?>
 
 FB2 = """<?xml version="1.0" encoding="utf-8"?>
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><author><first-name>Corpus</first-name><last-name>Author</last-name></author><book-title>Corpus FictionBook</book-title></title-info></description>
-<body><section><title><p>Chapter</p></title><p>Some <strong>bold</strong>, <emphasis>italic</emphasis> and <code>code</code>, with <a l:href="https://example.org">a link</a>.</p><poem><stanza><v>A line of verse</v></stanza></poem></section></body></FictionBook>
+<body><section><title><p>Chapter</p></title><p>Some <strong>bold</strong>, <emphasis>italic</emphasis> and <code>code</code>, with <a l:href="https://example.org">a link</a>.</p><poem><stanza><v>A line of verse</v></stanza></poem><image l:href="#picture.png"/></section></body><binary id="picture.png" content-type="image/png">PNG</binary></FictionBook>
 """
 
 EML = ("From: Corpus Sender <sender@example.org>\r\nTo: reader@example.org\r\nSubject: Corpus message\r\nDate: Thu, 1 Jan 2026 00:00:00 +0000\r\n"
@@ -552,10 +554,14 @@ def mobi():
 def docs_more():
     for name, text in MARKUP.items():
         write("docs/" + name, text)
-    write("docs/sample.ipynb", json.dumps(NOTEBOOK, indent=1) + "\n")
+    import base64
+    picture = base64.b64encode(png(32, 24, lambda x, y: (x * 8, y * 10, 160, 255))).decode()
+    notebook = json.loads(json.dumps(NOTEBOOK))
+    notebook["cells"][2]["outputs"][0]["data"]["image/png"] = picture
+    write("docs/sample.ipynb", json.dumps(notebook, indent=1) + "\n")
     write("docs/sample-docbook.xml", DOCBOOK)
     write("docs/sample-tei.xml", TEI)
-    write("docs/sample.fb2", FB2)
+    write("docs/sample.fb2", FB2.replace(">PNG</binary>", ">" + picture + "</binary>"))
     write("docs/sample.eml", EML)
     write("docs/sample.mbox", MBOX)
     write("docs/sample.mht", MHT)

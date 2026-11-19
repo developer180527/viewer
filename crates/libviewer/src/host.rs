@@ -11,6 +11,11 @@ use rendererx::scene_data::CpuScene;
 /// arrived), so a sleeping window draws it.
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
 
+/// Opens an image file a document embeds (a DOCX picture, an EPUB illustration, a
+/// notebook's plot) as a raster, through the app's own image readers; `None` when it
+/// can't. Called from the view's decoding thread, so it must be `Send + Sync`.
+pub type ImageOpener = Arc<dyn Fn(&libfileparser_core::FileSource) -> Option<libfileparser_core::Raster> + Send + Sync>;
+
 /// The app side of every view: images, 3D, waking.
 pub trait Host {
     fn max_side(&self) -> u32;
@@ -22,6 +27,11 @@ pub trait Host {
     /// libgui's `Response::pinch` is touch only; windowing reports trackpads separately.
     fn trackpad_pinch(&self) -> f32 {
         0.0
+    }
+    /// How the formatted-text view opens the images a document embeds; `None` (the
+    /// default) shows their alt text instead.
+    fn image_opener(&self) -> Option<ImageOpener> {
+        None
     }
     /// Waits for background work (image bands, textures) before drawing: screenshots.
     fn settles(&self) -> bool {

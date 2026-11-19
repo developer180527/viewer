@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use libfileparser_core::{Category, Confidence, Content, Detection, Document, FileSource, FormatInfo, OwnedFlow, ParseContext, ParseError, Reader, ReaderInfo, Result, Role, Warning};
+use libfileparser_core::{Category, Confidence, Content, Detection, Document, FileSource, FormatInfo, OwnedFlow, ParseContext, ParseError, Reader, ReaderInfo, Result, Role};
 
 use crate::build::Builder;
 
@@ -42,23 +42,72 @@ impl Reader for MobiReader {
         })?;
         cx.cancel.check()?;
         let mut b = Builder::new(cx);
+        // Its pictures by their record numbers: `<img recindex="00001">` becomes a
+        // reference the flow serves.
+        let names: Vec<Option<String>> = book.images.iter().enumerate().map(|(i, bytes)| picture_name(i + 1, bytes)).collect();
         if book.html {
-            crate::html::parse(&book.text, src.name(), &mut b)?;
+            let text = recindex_to_src(&book.text, &names);
+            crate::html::parse(&text, src.name(), &mut b)?;
         } else {
             crate::html::parse(&crate::mail::text_html(&book.text), src.name(), &mut b)?;
         }
-        let mut doc = Document::new(FormatInfo::new("mobi", if book.html { "Kindle book" } else { "PalmDOC book" }, Category::Docs)).with_facet(Role::Primary, "Book", Content::Flow(Arc::new(OwnedFlow::new(b.finish()?))));
+        let shown = names.iter().flatten().count();
+        let flow = book.images.into_iter().zip(names).filter_map(|(bytes, name)| Some((name?, bytes))).fold(OwnedFlow::new(b.finish()?), |f, (name, bytes)| f.with_resource(name.clone(), FileSource::from_bytes(name, bytes)));
+        let mut doc = Document::new(FormatInfo::new("mobi", if book.html { "Kindle book" } else { "PalmDOC book" }, Category::Docs)).with_facet(Role::Primary, "Book", Content::Flow(Arc::new(flow)));
         if !book.title.trim().is_empty() {
             doc = doc.with_meta("Title", book.title.trim());
         }
         for (k, v) in &book.meta {
             doc = doc.with_meta(*k, v.trim());
         }
-        if book.images > 0 {
-            doc = doc.with_warning(Warning::new(format!("{} image(s) in the book aren't shown yet.", book.images)));
+        if shown > 0 {
+            doc = doc.with_meta("Images", shown);
         }
         Ok(doc.with_file_facets(src, None))
     }
+}
+
+/// A picture's name in the flow, `image-00001.jpg`, by its number and kind; `None` for
+/// a record that isn't one.
+fn picture_name(n: usize, bytes: &[u8]) -> Option<String> {
+    let ext = if bytes.starts_with(&[0xFF, 0xD8]) {
+        "jpg"
+    } else if bytes.starts_with(b"\x89PNG") {
+        "png"
+    } else if bytes.starts_with(b"GIF8") {
+        "gif"
+    } else if bytes.starts_with(b"BM") {
+        "bmp"
+    } else {
+        return None;
+    };
+    Some(format!("image-{n:05}.{ext}"))
+}
+
+/// Mobipocket's `recindex="00001"` (an `<img>`'s picture by number) as `src="…"`, the
+/// name the flow serves it by.
+fn recindex_to_src(html: &str, names: &[Option<String>]) -> String {
+    let mut out = String::with_capacity(html.len());
+    let mut rest = html;
+    while let Some(at) = rest.find("recindex=") {
+        out.push_str(&rest[..at]);
+        let after = &rest[at + "recindex=".len()..];
+        let quoted = after.starts_with(['"', '\'']);
+        let digits: String = after.trim_start_matches(['"', '\'']).chars().take_while(char::is_ascii_digit).collect();
+        let len = digits.len() + if quoted { 2 } else { 0 };
+        match digits.parse::<usize>().ok().and_then(|n| names.get(n.checked_sub(1)?)).and_then(Option::as_ref) {
+            Some(name) if !digits.is_empty() => {
+                out.push_str(&format!("src=\"{name}\""));
+                rest = &after[len.min(after.len())..];
+            }
+            _ => {
+                out.push_str("recindex=");
+                rest = after;
+            }
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 const OLE: &[u8] = &[0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1];
@@ -137,6 +186,14 @@ mod tests {
         assert_eq!(HwpReader.detect(b"HWP Document File V3.00 \x1a\x01\x02\x03\x04\x05", "a").confidence, Confidence::Magic);
         assert_eq!(HwpReader.detect(OLE, "a.doc"), Detection::NONE);
         assert_eq!(HwpReader.detect(OLE, "a.hwp").confidence, Confidence::Certain);
+    }
+
+    #[test]
+    fn pictures_by_record_number() {
+        let names = vec![Some("image-00001.jpg".to_string()), None, Some("image-00003.png".to_string())];
+        assert_eq!(recindex_to_src(r#"<img recindex="00001"><img recindex='3' alt=x><img recindex="00002"><img recindex="9">"#, &names), r#"<img src="image-00001.jpg"><img src="image-00003.png" alt=x><img recindex="00002"><img recindex="9">"#);
+        assert_eq!(picture_name(2, b"\x89PNG\r\n"), Some("image-00002.png".into()));
+        assert_eq!(picture_name(2, b"FONT"), None);
     }
 
     #[test]

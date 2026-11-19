@@ -73,7 +73,8 @@ impl Reader for EmlReader {
         let mut html = String::new();
         message_html(m, &mut html, 0);
         crate::html::parse(&html, src.name(), &mut b)?;
-        let mut doc = Document::new(FormatInfo::new("eml", "Email message", Category::Docs)).with_facet(Role::Primary, "Message", Content::Flow(Arc::new(OwnedFlow::new(b.finish()?))));
+        let flow = with_parts(OwnedFlow::new(b.finish()?), m, cx)?;
+        let mut doc = Document::new(FormatInfo::new("eml", "Email message", Category::Docs)).with_facet(Role::Primary, "Message", Content::Flow(Arc::new(flow)));
         doc = with_message_facets(doc, m);
         Ok(doc.with_file_facets(src, Some("email")))
     }
@@ -105,6 +106,32 @@ fn with_message_facets(mut doc: Document, m: MessageRef) -> Document {
         doc = doc.with_meta("Date", d.to_rfc3339());
     }
     doc
+}
+
+/// `flow` serving the message's pictures as its HTML names them: an inline one by
+/// `cid:` and its Content-ID, a saved page's by its `Content-Location`.
+fn with_parts(mut flow: OwnedFlow, m: MessageRef, cx: &ParseContext) -> Result<OwnedFlow> {
+    for (n, a) in m.attachments().enumerate() {
+        let Some(ct) = a.content_type() else { continue };
+        if !ct.ctype().eq_ignore_ascii_case("image") {
+            continue;
+        }
+        let (cid, location) = (a.content_id().map(|c| c.trim_matches(['<', '>']).to_string()), a.content_location().map(str::to_string));
+        if cid.is_none() && location.is_none() {
+            continue;
+        }
+        let bytes = a.decoded();
+        cx.limits.check(libfileparser_core::Limit::Allocation, bytes.len() as u64)?;
+        let name = a.attachment_name().map(str::to_string).or_else(|| location.as_deref().and_then(|l| l.rsplit('/').next()).filter(|s| !s.is_empty()).map(str::to_string)).unwrap_or_else(|| format!("part-{}.{}", n + 1, ct.subtype().unwrap_or("bin")));
+        let file = FileSource::from_bytes(name, bytes.into_owned());
+        if let Some(c) = cid {
+            flow = flow.with_resource(format!("cid:{c}"), file.clone());
+        }
+        if let Some(l) = location {
+            flow = flow.with_resource(l, file);
+        }
+    }
+    Ok(flow)
 }
 
 /// A header's value as text: decoded where mail-parser understands it, raw otherwise.
@@ -361,7 +388,8 @@ impl Reader for MhtReader {
             })
             .collect();
         let n = resources.len();
-        let mut doc = Document::new(FormatInfo::new("mhtml", "Web archive", Category::Docs)).with_facet(Role::Primary, "Page", Content::Flow(Arc::new(OwnedFlow::new(b.finish()?))));
+        let flow = with_parts(OwnedFlow::new(b.finish()?), m, cx)?;
+        let mut doc = Document::new(FormatInfo::new("mhtml", "Web archive", Category::Docs)).with_facet(Role::Primary, "Page", Content::Flow(Arc::new(flow)));
         if n > 0 {
             let cols = vec![Column::new("Location"), Column::new("Type"), Column::new("Size").with_kind(ValueKind::Number)];
             doc = doc.with_facet(Role::Structure, "Resources", Content::Table(Arc::new(OwnedTable::new(cols, resources)))).with_meta("Resources", n);
@@ -418,7 +446,11 @@ fn open_msg(src: &FileSource, cx: &ParseContext) -> Result<Document> {
         }
         let mut b = Builder::new(cx);
         crate::html::parse(&html, src.name(), &mut b)?;
-        let mut doc = Document::new(FormatInfo::new("msg", "Outlook message", Category::Docs)).with_facet(Role::Primary, "Message", Content::Flow(Arc::new(OwnedFlow::new(b.finish()?))));
+        // Inline pictures, which its HTML names `cid:…`.
+        let flow = o.attachments.iter().filter(|a| !a.content_id.is_empty() && !a.payload_bytes.is_empty()).fold(OwnedFlow::new(b.finish()?), |f, a| {
+            f.with_resource(format!("cid:{}", a.content_id.trim_matches(['<', '>'])), FileSource::from_bytes(attachment_name(a), a.payload_bytes.clone()))
+        });
+        let mut doc = Document::new(FormatInfo::new("msg", "Outlook message", Category::Docs)).with_facet(Role::Primary, "Message", Content::Flow(Arc::new(flow)));
         let attachments: Vec<Vec<Value>> = o.attachments.iter().map(|a| vec![Value::Text(attachment_name(a)), Value::Text(a.mime_tag.clone()), Value::Int(a.payload_bytes.len() as i64)]).collect();
         if !attachments.is_empty() {
             let n = attachments.len();
@@ -538,6 +570,15 @@ mod tests {
     }
 
     #[test]
+    fn inline_pictures_by_content_id() {
+        let m = b"From: a@b.c\r\nSubject: s\r\nContent-Type: multipart/related; boundary=x\r\n\r\n--x\r\nContent-Type: text/html\r\n\r\n<p>Logo: <img src=\"cid:logo@here\"></p>\r\n--x\r\nContent-Type: image/png\r\nContent-ID: <logo@here>\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n--x--\r\n";
+        let doc = EmlReader.open(&FileSource::from_bytes("a.eml", m.to_vec()), &ParseContext::new()).unwrap();
+        has(&flow(&doc), &["Image { reference: \"cid:logo@here\""]);
+        let Content::Flow(f) = doc.facet(0, &ParseContext::new()).unwrap() else { panic!() };
+        assert_eq!(f.resource("cid:logo@here").unwrap().range(0, 4).to_vec(), b"\x89PNG");
+    }
+
+    #[test]
     fn a_mailbox() {
         let mbox = b"From ann@example.com Sat Jan  3 01:05:34 1996\nFrom: Ann <ann@example.com>\nSubject: first\n\nOne.\n\nFrom bob@example.com Sat Jan  3 02:05:34 1996\nFrom: bob@example.com\nSubject: second\n\n>From the start\n";
         let src = FileSource::from_bytes("box", mbox.to_vec());
@@ -556,6 +597,9 @@ mod tests {
         assert_eq!(MhtReader.detect(src.header(), "p.mht").confidence, Confidence::Content);
         let doc = MhtReader.open(&src, &ParseContext::new()).unwrap();
         has(&flow(&doc), &["Heading { level: 1, text: [Text(\"Saved page\")]"]);
+        // The page's picture, by the URL it was saved from.
+        let Content::Flow(f) = doc.facet(0, &ParseContext::new()).unwrap() else { panic!() };
+        assert_eq!(f.resource("https://example.org/a.png").unwrap().range(0, 4).to_vec(), b"\x89PNG");
         assert!(doc.metadata().iter().any(|(k, v)| k == "Saved from" && v == "https://example.org/page"));
         assert!(doc.metadata().iter().any(|(k, v)| k == "Resources" && v == "1"));
     }

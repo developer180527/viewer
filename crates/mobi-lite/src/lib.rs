@@ -5,8 +5,9 @@
 //! metadata (author, publisher, description, ISBN, language…), and the text, through
 //! each compression a book uses: none, PalmDOC's LZ77, and Mobipocket's Huffman
 //! (HUFF/CDIC, as calibre and libmobi read it), with trailing record entries removed.
-//! The text is the book's own HTML. Protected (DRM) books are refused; images are
-//! counted, not decoded.
+//! The text is the book's own HTML. Protected (DRM) books are refused. Its pictures are
+//! the image records, in the order its HTML numbers them (`<img recindex="00001">` is
+//! the first); their bytes are JPEG, PNG, GIF or BMP files, as written.
 //!
 //! ```
 //! # fn book() -> Vec<u8> { std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../corpus/files/docs/sample.mobi")).unwrap() }
@@ -92,8 +93,10 @@ pub struct Book {
     /// Its EXTH metadata: Author, Publisher, Description, ISBN, Subject, Published,
     /// Language.
     pub meta: Vec<(&'static str, String)>,
-    /// Image records it holds (JPEG, PNG, GIF, BMP).
-    pub images: usize,
+    /// Its pictures, by the number its HTML gives them (`recindex`, from 1): the
+    /// records from the first image record on, each a JPEG, PNG, GIF or BMP file, or
+    /// empty where a record there isn't one (fonts, resources the reader skips).
+    pub images: Vec<Vec<u8>>,
 }
 
 fn be16(b: &[u8], at: usize) -> Option<u16> {
@@ -204,7 +207,12 @@ pub fn read(data: &[u8], limits: &Limits, stop: &dyn Fn() -> bool) -> Result<Boo
             return Err(Error::TooLarge { max: limits.max_text });
         }
     }
-    let images = first_image.map_or(0, |f| (f..count).filter_map(record).filter(|r| r.starts_with(&[0xFF, 0xD8]) || r.starts_with(b"\x89PNG") || r.starts_with(b"GIF8") || r.starts_with(b"BM")).count());
+    let is_image = |r: &[u8]| r.starts_with(&[0xFF, 0xD8]) || r.starts_with(b"\x89PNG") || r.starts_with(b"GIF8") || r.starts_with(b"BM");
+    let mut images: Vec<Vec<u8>> = first_image.map_or_else(Vec::new, |f| (f..count).map(|i| record(i).filter(|r| is_image(r)).map(<[u8]>::to_vec).unwrap_or_default()).collect());
+    // Past the last picture: nothing the HTML names.
+    while images.last().is_some_and(Vec::is_empty) {
+        images.pop();
+    }
     let text = decode(&text, utf8);
     // PalmDOC is plain text, unless its text is HTML (as some converters write it).
     let lead = text.trim_start().get(..64).unwrap_or(text.trim_start()).to_ascii_lowercase();

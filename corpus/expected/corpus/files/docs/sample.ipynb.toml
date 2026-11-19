@@ -3,12 +3,13 @@ format = "Jupyter notebook"
 model = "Rich text"
 
 [flow]
-blocks = 5
-kinds = ["Heading", "Paragraph", "Code"]
+blocks = 8
+kinds = ["Heading", "Paragraph", "Code", "Paragraph", "Code", "Image"]
 
 [metadata]
-Cells = "2"
-"Code cells" = "1"
+Cells = "3"
+"Code cells" = "2"
 Language = "python"
 Format = "nbformat 4.5"
 Kernel = "Python 3"
+Images = "1"

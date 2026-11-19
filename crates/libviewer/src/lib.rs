@@ -39,7 +39,7 @@ use std::sync::Arc;
 use libfileparser_core::{Container, Content};
 use libgui::{TextureId, Ui};
 
-pub use host::{Frame3d, Host, SceneGpu, Waker, draw_scene};
+pub use host::{Frame3d, Host, ImageOpener, SceneGpu, Waker, draw_scene};
 pub use markdown::{FlowView, flow};
 pub use pages::{PagesView, pages};
 pub use raster::{RasterView, raster};
@@ -78,7 +78,7 @@ impl View {
             Content::Container(c) => Self::Table(TableView::for_container(c.as_ref())),
             Content::Scene(_) => Self::Scene(Box::default()),
             Content::Pages(_) => Self::Pages(Box::default()),
-            Content::Flow(f) => Self::Flow(Box::new(FlowView::new(f.as_ref()))),
+            Content::Flow(f) => Self::Flow(Box::new(FlowView::new(f.clone()))),
             _ => Self::None,
         }
     }
@@ -89,6 +89,7 @@ impl View {
             Self::Raster(st) => st.textures(),
             Self::Scene(st) => st.textures(),
             Self::Pages(st) => st.textures(),
+            Self::Flow(st) => st.textures(),
             _ => Vec::new(),
         }
     }
@@ -106,7 +107,7 @@ pub fn show(ui: &mut Ui, content: &Content, view: &mut View, host: &mut dyn Host
         (Content::Raster(r), View::Raster(v)) => raster(ui, r, v, host),
         (Content::Scene(s), View::Scene(v)) => scene(ui, s, v, host),
         (Content::Pages(p), View::Pages(v)) => pages(ui, p, v, host),
-        (Content::Flow(_), View::Flow(v)) => flow(ui, v),
+        (Content::Flow(_), View::Flow(v)) => flow(ui, v, host),
         (Content::Scene(_) | Content::Raster(_) | Content::Tree(_) | Content::Table(_) | Content::Container(_) | Content::Pages(_) | Content::Flow(_), _) => {
             ui.label_muted("This view was made for other content.");
         }

@@ -149,12 +149,15 @@ fn tei(text: &str) -> Result<Rendered> {
     Ok(xml(xmldoc_lite::tei(text)))
 }
 
+/// A FictionBook, its pictures (base64 `<binary>` elements) served by their ids.
 fn fb2(text: &str) -> Result<Rendered> {
-    Ok(xml(xmldoc_lite::fictionbook(text)))
+    let mut r = xml(xmldoc_lite::fictionbook(text));
+    r.resources = xmldoc_lite::fictionbook_images(text).into_iter().map(|i| (i.id.clone(), FileSource::from_bytes(i.id, i.bytes))).collect();
+    Ok(r)
 }
 
 fn xml(h: xmldoc_lite::Html) -> Rendered {
-    Rendered { html: h.html, title: h.title, warnings: h.warnings }
+    Rendered { html: h.html, title: h.title, warnings: h.warnings, resources: Vec::new() }
 }
 
 #[cfg(test)]
@@ -208,7 +211,7 @@ mod tests {
 <FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><author><first-name>Leo</first-name><last-name>Tolstoy</last-name></author><book-title>War &amp; Peace</book-title></title-info></description>
 <body><title><p>Book One</p></title><section><title><p>Chapter 1</p></title><p>Well, <emphasis>Prince</emphasis>, so <strong>Genoa</strong> and Lucca.<a l:href="#n1">1</a></p><empty-line/><poem><stanza><v>A line</v></stanza></poem><image l:href="#pic.jpg"/></section></body>
 <body name="notes"><section id="n1"><title><p>1</p></title><p>A note.</p></section></body><binary id="pic.jpg" content-type="image/jpeg">/9j/4AAQ</binary></FictionBook>"##);
-        has(&s, &["Heading { level: 1, text: [Text(\"War & Peace\")]", "Leo Tolstoy", "Book One", "Heading { level: 1, text: [Text(\"Chapter 1\")]", "Emphasis([Text(\"Prince\")])", "Strong([Text(\"Genoa\")])", "Superscript", "Quote", "A line", "[Image: pic.jpg]", "A note."]);
+        has(&s, &["Heading { level: 1, text: [Text(\"War & Peace\")]", "Leo Tolstoy", "Book One", "Heading { level: 1, text: [Text(\"Chapter 1\")]", "Emphasis([Text(\"Prince\")])", "Strong([Text(\"Genoa\")])", "Superscript", "Quote", "A line", "Image { reference: \"pic.jpg\"", "A note."]);
         assert!(!s.contains("/9j/"), "{s}");
         assert!(doc.metadata().iter().any(|(k, v)| k == "Title" && v == "War & Peace"));
     }

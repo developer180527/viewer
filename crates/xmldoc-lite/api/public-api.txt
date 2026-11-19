@@ -13,6 +13,18 @@ pub fn xmldoc_lite::Html::default() -> xmldoc_lite::Html
 impl core::fmt::Debug for xmldoc_lite::Html
 pub fn xmldoc_lite::Html::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
 impl core::marker::StructuralPartialEq for xmldoc_lite::Html
+pub struct xmldoc_lite::Image
+pub xmldoc_lite::Image::bytes: alloc::vec::Vec<u8>
+pub xmldoc_lite::Image::content_type: alloc::string::String
+pub xmldoc_lite::Image::id: alloc::string::String
+impl core::clone::Clone for xmldoc_lite::Image
+pub fn xmldoc_lite::Image::clone(&self) -> xmldoc_lite::Image
+impl core::cmp::Eq for xmldoc_lite::Image
+impl core::cmp::PartialEq for xmldoc_lite::Image
+pub fn xmldoc_lite::Image::eq(&self, &xmldoc_lite::Image) -> bool
+impl core::fmt::Debug for xmldoc_lite::Image
+pub fn xmldoc_lite::Image::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for xmldoc_lite::Image
 pub struct xmldoc_lite::Presentation
 pub xmldoc_lite::Presentation::html: xmldoc_lite::Html
 pub xmldoc_lite::Presentation::slides: usize
@@ -29,6 +41,7 @@ impl core::marker::StructuralPartialEq for xmldoc_lite::Presentation
 pub fn xmldoc_lite::docbook(&str) -> xmldoc_lite::Html
 pub fn xmldoc_lite::element_text(&str, &str) -> core::option::Option<alloc::string::String>
 pub fn xmldoc_lite::fictionbook(&str) -> xmldoc_lite::Html
+pub fn xmldoc_lite::fictionbook_images(&str) -> alloc::vec::Vec<xmldoc_lite::Image>
 pub fn xmldoc_lite::is_docbook(&[u8]) -> bool
 pub fn xmldoc_lite::is_fictionbook(&[u8]) -> bool
 pub fn xmldoc_lite::is_tei(&[u8]) -> bool

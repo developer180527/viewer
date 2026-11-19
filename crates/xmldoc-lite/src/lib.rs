@@ -555,7 +555,7 @@ pub fn tei(text: &str) -> Html {
 }
 
 /// A FictionBook: its title and author from `<title-info>`, then its bodies.
-/// Images are base64 in `<binary>` elements, named here but not shown yet.
+/// Its pictures are `<img>`s by id; their bytes are [`fictionbook_images`]'s.
 pub fn fictionbook(text: &str) -> Html {
     let find = |tag: &str| -> Option<String> {
         let info = &text[text.find("<title-info")?..];
@@ -597,7 +597,8 @@ pub fn fictionbook(text: &str) -> Html {
         },
         |name, e| match name {
             "empty-line" => Some("<p></p>".into()),
-            "image" => attr(e, "href").map(|h| format!("<p><em>[Image: {}]</em></p>", esc(h.trim_start_matches('#')))),
+            // A picture the book carries (`#id`, see [`fictionbook_images`]), by its id.
+            "image" => attr(e, "href").map(|h| format!("<img src=\"{}\" alt=\"{}\">", esc(h.trim_start_matches('#')), esc(&attr(e, "alt").unwrap_or_default()))),
             _ => None,
         },
     );
@@ -609,6 +610,76 @@ pub fn fictionbook(text: &str) -> Html {
         r.title = Some(t.clone());
     }
     r
+}
+
+/// A picture a FictionBook carries: its id (what `<image l:href="#id">` names, and
+/// [`fictionbook`]'s `<img src>`), its content type, and its decoded bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Image {
+    pub id: String,
+    pub content_type: String,
+    pub bytes: Vec<u8>,
+}
+
+/// The pictures in a FictionBook's `<binary>` elements (base64), in order. One that
+/// doesn't decode is left out.
+pub fn fictionbook_images(text: &str) -> Vec<Image> {
+    let mut out = Vec::new();
+    let mut r = quick_xml::Reader::from_str(text);
+    r.config_mut().check_end_names = false;
+    let mut current: Option<(String, String, String)> = None;
+    loop {
+        match r.read_event() {
+            Ok(Event::Start(e)) if e.local_name().as_ref() == b"binary" => {
+                current = Some((attr(&e, "id").unwrap_or_default(), attr(&e, "content-type").unwrap_or_default(), String::new()));
+            }
+            Ok(Event::Text(t)) => {
+                if let Some((_, _, data)) = current.as_mut() {
+                    data.push_str(&String::from_utf8_lossy(t.as_ref()));
+                }
+            }
+            Ok(Event::End(e)) if e.local_name().as_ref() == b"binary" => {
+                if let Some((id, content_type, data)) = current.take()
+                    && let Some(bytes) = base64(&data)
+                    && !id.is_empty()
+                {
+                    out.push(Image { id, content_type, bytes });
+                }
+            }
+            Ok(Event::Eof) | Err(_) => break,
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Standard base64, white space ignored; `None` when it isn't.
+fn base64(text: &str) -> Option<Vec<u8>> {
+    let value = |c: u8| -> Option<u32> {
+        Some(match c {
+            b'A'..=b'Z' => c - b'A',
+            b'a'..=b'z' => c - b'a' + 26,
+            b'0'..=b'9' => c - b'0' + 52,
+            b'+' | b'-' => 62,
+            b'/' | b'_' => 63,
+            _ => return None,
+        } as u32)
+    };
+    let mut out = Vec::with_capacity(text.len() * 3 / 4);
+    let (mut acc, mut bits) = (0u32, 0);
+    for c in text.bytes().filter(|c| !c.is_ascii_whitespace()) {
+        if c == b'=' {
+            break;
+        }
+        acc = (acc << 6) | value(c)?;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((acc >> bits) as u8);
+            acc &= (1 << bits) - 1;
+        }
+    }
+    Some(out)
 }
 
 /// The title in a TEI header's `<titleStmt>`.

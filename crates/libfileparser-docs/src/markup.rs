@@ -26,13 +26,15 @@ pub(crate) struct Rendered {
     pub html: String,
     pub title: Option<String>,
     pub warnings: Vec<String>,
+    /// Files the HTML's images name, by that name (a FictionBook's pictures).
+    pub resources: Vec<(String, FileSource)>,
 }
 
 pub(crate) use markup_lite::{esc, strip_tags};
 
 impl From<markup_lite::Html> for Rendered {
     fn from(h: markup_lite::Html) -> Self {
-        Rendered { html: h.html, title: h.title, warnings: h.warnings }
+        Rendered { html: h.html, title: h.title, warnings: h.warnings, resources: Vec::new() }
     }
 }
 
@@ -79,7 +81,8 @@ pub(crate) fn read(src: &FileSource, cx: &ParseContext, id: &'static str, kind: 
     cx.cancel.check()?;
     let mut b = Builder::new(cx);
     crate::html::parse(&rendered.html, src.name(), &mut b)?;
-    let mut doc = Document::new(FormatInfo::new(id, kind, Category::Docs)).with_facet(Role::Primary, "Document", Content::Flow(Arc::new(OwnedFlow::new(b.finish()?))));
+    let flow = rendered.resources.into_iter().fold(OwnedFlow::new(b.finish()?), |f, (name, file)| f.with_resource(name, file));
+    let mut doc = Document::new(FormatInfo::new(id, kind, Category::Docs)).with_facet(Role::Primary, "Document", Content::Flow(Arc::new(flow)));
     if let Some(t) = rendered.title.as_deref().map(str::trim).filter(|t| !t.is_empty()) {
         doc = doc.with_meta("Title", t);
     }
@@ -118,7 +121,7 @@ fn rst(text: &str) -> Result<Rendered> {
         warnings.push(format!("{} line(s) over {LONG_LINE} characters shown without their inline formatting: reading them as reStructuredText takes too long.", long.len()));
     }
     let title = w.title.map(|t| long.iter().enumerate().fold(t, |t, (n, line)| t.replacen(&placeholder(n), line.trim(), 1)));
-    Ok(Rendered { html: w.out, title, warnings })
+    Ok(Rendered { html: w.out, title, warnings, ..Rendered::default() })
 }
 
 /// Characters in one line past which rst_parser is too slow: its parse grows with the
@@ -364,7 +367,7 @@ fn asciidoc(text: &str) -> Result<Rendered> {
     let mut warnings = Vec::new();
     adoc_blocks(doc.child_blocks(), &mut out, 0, &mut warnings);
     let title = doc.doctitle_sanitized().or(title);
-    Ok(Rendered { html: out, title, warnings })
+    Ok(Rendered { html: out, title, warnings, ..Rendered::default() })
 }
 
 fn adoc_blocks<'a>(blocks: impl Iterator<Item = &'a asciidoc_parser::blocks::Block<'a>>, out: &mut String, depth: usize, warnings: &mut Vec<String>) {
@@ -511,7 +514,7 @@ fn typst(text: &str) -> Result<Rendered> {
     t.end_para();
     let (errors, _) = root.errors_and_warnings();
     let warnings = if errors.is_empty() { Vec::new() } else { vec![format!("{} syntax error(s); the text around them is shown as Typst read it.", errors.len())] };
-    Ok(Rendered { html: t.out, title: t.title, warnings })
+    Ok(Rendered { html: t.out, title: t.title, warnings, ..Rendered::default() })
 }
 
 struct Typst {

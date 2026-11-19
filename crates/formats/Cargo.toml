@@ -11,6 +11,8 @@ viewer-core.workspace = true
 viewer-fmt-doc.workspace = true
 libfileparser.workspace = true
 libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
+# Images a document embeds open with the image readers alone (`open_image`).
+libfileparser-images.workspace = true
 # PDFKit for PDF on Apple platforms: the reader on iOS, where MuPDF's AGPL can't ship,
 # and on macOS when VIEWER_PDF_BACKEND=pdfkit (docs/design/pdf.md §2).
 libfileparser-pdfkit.workspace = true

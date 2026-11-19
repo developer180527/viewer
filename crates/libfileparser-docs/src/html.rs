@@ -135,7 +135,10 @@ fn open(name: &str, e: ElementRef, base: &str, b: &mut Builder, pre: &mut usize,
             if src.is_empty() || src.starts_with("data:") {
                 return Ok(());
             }
-            let reference = if src.contains("://") { src } else { resolve(base, &src) };
+            // A URL (`https://…`) or a reference with a scheme (a message's `cid:` part)
+            // is kept as written; anything else is a path in the package.
+            let scheme = src.split_once(':').is_some_and(|(s, _)| s.len() > 1 && s.chars().all(|c| c.is_ascii_alphanumeric() || "+-.".contains(c)));
+            let reference = if src.contains("://") || scheme { src } else { resolve(base, &src) };
             b.image(&reference, &attr("alt").unwrap_or_default())
         }
         _ => Ok(()),

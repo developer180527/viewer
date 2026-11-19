@@ -7,8 +7,11 @@
 //! and look at the new PNGs before committing them. A failing render leaves what was
 //! drawn in `target/tmp/flow-golden/`.
 
-use libfileparser_core::{Block, Inline, OwnedFlow};
+use std::sync::Arc;
+
+use libfileparser_core::{Block, FileSource, Inline, OwnedFlow, Raster};
 use libgui::*;
+use libviewer::{Frame3d, Host, ImageOpener, SceneGpu};
 
 const INTER: &[u8] = include_bytes!("../../app/assets/Inter.ttf");
 const INTER_BOLD: &[u8] = include_bytes!("../../app/assets/Inter-Bold.ttf");
@@ -56,9 +59,67 @@ fn document() -> Vec<Block> {
         Block::Quote(vec![Block::Paragraph(vec![t("A quote with "), Inline::Emphasis(vec![t("emphasis")]), t(".")])]),
         Block::Code { language: Some("rust".into()), text: "fn main() {\n    println!(\"hi\");\n}".into() },
         Block::Table { header_rows: 1, rows: vec![vec![vec![t("Name")], vec![t("Size")]], vec![vec![t("alpha")], vec![t("12")]], vec![vec![Inline::Strong(vec![t("beta")])], vec![t("3")]]] },
+        Block::Image { reference: "media/stripes.raw".into(), alt: "Stripes".into() },
+        Block::Image { reference: "media/wide.raw".into(), alt: "A wide one".into() },
+        Block::Image { reference: "missing.png".into(), alt: "Not in the document".into() },
         Block::Rule,
         Block::Paragraph(vec![t("The end.")]),
     ]
+}
+
+/// A test image file: its width and height (u32, little-endian), then RGBA.
+fn raw(w: u32, h: u32, px: impl Fn(u32, u32) -> [u8; 4]) -> Vec<u8> {
+    let mut b = [w.to_le_bytes(), h.to_le_bytes()].concat();
+    for y in 0..h {
+        for x in 0..w {
+            b.extend_from_slice(&px(x, y));
+        }
+    }
+    b
+}
+
+/// What the app's image readers would do, for the test's raw images.
+fn opener() -> ImageOpener {
+    Arc::new(|file: &FileSource| {
+        let b = file.range(0, file.len() as usize).to_vec();
+        let (w, h) = (u32::from_le_bytes(b.get(0..4)?.try_into().ok()?), u32::from_le_bytes(b.get(4..8)?.try_into().ok()?));
+        Raster::new(w, h, b[8..].to_vec()).ok()
+    })
+}
+
+/// The app's side, drawn on the CPU: images to the soft renderer, no 3D.
+struct TestHost {
+    soft: libgui_soft::SoftRenderer,
+    uploads: Vec<(u32, u32)>,
+}
+
+impl Host for TestHost {
+    fn max_side(&self) -> u32 {
+        8192
+    }
+    fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
+        self.uploads.push((width, height));
+        self.soft.register_texture(libgui_soft::Texture { width, height, data: rgba.to_vec() })
+    }
+    fn pixels_per_point(&self) -> f32 {
+        1.0
+    }
+    fn image_opener(&self) -> Option<ImageOpener> {
+        Some(opener())
+    }
+    fn settles(&self) -> bool {
+        true
+    }
+    fn free(&mut self, _: TextureId) {}
+    fn render_scene(&mut self, _: &mut SceneGpu, _: &rendererx::scene_data::CpuScene, _: (u32, u32), _: &rendererx::Camera, _: [f32; 4]) -> Frame3d {
+        Frame3d::failed("no 3D in this test")
+    }
+}
+
+fn flow() -> Arc<OwnedFlow> {
+    let stripes = raw(160, 60, |x, _| if (x / 20) % 2 == 0 { [220, 60, 40, 255] } else { [40, 90, 200, 255] });
+    let wide = raw(3000, 40, |x, _| [(x * 255 / 3000) as u8, 160, 80, 255]);
+    Arc::new(OwnedFlow::new(document()).with_resource("media/stripes.raw", FileSource::from_bytes("stripes.raw", stripes)).with_resource("media/wide.raw", FileSource::from_bytes("wide.raw", wide)))
 }
 
 fn render(dark: bool) -> image::RgbaImage {
@@ -68,18 +129,17 @@ fn render(dark: bool) -> image::RgbaImage {
         let face = ui.fonts.add_font(bytes).unwrap();
         ui.set_font_role(role, face);
     }
-    let flow = OwnedFlow::new(document());
-    let mut view = libviewer::FlowView::new(&flow);
+    let mut view = libviewer::FlowView::new(flow());
     let scale = 1.0;
     let info = FrameInfo { screen_size: Vec2::new(SIZE.0, SIZE.1), scale, dt: 1.0 / 60.0 };
-    let mut soft = libgui_soft::SoftRenderer::new();
+    let mut host = TestHost { soft: libgui_soft::SoftRenderer::new(), uploads: Vec::new() };
     let mut last = None;
     // Rects are a frame late, so settle first, as the app's screenshots do.
     for _ in 0..3 {
         ui.begin_frame(info);
-        libviewer::flow(&mut ui, &mut view);
+        libviewer::flow(&mut ui, &mut view, &mut host);
         let out = ui.end_frame();
-        last = Some(soft.render_to_image(&out, SIZE.0 as u32, SIZE.1 as u32));
+        last = Some(host.soft.render_to_image(&out, SIZE.0 as u32, SIZE.1 as u32));
     }
     let img = last.unwrap();
     image::RgbaImage::from_raw(img.width, img.height, img.data).unwrap()
@@ -102,6 +162,23 @@ fn check(name: &str, got: &image::RgbaImage) {
         got.save(out.join(format!("{name}.png"))).unwrap();
         panic!("{name}: {:.1}% of pixels differ from {} (drawn: {})", share * 100.0, path.display(), out.join(format!("{name}.png")).display());
     }
+}
+
+/// The images a document names are opened, scaled to 2048 px at most and uploaded
+/// once; one it doesn't carry shows its alt text.
+#[test]
+fn images_are_decoded_scaled_and_uploaded_once() {
+    let theme = Theme::light();
+    let mut ui = Ui::with_rasterizer(theme, Box::new(FontStack::from_fonts(&[INTER]).unwrap()));
+    let mut view = libviewer::FlowView::new(flow());
+    let mut host = TestHost { soft: libgui_soft::SoftRenderer::new(), uploads: Vec::new() };
+    for _ in 0..3 {
+        ui.begin_frame(FrameInfo { screen_size: Vec2::new(SIZE.0, SIZE.1), scale: 1.0, dt: 1.0 / 60.0 });
+        libviewer::flow(&mut ui, &mut view, &mut host);
+        let _ = ui.end_frame();
+    }
+    assert_eq!(host.uploads, vec![(160, 60), (2048, 27)]);
+    assert_eq!(view.textures().len(), 2);
 }
 
 #[test]

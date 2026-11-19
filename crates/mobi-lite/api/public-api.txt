@@ -20,7 +20,7 @@ pub fn mobi_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt:
 impl core::marker::StructuralPartialEq for mobi_lite::Error
 pub struct mobi_lite::Book
 pub mobi_lite::Book::html: bool
-pub mobi_lite::Book::images: usize
+pub mobi_lite::Book::images: alloc::vec::Vec<alloc::vec::Vec<u8>>
 pub mobi_lite::Book::meta: alloc::vec::Vec<(&'static str, alloc::string::String)>
 pub mobi_lite::Book::text: alloc::string::String
 pub mobi_lite::Book::title: alloc::string::String

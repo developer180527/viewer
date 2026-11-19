@@ -50,6 +50,8 @@ serde_json = "1"
 jotdown = "0.10"
 asciidoc-parser = "0.31"
 typst-syntax = "0.15"
+# Base64 in notebooks' image outputs.
+base64 = "0.22"
 # Mail: RFC 5322 messages, mailboxes and web archives (Stalwart's parser), and
 # Outlook's .msg.
 mail-parser = { version = "1", default-features = false, features = ["full_encoding"] }

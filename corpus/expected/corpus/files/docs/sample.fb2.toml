@@ -3,8 +3,8 @@ format = "FictionBook"
 model = "Rich text"
 
 [flow]
-blocks = 5
-kinds = ["Heading", "Paragraph", "Heading", "Paragraph", "Quote"]
+blocks = 6
+kinds = ["Heading", "Paragraph", "Heading", "Paragraph", "Quote", "Image"]
 
 [metadata]
 Title = "Corpus FictionBook"

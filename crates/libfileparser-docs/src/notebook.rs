@@ -1,12 +1,13 @@
 //! Jupyter notebooks (`.ipynb`, nbformat 2 to 4) as a document: Markdown cells
 //! through the Markdown reader, code cells as code in the kernel's language, and
 //! their outputs after them. An output's HTML (a pandas table, say) becomes formatted
-//! text through `crate::html`; its plain text is shown as written; an image is named,
-//! not shown yet. Nothing in a notebook is run.
+//! text through `crate::html`; its plain text is shown as written; an image (PNG,
+//! JPEG, GIF, SVG) is shown, its bytes the flow's resources. Nothing in a notebook is
+//! run.
 
 use std::sync::Arc;
 
-use libfileparser_core::{Block, Category, Confidence, Content, Detection, Document, FileSource, FormatInfo, Inline, OwnedFlow, ParseContext, ParseError, Reader, ReaderInfo, Result, Role, Warning, is_text};
+use libfileparser_core::{Block, Category, Confidence, Content, Detection, Document, FileSource, FormatInfo, Inline, OwnedFlow, ParseContext, ParseError, Reader, ReaderInfo, Result, Role, is_text};
 use serde_json::Value;
 
 use crate::build::Builder;
@@ -56,6 +57,7 @@ impl Reader for NotebookReader {
         };
         let mut b = Builder::new(cx);
         let (mut code_cells, mut images) = (0usize, 0usize);
+        let mut resources: Vec<(String, FileSource)> = Vec::new();
         for (n, cell) in cells.iter().enumerate() {
             if n % 64 == 0 {
                 cx.cancel.check()?;
@@ -83,7 +85,7 @@ impl Reader for NotebookReader {
                     }
                     b.block(Block::Code { language: lang, text: source.trim_end_matches('\n').to_string() })?;
                     for output in cell.get("outputs").and_then(Value::as_array).into_iter().flatten() {
-                        images += out(output, src.name(), &mut b)?;
+                        images += out(output, src.name(), &mut b, &mut resources)?;
                     }
                 }
                 _ => {
@@ -95,7 +97,7 @@ impl Reader for NotebookReader {
             }
         }
         let mut doc = Document::new(FormatInfo::new("ipynb", "Jupyter notebook", Category::Docs))
-            .with_facet(Role::Primary, "Notebook", Content::Flow(Arc::new(OwnedFlow::new(b.finish()?))))
+            .with_facet(Role::Primary, "Notebook", Content::Flow(Arc::new(resources.into_iter().fold(OwnedFlow::new(b.finish()?), |f, (r, file)| f.with_resource(r, file)))))
             .with_meta("Cells", cells.len())
             .with_meta("Code cells", code_cells);
         if let Some(l) = &language {
@@ -112,7 +114,7 @@ impl Reader for NotebookReader {
             doc = doc.with_meta("Title", t);
         }
         if images > 0 {
-            doc = doc.with_warning(Warning::new(format!("{images} image output(s) named but not shown yet.")));
+            doc = doc.with_meta("Images", images);
         }
         Ok(doc.with_file_facets(src, Some("json")))
     }
@@ -127,8 +129,8 @@ fn text(v: Option<&Value>) -> String {
     }
 }
 
-/// One output of a code cell; how many images it held.
-fn out(o: &Value, base: &str, b: &mut Builder) -> Result<usize> {
+/// One output of a code cell; how many images it showed (their bytes into `resources`).
+fn out(o: &Value, base: &str, b: &mut Builder, resources: &mut Vec<(String, FileSource)>) -> Result<usize> {
     let kind = o.get("output_type").and_then(Value::as_str).unwrap_or("");
     match kind {
         "stream" => {
@@ -149,6 +151,26 @@ fn out(o: &Value, base: &str, b: &mut Builder) -> Result<usize> {
             // types sit on the output itself, by short name).
             let data = o.get("data").unwrap_or(o);
             let get = |keys: &[&str]| keys.iter().find_map(|k| data.get(*k)).map(|v| text(Some(v)));
+            // An image first: a plot often carries an HTML or text stand-in too.
+            let image = [("image/png", "png"), ("image/jpeg", "jpg"), ("image/gif", "gif"), ("image/svg+xml", "svg"), ("png", "png"), ("jpeg", "jpg"), ("svg", "svg")].into_iter().find(|(k, _)| data.get(*k).is_some());
+            if let Some((key, ext)) = image {
+                let raw = text(data.get(key));
+                // SVG is its text; the others are base64, in lines.
+                let bytes = if ext == "svg" {
+                    Some(raw.into_bytes())
+                } else {
+                    use base64::Engine;
+                    let packed: String = raw.chars().filter(|c| !c.is_whitespace()).collect();
+                    base64::engine::general_purpose::STANDARD.decode(packed.as_bytes()).ok()
+                };
+                if let Some(bytes) = bytes {
+                    b.context().limits.check(libfileparser_core::Limit::Allocation, bytes.len() as u64)?;
+                    let name = format!("output-{}.{ext}", resources.len() + 1);
+                    b.block(Block::Image { reference: name.clone(), alt: format!("Output {}", resources.len() + 1) })?;
+                    resources.push((name.clone(), FileSource::from_bytes(name, bytes)));
+                    return Ok(1);
+                }
+            }
             if let Some(html) = get(&["text/html", "html"]) {
                 crate::html::parse(&html, base, b)?;
                 return Ok(0);
@@ -158,11 +180,6 @@ fn out(o: &Value, base: &str, b: &mut Builder) -> Result<usize> {
                     b.block(block)?;
                 }
                 return Ok(0);
-            }
-            let image = ["image/png", "image/jpeg", "image/svg+xml", "image/gif", "png", "jpeg", "svg"].into_iter().find(|k| data.get(*k).is_some());
-            if let Some(kind) = image {
-                b.block(Block::Paragraph(vec![Inline::Emphasis(vec![Inline::Text(format!("[Image output: {kind}]"))])]))?;
-                return Ok(1);
             }
             if let Some(t) = get(&["text/plain", "text", "text/latex", "latex"])
                 && !t.trim().is_empty() {
@@ -215,12 +232,14 @@ mod tests {
         let doc = NotebookReader.open(&src, &ParseContext::new()).unwrap();
         let Content::Flow(f) = doc.facet(0, &ParseContext::new()).unwrap() else { panic!() };
         let s = format!("{:?}", f.blocks(0..100).unwrap());
-        for want in ["Heading { level: 1", "Emphasis", "In [1]:", "language: Some(\"python\")", "import pandas", "hello", "Table", "[Image output: image/png]", "ValueError: bad", "raw text"] {
+        for want in ["Heading { level: 1", "Emphasis", "In [1]:", "language: Some(\"python\")", "import pandas", "hello", "Table", "Image { reference: \"output-1.png\"", "ValueError: bad", "raw text"] {
             assert!(s.contains(want), "{want} in {s}");
         }
         assert!(!s.contains("\u{1b}") && !s.contains("<Figure>"), "{s}");
         assert!(doc.metadata().iter().any(|(k, v)| k == "Kernel" && v == "Python 3"));
-        assert_eq!(doc.warnings().len(), 1);
+        assert!(doc.warnings().is_empty());
+        // The image's bytes, decoded, for the view.
+        assert_eq!(f.resource("output-1.png").unwrap().range(0, 8).to_vec(), b"\x89PNG\r\n\x1a\n");
     }
 
     #[test]
