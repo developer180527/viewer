@@ -16,7 +16,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Result, anyhow};
 use libfileparser::{Confidence, Content, FolderFiles, Limits, Notify, ParseContext, Reader, Role, Spawn};
-use viewer_core::{Document, Facets, FileSource, FormatLoader, Unreadables};
+use viewer_model::{Document, Facets, FileSource, FormatLoader, Unreadables};
 
 /// A libfileparser reader as a Viewer loader.
 pub struct ReaderLoader(pub &'static dyn Reader);
@@ -30,23 +30,23 @@ impl FormatLoader for ReaderLoader {
         self.0.info().name
     }
 
-    fn probe(&self, header: &[u8], _: Option<&str>, name: &str) -> viewer_core::Confidence {
+    fn probe(&self, header: &[u8], _: Option<&str>, name: &str) -> viewer_model::Confidence {
         match self.0.detect(header, name).confidence {
             // A format it owns. A guess from content at that strength, or a format it
             // only also reads (an SVG, to `-data`), loses to a reader that owns it.
-            Confidence::Extension if self.0.info().matches_extension(name) => viewer_core::Confidence::EXTENSION,
-            Confidence::Extension => viewer_core::Confidence::LIKELY,
+            Confidence::Extension if self.0.info().matches_extension(name) => viewer_model::Confidence::EXTENSION,
+            Confidence::Extension => viewer_model::Confidence::LIKELY,
             // What the content proves outranks an extension, as in libfileparser's own
             // order: an OpenAPI description named `.yaml` is OpenAPI, not YAML.
-            Confidence::Content => viewer_core::Confidence(viewer_core::Confidence::EXTENSION.0 + 5),
+            Confidence::Content => viewer_model::Confidence(viewer_model::Confidence::EXTENSION.0 + 5),
             // Two readers sure of the same bytes (a zip that is also an `.ods` whose
             // `mimetype` part isn't first): the one that owns the name wins, as in
             // libfileparser's own order.
-            Confidence::Magic if self.0.info().matches_extension(name) => viewer_core::Confidence::MAGIC,
-            Confidence::Magic => viewer_core::Confidence(viewer_core::Confidence::MAGIC.0 - 1),
+            Confidence::Magic if self.0.info().matches_extension(name) => viewer_model::Confidence::MAGIC,
+            Confidence::Magic => viewer_model::Confidence(viewer_model::Confidence::MAGIC.0 - 1),
             // A format inside a generic container (USDZ, DOCX) outranks the container.
-            Confidence::Certain => viewer_core::Confidence(viewer_core::Confidence::MAGIC.0 + 1),
-            _ => viewer_core::Confidence::NONE,
+            Confidence::Certain => viewer_model::Confidence(viewer_model::Confidence::MAGIC.0 + 1),
+            _ => viewer_model::Confidence::NONE,
         }
     }
 
@@ -111,14 +111,14 @@ fn viewer_document(doc: Arc<libfileparser::Document>, index: usize, src: &FileSo
 /// A facet's content, for libviewer's views as it is: trees read a level at a time,
 /// tables live, images decoded as they're shown. The one exception is the file's own
 /// text (its Source), which goes through Viewer's text loader to be highlighted.
-fn content(doc: &libfileparser::Document, index: usize, src: &FileSource, cx: &ParseContext) -> Result<viewer_core::Content> {
+fn content(doc: &libfileparser::Document, index: usize, src: &FileSource, cx: &ParseContext) -> Result<viewer_model::Content> {
     let info = doc.facets().nth(index).ok_or_else(|| anyhow!("no facet {index}"))?.clone();
     let content = doc.facet(index, cx).map_err(|e| anyhow!("{}: {e}", info.name))?;
     if info.role == Role::Source && matches!(content, Content::Text(_)) {
         let loader = crate::registry().get("text").ok_or_else(|| anyhow!("no text loader"))?;
         return Ok(loader.open(src)?.content);
     }
-    Ok(viewer_core::Content::Model(content))
+    Ok(viewer_model::Content::Model(content))
 }
 
 /// What the app hears when a document gains something (a texture). Set once at

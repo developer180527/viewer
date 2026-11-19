@@ -7,7 +7,7 @@ license.workspace = true
 
 [dependencies]
 anyhow.workspace = true
-viewer-core.workspace = true
+viewer-model.workspace = true
 viewer-fmt-doc.workspace = true
 libfileparser.workspace = true
 libfileparser-core = { workspace = true, features = ["mmap", "scene"] }

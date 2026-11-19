@@ -59,7 +59,7 @@ MIT or Apache-2.0, except `crates/libfileparser-mupdf`, which links MuPDF and is
 ## Layout
 
 ```
-crates/core          traits, content models, registry, hex fallback
+crates/model         traits, content models, registry, hex fallback
 crates/fmt-doc       text / code / Markdown loaders
 crates/libfileparser          the front door: every category together, plus the Source, Package and Raw facets
 crates/libfileparser-core     libfileparser's contracts: documents, facets, links, Reader, hooks, limits
@@ -76,8 +76,9 @@ crates/libfileparser-pdfkit   PDF through Apple's PDFKit, a reader an app regist
 crates/rendererx*    RendererX: the reusable 3D renderer, its CPU scene and glTF loader
 crates/usd-lite      pure-Rust USD reader and composition
 crates/formats       the registry of every loader (app and corpus share it)
+crates/core          viewer-core: the app without its UI (pages, loading, view-as, what each screen shows)
 crates/corpus        test corpus runner: opens every file in corpus/ and checks the result
-crates/app           libgui + wgpu shell: windows, navigation, its policy; hosts libviewer
+crates/app           libgui + wgpu shell: windows, layout, keys; draws viewer-core's session; hosts libviewer
 docs/                design docs (start at docs/README.md): roadmap, decisions, design/ (document model, libfileparser, 3D, architecture, PDF, renderer, UI, editing)
 ios/                 Xcode wrapper and device / simulator scripts
 bench/               sample generator, startup and memory benchmarks

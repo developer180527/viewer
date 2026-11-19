@@ -5,7 +5,7 @@ use std::sync::OnceLock;
 
 use syntect::highlighting::{FontStyle, HighlightIterator, HighlightState, Highlighter, ThemeSet};
 use syntect::parsing::{ParseState, ScopeStack, SyntaxReference, SyntaxSet};
-use viewer_core::{Confidence, Content, Document, FileSource, FormatLoader, Result, Span, TextDoc};
+use viewer_model::{Confidence, Content, Document, FileSource, FormatLoader, Result, Span, TextDoc};
 
 pub static LOADERS: &[&dyn FormatLoader] = &[&TextLoader];
 

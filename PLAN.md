@@ -52,7 +52,7 @@ struct Document {
 }
 ```
 
-This is today's shape, in `viewer-core`. Where it is heading (documents with facets, contracts in their own crate, readers taking a `ParseContext` of hooks): docs/design/document-model.md and docs/design/libfileparser.md.
+This is today's shape, in `viewer-model`. Where it is heading (documents with facets, contracts in their own crate, readers taking a `ParseContext` of hooks): docs/design/document-model.md and docs/design/libfileparser.md.
 
 - **Detection:** magic bytes first (`infer`, `file-format`), then the extension, then content sniffing.
 - **Recursion:** a zip holding a PDF holding images can be browsed level by level.
@@ -263,7 +263,7 @@ Rules, and what the first memory pass found (2026-11-01):
 - **Worker process** for every C/C++ parser (desktop). Communicates over shared memory + IPC. If it crashes, show "couldn't render, showing hex" instead of crashing the app. Sandbox it with seccomp (Linux), App Sandbox (macOS), AppContainer (Windows), pledge/unveil (OpenBSD), Capsicum (FreeBSD).
   - On iOS and HarmonyOS, run in-process: pure-Rust parsers, platform backends, vetted C libraries natively, and other C libraries as WASM (§12.4).
 - **Fuzz** every loader with `cargo-fuzz`, and integrate OSS-Fuzz later.
-- **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document. The first two are in `viewer_core::limits` (256 megapixels; inflating past 64 MB at most 200:1), checked by hostile files in the corpus; they move into `ParseContext` later (docs/design/architecture.md).
+- **Limits:** max decoded pixels, decompression ratio (zip bombs), parse time and memory per document. The first two are in `viewer_model::limits` (256 megapixels; inflating past 64 MB at most 200:1), checked by hostile files in the corpus; they move into `ParseContext` later (docs/design/architecture.md).
 - **Never auto-execute.** Scripts and macros in documents are never run. HTML in the webview runs with JS off and no network by default.
 
 ---
@@ -287,7 +287,7 @@ Today (one repo, one Cargo workspace):
 
 ```
 crates/
-  core/                 viewer-core: FileSource, Document, Content, PageSource, registry, hex fallback
+  model/                viewer-model: FileSource, Document, Content, PageSource, registry, hex fallback
   libfileparser/  libfileparser-core/  libfileparser-testkit/          libfileparser (docs/design/libfileparser.md)
   libfileparser-3d/  -images/  -data/  -text/  -archives/               its categories; each crate's api/ holds its API snapshot
   libviewer/            views for every content model (docs/design/libviewer.md)
@@ -296,8 +296,9 @@ crates/
   rendererx/  scene-data/  gltf-lite/      the reusable 3D renderer (docs/design/3d-renderer.md)
   usd-lite/             pure-Rust USD reader and composition
   formats/              viewer-formats: the registry of every loader, shared by the app and the corpus
+  core/                 viewer-core: the app without its UI (docs/design/apple-ui.md §2)
   corpus/               viewer-corpus: the test corpus runner (corpus/README.md)
-  app/                  libgui shell, loading, single window; hosts libviewer
+  app/                  libgui shell, single window; draws viewer-core's session; hosts libviewer
 corpus/                 test corpus: manifest, synthetic files, expected summaries and renders
 ios/                    Xcode wrapper, device and simulator scripts
 bench/                  startup and memory benchmarks, sample generator
@@ -385,7 +386,7 @@ Phasing: the interface exists now and runs in-process everywhere. The worker pro
 Rules out: calling a parser directly from UI code; native C on iOS that isn't on the vetted list.
 
 ### 12.5 Documents and the editing model
-**Loading.** Loaders produce **plain data that doesn't need the GPU** (CPU-side rasters, text, tables, trees and 3D scenes). This is what lets parsing start at launch, before the window and GPU exist. The renderers upload it later. `viewer-core` never depends on wgpu.
+**Loading.** Loaders produce **plain data that doesn't need the GPU** (CPU-side rasters, text, tables, trees and 3D scenes). This is what lets parsing start at launch, before the window and GPU exist. The renderers upload it later. `viewer-model` never depends on wgpu.
 
 **Editing.** One model for every content type (text, table, tree, raster, 3D scene, media):
 - A document is its loaded content plus a list of **operations**. Every change is a small operation that can be applied and reversed, so undo/redo, "unsaved changes" and autosave work the same everywhere.

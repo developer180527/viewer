@@ -11,7 +11,6 @@ mod alloc;
 static ALLOCATOR: alloc::Allocator = alloc::Allocator;
 
 mod formats;
-mod loading;
 mod startup;
 
 mod lg;
@@ -114,13 +113,21 @@ fn main() {
 
     // The font list, wanted only once a character Inter lacks is drawn.
     lg::scan_system_fonts();
+    // The session wakes the window through WAKE, which exists once the event loop
+    // does: a load that finishes first is seen at the first poll.
+    let hooks = viewer_core::Hooks::new(std::sync::Arc::new(|| {
+        if let Some(wake) = lg::WAKE.get() {
+            wake();
+        }
+    }))
+    .with_trace(startup::mark);
+    let mut session = viewer_core::Session::new(hooks);
     // Kick off decoding before the window exists; it overlaps GPU initialisation.
-    let job = args
-        .path
-        .clone()
-        .map(|p| loading::Job::open_path(p, args.view_as.clone()));
+    if let Some(p) = args.path.clone() {
+        session.open_path_as(p, args.view_as.clone());
+    }
 
-    if let Err(e) = run(args, job) {
+    if let Err(e) = run(args, session) {
         eprintln!("viewer: {e}");
         std::process::exit(1);
     }
@@ -133,8 +140,8 @@ fn window_title(args: &Args) -> String {
         .map_or("Viewer".into(), |n| n.to_string_lossy().into_owned())
 }
 
-fn run(args: Args, job: Option<loading::Job>) -> anyhow::Result<()> {
-    lg::run(window_title(&args), args, job)
+fn run(args: Args, session: viewer_core::Session) -> anyhow::Result<()> {
+    lg::run(window_title(&args), args, session)
 }
 
 /// Writes `--screenshot` output.

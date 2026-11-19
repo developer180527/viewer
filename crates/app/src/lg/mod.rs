@@ -22,7 +22,9 @@ use winit::window::{Window, WindowId};
 use rendererx::Camera;
 use rendererx::scene_data::CpuScene;
 
-use crate::loading::{Job, WAKE};
+/// Set once the event loop exists: wakes the window from another thread (a load
+/// finished, a picker answered, a texture arrived).
+pub static WAKE: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
 use crate::{Args, startup};
 use app::ViewerApp;
 
@@ -101,9 +103,9 @@ impl FontSource for LazySystemFonts {
     }
 }
 
-pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
+pub fn run(title: String, args: Args, session: viewer_core::Session) -> anyhow::Result<()> {
     if let Some(path) = &args.screenshot {
-        return headless(path, args.size.unwrap_or(SIZE), args.info, job);
+        return headless(path, args.size.unwrap_or(SIZE), args.info, session);
     }
     let el = EventLoop::<()>::with_user_event().build().context("creating the event loop")?;
     startup::mark("event loop created");
@@ -123,7 +125,7 @@ pub fn run(title: String, args: Args, job: Option<Job>) -> anyhow::Result<()> {
             wake();
         }
     });
-    let mut app = ViewerApp::new(job, true);
+    let mut app = ViewerApp::new(session, true);
     app.show_info = args.info;
     let mut host = Host { title, app: Some(app), benchmark: args.benchmark, gpu: Some(gpu), ..Default::default() };
     el.run_app(&mut host).context("running the event loop")?;
@@ -293,8 +295,8 @@ const HEADLESS_SCALE: f32 = 2.0;
 
 /// `--screenshot`: wait for the file, draw it on the CPU at 2× and save the
 /// pixels. No window, no GPU, so it runs anywhere (CI included).
-fn headless(path: &Path, size: (f32, f32), info: bool, job: Option<Job>) -> anyhow::Result<()> {
-    let mut app = ViewerApp::new(job, true);
+fn headless(path: &Path, size: (f32, f32), info: bool, session: viewer_core::Session) -> anyhow::Result<()> {
+    let mut app = ViewerApp::new(session, true);
     app.show_info = info;
     app.stable = true;
     while app.loading() && !app.poll_job() {

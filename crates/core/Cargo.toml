@@ -1,12 +1,14 @@
 [package]
 name = "viewer-core"
-description = "Format-agnostic core: file sources, content models, loader registry."
+description = "The app without its UI: open files and their pages, loading, view-as choices and facets, and what each screen shows, as data. Every shell (libgui, SwiftUI) is a client (docs/design/apple-ui.md §2)."
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 
+# No UI: no libgui, no winit, no platform file picker. A shell presents; this decides.
 [dependencies]
+viewer-model.workspace = true
+viewer-formats.workspace = true
 libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
 anyhow.workspace = true
-memmap2.workspace = true
-infer.workspace = true
+

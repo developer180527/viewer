@@ -144,7 +144,7 @@ So each open document has one **page-render thread** (the backend serialises acc
 
 1. ✅ **MuPDF from source on macOS:** submodule at 1.28.6, `build.rs` (~20 s clean, incremental after), a C shim catching MuPDF's errors. A 22-page, 2.2 MB textbook chapter: open 4 ms, page 1 at 2× on screen in 111 ms.
 2. ✅ **PDFKit** through `objc2-pdf-kit`, tested on macOS: open 53 ms, page 1 in 122 ms; renders match MuPDF. ⬜ Measure on the iPhone and iPad.
-3. ✅ `viewer-core`: `Content::Pages` + `PageSource` (+ hand-written test PDFs in `viewer_core::testing`).
+3. ✅ `viewer-model`: `Content::Pages` + `PageSource` (+ hand-written test PDFs in `viewer_model::testing`).
 4. ✅ `viewer-pdf-mupdf` and `viewer-pdf-pdfkit` (since 2026-11-08 `libfileparser-mupdf` and `-pdfkit`, §4) behind the trait; `viewer-fmt-pdf` loader (`VIEWER_PDF_BACKEND=pdfkit` on macOS). The iOS dependency tree has no MuPDF. The page-render thread came with the view (5).
 5. ✅ The view: layout, tiles, zoom, cache, page counter, keys, its render thread. ⬜ Jump to page, thumbnails, momentum after a touch fling, aborting a slow tile.
 6. 🟡 The corpus and its runner exist (`corpus/`, `crates/corpus`): page count, sizes and a page-1 render, checked on every CI platform with MuPDF. ⬜ Real-world and hostile PDFs beyond the first two, and PDFKit with its own expected renders.

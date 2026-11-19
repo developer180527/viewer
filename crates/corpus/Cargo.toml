@@ -7,7 +7,7 @@ license.workspace = true
 publish = false
 
 [dependencies]
-viewer-core.workspace = true
+viewer-model.workspace = true
 libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
 viewer-formats.workspace = true
 scene-data.workspace = true

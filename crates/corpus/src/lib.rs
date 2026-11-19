@@ -15,7 +15,7 @@ use image::RgbaImage;
 use toml::{Table, Value};
 use libfileparser_core::Content as Model;
 use libfileparser_core::PageRect;
-use viewer_core::{Content, Document, FileSource, Unreadable};
+use viewer_model::{Content, Document, FileSource, Unreadable};
 
 /// The longest side of a golden render, in pixels: enough to catch a wrong decode or
 /// a blank page, small enough to keep the goldens tiny.

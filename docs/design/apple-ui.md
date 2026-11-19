@@ -29,15 +29,18 @@ Swift owns the app on Apple platforms, and Rust is a library it calls. Everythin
 
 ## 2. `viewer-core`: the app without its UI
 
-Today the app's logic lives in the libgui app crate (`crates/app`). It moves into a crate with no UI dependency:
+✅ 2026-11-19: `crates/core`, with no UI dependency (no libgui, winit or file picker); the libgui app is its first client. The crate that held this name before (content models, the loader registry) is now `viewer-model`. What moved, and what's still to:
 
 | Moves to `viewer-core` | Stays in each shell |
 |---|---|
-| Opening a file, with the app's policy (`ParseContext`: files allowed, limits, threads) | Windows, scenes, menus, toolbars |
-| The open document: its facets, the facet shown, the place in it (page, row, scroll, camera) | Layout, navigation, animation |
-| Commands (open, view as, export, copy) and whether each is available | Gestures and keyboard shortcuts, mapped onto commands |
-| Editing sessions (`EditSession`, docs/design/editing.md §6) | The editing tools' UI |
-| Settings and recent files | Settings screens |
+| ✅ Opening a file, a folder or a container's entry, on a loader thread, with the app's policy | Windows, scenes, menus, toolbars |
+| ✅ The pages (newest last), Back, and the document's facets and the facet shown | Layout, navigation, animation |
+| ✅ Commands (open, open entry, view as, back) and whether each is available; the view-as choices | Gestures and keyboard shortcuts, mapped onto commands |
+| ✅ What the screen says, as data: title, error, notices (fallback reader, blocked files and their fix), info panel, status line | Drawing them |
+| ✅ What the user picked, by number (`GrantId`): released when no page reads through it | The platform's token for it, which Apple releases on the thread that took it |
+| ⬜ The place in a document (page, row, scroll, camera): libgui keeps it per widget today | Each page's view state, by page id |
+| ⬜ Editing sessions (`EditSession`, docs/design/editing.md §6) | The editing tools' UI |
+| ⬜ Settings and recent files (none yet) | Settings screens |
 
 The place in a document is part of the core's state, not a view's. That's what lets the user switch interface, or reopen a file, and land where they were.
 
@@ -87,7 +90,7 @@ On Apple platforms, the SwiftUI shell is where accessibility comes from: native 
 
 ## 8. Build order
 
-1. ⬜ **`viewer-core`:** move the app's logic out of the libgui app, so the libgui shell becomes the first client of it. This is useful on every platform, and gives editing's `EditSession` its home.
+1. 🟡 **`viewer-core`:** move the app's logic out of the libgui app, so the libgui shell becomes the first client of it. This is useful on every platform, and gives editing's `EditSession` its home. ✅ 2026-11-19: the session, its pages and loading, its commands and what each screen shows, `Send` for Swift's async runtime, tested headless (`crates/core/tests/session.rs`); the libgui app draws it, its screenshots unchanged. Still to move: the place in a document, settings and recent files (§2).
 2. ⬜ **Bindings:** UniFFI for `viewer-core` and the content models; the `.xcframework`; the Metal view hosting libviewer's renderers.
 3. ⬜ **SwiftUI on iPad and Mac:** file picker and document browser, facet tabs, Info, tables, trees and documents as native views, pages, images and 3D in the Metal view. Then iPhone's compact layout.
 4. ⬜ **visionOS:** windows and ornaments, then a RealityKit volume for scenes and molecules.

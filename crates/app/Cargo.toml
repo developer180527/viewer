@@ -12,6 +12,8 @@ path = "src/main.rs"
 [dependencies]
 libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
 libviewer.workspace = true
+viewer-model.workspace = true
+# The app without its UI: what's open and what can be done with it.
 viewer-core.workspace = true
 viewer-fmt-doc.workspace = true
 viewer-formats.workspace = true

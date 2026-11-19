@@ -35,7 +35,7 @@ nothing about Viewer, libgui or any file format.
 
 ```
 crates/
-  scene-data/        the CPU scene (§5): plain data, no wgpu. Loaders and viewer-core depend on this only
+  scene-data/        the CPU scene (§5): plain data, no wgpu. Loaders and viewer-model depend on this only
   rendererx/              the renderer. Depends on wgpu, glam, bytemuck, and nothing else heavy
     src/
       lib.rs             public API (§4)
@@ -52,7 +52,7 @@ crates/
   app/                   Viewer: shows the target texture as a libgui image
 ```
 
-`rendererx` must **not** depend on `viewer-core`, libgui, `image` or any format crate. The adapters (`gltf-lite`, `viewer-fmt-3d`) depend on **`scene-data` only**, never on `rendererx` or wgpu: a loader must be able to run before any GPU exists, in a worker process, or in a WASM sandbox (PLAN.md §12.4).
+`rendererx` must **not** depend on `viewer-model`, libgui, `image` or any format crate. The adapters (`gltf-lite`, `viewer-fmt-3d`) depend on **`scene-data` only**, never on `rendererx` or wgpu: a loader must be able to run before any GPU exists, in a worker process, or in a WASM sandbox (PLAN.md §12.4).
 
 **Cargo features** (all off by default except `wgsl-builtin`):
 

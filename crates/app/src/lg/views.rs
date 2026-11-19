@@ -2,9 +2,9 @@
 //! Viewer's highlighted text.
 
 use libgui::*;
-use viewer_core::{Content, TextDoc};
+use viewer_core::Page;
+use viewer_model::{Content, TextDoc};
 
-use super::app::Page;
 pub use libviewer::Action;
 use libviewer::Host;
 
@@ -41,9 +41,9 @@ impl libviewer::Highlights for Highlighted<'_> {
     }
 }
 
-pub fn show(ui: &mut Ui, page: &mut Page, host: &mut dyn Host, dark: bool) -> Option<Action> {
+pub fn show(ui: &mut Ui, page: &Page, view: &mut ViewState, host: &mut dyn Host, dark: bool) -> Option<Action> {
     // State (scroll offsets, expanded nodes) is keyed by page, so going back restores it.
-    ui.with_key(page.id, |ui| match (&page.doc.content, &mut page.view) {
+    ui.with_key(page.id, |ui| match (&page.doc.content, view) {
         (Content::Model(c), ViewState::Model(view)) => {
             if matches!(c, libfileparser_core::Content::Flow(_)) {
                 super::ensure_rich_faces(ui);

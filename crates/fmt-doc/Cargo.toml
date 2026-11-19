@@ -6,7 +6,7 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-viewer-core.workspace = true
+viewer-model.workspace = true
 anyhow.workspace = true
 memchr.workspace = true
 # fancy-regex instead of Oniguruma: no C dependency, builds on every target.

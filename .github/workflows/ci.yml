@@ -121,7 +121,7 @@ jobs:
       - name: Build
         run: >
           cargo ndk -t arm64-v8a build
-          -p viewer-core -p viewer-fmt-doc -p libfileparser-data
+          -p viewer-model -p viewer-fmt-doc -p libfileparser-data
           -p libfileparser -p libfileparser-core -p libfileparser-3d -p libfileparser-images -p libfileparser-text -p libfileparser-archives
           -p scene-data -p rendererx -p gltf-lite -p usd-lite -p libviewer
 
@@ -193,6 +193,6 @@ jobs:
       - name: Build
         run: >
           cargo build --target aarch64-apple-ios -p viewer
-          -p viewer-core -p viewer-fmt-doc -p libfileparser-data
+          -p viewer-core -p viewer-model -p viewer-fmt-doc -p libfileparser-data
           -p libfileparser -p libfileparser-core -p libfileparser-3d -p libfileparser-images -p libfileparser-text -p libfileparser-archives
           -p scene-data -p rendererx -p gltf-lite -p usd-lite -p libviewer

@@ -5062,6 +5062,7 @@ dependencies = [
  "viewer-core",
  "viewer-fmt-doc",
  "viewer-formats",
+ "viewer-model",
  "wgpu",
  "winit",
 ]
@@ -5071,9 +5072,9 @@ name = "viewer-core"
 version = "0.3.1"
 dependencies = [
  "anyhow",
- "infer",
  "libfileparser-core",
- "memmap2",
+ "viewer-formats",
+ "viewer-model",
 ]
 
 [[package]]
@@ -5087,8 +5088,8 @@ dependencies = [
  "rendererx",
  "scene-data",
  "toml 1.1.8+spec-1.1.0",
- "viewer-core",
  "viewer-formats",
+ "viewer-model",
  "wgpu",
 ]
 
@@ -5099,7 +5100,7 @@ dependencies = [
  "anyhow",
  "memchr",
  "syntect",
- "viewer-core",
+ "viewer-model",
 ]
 
 [[package]]
@@ -5111,8 +5112,18 @@ dependencies = [
  "libfileparser-core",
  "libfileparser-images",
  "libfileparser-pdfkit",
- "viewer-core",
  "viewer-fmt-doc",
+ "viewer-model",
+]
+
+[[package]]
+name = "viewer-model"
+version = "0.3.1"
+dependencies = [
+ "anyhow",
+ "infer",
+ "libfileparser-core",
+ "memmap2",
 ]
 
 [[package]]

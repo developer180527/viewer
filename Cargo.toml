@@ -9,6 +9,7 @@ license = "MIT OR Apache-2.0"
 rust-version = "1.90"
 
 [workspace.dependencies]
+viewer-model = { path = "crates/model" }
 viewer-core = { path = "crates/core" }
 # Each crate names the features it needs (mmap, scene): a data-only or WASM build gets neither.
 libfileparser-core = { path = "crates/libfileparser-core", default-features = false }

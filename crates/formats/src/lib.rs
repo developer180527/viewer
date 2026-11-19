@@ -7,7 +7,7 @@ mod libfileparser;
 use std::sync::OnceLock;
 
 pub use libfileparser::{ReaderLoader, library, open_folder, open_image, set_notify, show_facet};
-use viewer_core::{FormatLoader, Registry};
+use viewer_model::{FormatLoader, Registry};
 
 /// Every loader compiled into this build. Order breaks ties between equal confidences.
 pub fn registry() -> &'static Registry {

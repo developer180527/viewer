@@ -1,0 +1,12 @@
+[package]
+name = "viewer-model"
+description = "Format-agnostic model: file sources, content models, loader registry. What every loader and renderer agrees on."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
+anyhow.workspace = true
+memmap2.workspace = true
+infer.workspace = true
