@@ -1,0 +1,38 @@
+pub mod markup_lite
+pub struct markup_lite::Html
+pub markup_lite::Html::html: alloc::string::String
+pub markup_lite::Html::title: core::option::Option<alloc::string::String>
+pub markup_lite::Html::warnings: alloc::vec::Vec<alloc::string::String>
+impl core::clone::Clone for markup_lite::Html
+pub fn markup_lite::Html::clone(&self) -> markup_lite::Html
+impl core::cmp::Eq for markup_lite::Html
+impl core::cmp::PartialEq for markup_lite::Html
+pub fn markup_lite::Html::eq(&self, &markup_lite::Html) -> bool
+impl core::default::Default for markup_lite::Html
+pub fn markup_lite::Html::default() -> markup_lite::Html
+impl core::fmt::Debug for markup_lite::Html
+pub fn markup_lite::Html::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for markup_lite::Html
+pub fn markup_lite::creole(&str) -> markup_lite::Html
+pub fn markup_lite::dokuwiki(&str) -> markup_lite::Html
+pub fn markup_lite::esc(&str) -> alloc::string::String
+pub fn markup_lite::fountain(&str) -> markup_lite::Html
+pub fn markup_lite::gemtext(&str) -> markup_lite::Html
+pub fn markup_lite::haddock(&str) -> markup_lite::Html
+pub fn markup_lite::jira(&str) -> markup_lite::Html
+pub fn markup_lite::latex(&str) -> markup_lite::Html
+pub fn markup_lite::linkify(&str) -> alloc::string::String
+pub fn markup_lite::man(&str) -> markup_lite::Html
+pub fn markup_lite::mediawiki(&str) -> markup_lite::Html
+pub fn markup_lite::muse(&str) -> markup_lite::Html
+pub fn markup_lite::pod(&str) -> markup_lite::Html
+pub fn markup_lite::starts_like_a_manual(&[u8]) -> bool
+pub fn markup_lite::strip_tags(&str) -> alloc::string::String
+pub fn markup_lite::texinfo(&str) -> markup_lite::Html
+pub fn markup_lite::textile(&str) -> markup_lite::Html
+pub fn markup_lite::tikiwiki(&str) -> markup_lite::Html
+pub fn markup_lite::twiki(&str) -> markup_lite::Html
+pub fn markup_lite::txt2tags(&str) -> markup_lite::Html
+pub fn markup_lite::vimwiki(&str) -> markup_lite::Html
+pub fn markup_lite::xwiki(&str) -> markup_lite::Html
+pub fn markup_lite::zimwiki(&str) -> markup_lite::Html

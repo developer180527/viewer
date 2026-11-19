@@ -28,19 +28,12 @@ pub(crate) struct Rendered {
     pub warnings: Vec<String>,
 }
 
-/// `s` with HTML's special characters escaped.
-pub(crate) fn esc(s: &str) -> String {
-    let mut out = String::with_capacity(s.len());
-    for c in s.chars() {
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            '"' => out.push_str("&quot;"),
-            c => out.push(c),
-        }
+pub(crate) use markup_lite::{esc, strip_tags};
+
+impl From<markup_lite::Html> for Rendered {
+    fn from(h: markup_lite::Html) -> Self {
+        Rendered { html: h.html, title: h.title, warnings: h.warnings }
     }
-    out
 }
 
 /// One markup reader: its description and how its text becomes HTML (`fn(&str) ->
@@ -894,242 +887,19 @@ fn is_display_math(n: &typst_syntax::SyntaxNode) -> bool {
     t.len() > 2 && t.starts_with("$ ") && t.ends_with(" $")
 }
 
-pub(crate) fn strip_tags(html: &str) -> String {
-    let mut out = String::new();
-    let mut tag = false;
-    for c in html.chars() {
-        match c {
-            '<' => tag = true,
-            '>' => tag = false,
-            c if !tag => out.push(c),
-            _ => {}
-        }
-    }
-    out.replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"")
-}
 
 // ---------------------------------------------------------------- Textile
 
 markup!(
-    /// Textile (Redmine's and Textpattern's markup), read by our own small parser:
-    /// headings, paragraphs, quotes, code, lists, tables, links, images and phrase marks.
+    /// Textile (Redmine's and Textpattern's markup), read by `markup-lite`: headings,
+    /// paragraphs, quotes, code, lists, tables, links, images and phrase marks.
     TextileReader, TEXTILE, "textile", "Textile", "Textile document", ["textile"], ["text/x-textile"], textile
 );
 
 fn textile(text: &str) -> Result<Rendered> {
-    let mut out = String::with_capacity(text.len() * 2);
-    let mut title = None;
-    let blocks = text.replace("\r\n", "\n");
-    let mut lines = blocks.lines().peekable();
-    // An extended block (`bc..`, `bq..`, `pre..`) runs until the next block signature.
-    while let Some(line) = lines.next() {
-        if line.trim().is_empty() {
-            continue;
-        }
-        let mut para = vec![line];
-        // Lists and tables are line by line; everything else is up to a blank line.
-        let lead = line.trim_start();
-        let listy = lead.starts_with(['*', '#']) && lead.trim_start_matches(['*', '#']).starts_with(' ');
-        let tabley = lead.starts_with('|') || lead.starts_with("table");
-        while let Some(next) = lines.peek() {
-            if next.trim().is_empty() {
-                break;
-            }
-            para.push(next);
-            lines.next();
-        }
-        if listy {
-            textile_list(&para, &mut out);
-            continue;
-        }
-        if tabley {
-            textile_table(&para, &mut out);
-            continue;
-        }
-        let (sig, rest) = textile_signature(para[0]);
-        let body_lines: Vec<&str> = std::iter::once(rest).chain(para[1..].iter().copied()).collect();
-        let body = body_lines.join("\n");
-        match sig.as_deref() {
-            Some(h @ ("h1" | "h2" | "h3" | "h4" | "h5" | "h6")) => {
-                let inner = textile_inline(&body);
-                if h == "h1" && title.is_none() {
-                    title = Some(strip_tags(&inner));
-                }
-                out.push_str(&format!("<{h}>{inner}</{h}>"));
-            }
-            Some("bq") => out.push_str(&format!("<blockquote><p>{}</p></blockquote>", textile_inline(&body).replace('\n', "<br>"))),
-            Some("bc") => out.push_str(&format!("<pre><code>{}</code></pre>", esc(&body))),
-            Some("pre") => out.push_str(&format!("<pre>{}</pre>", esc(&body))),
-            Some("notextile") => out.push_str(&format!("<p>{}</p>", esc(&body))),
-            Some(f) if f.starts_with("fn") => out.push_str(&format!("<p><sup>{}</sup> {}</p>", esc(&f[2..]), textile_inline(&body))),
-            _ => out.push_str(&format!("<p>{}</p>", textile_inline(&body).replace('\n', "<br>"))),
-        }
-    }
-    Ok(Rendered { html: out, title, warnings: Vec::new() })
+    Ok(markup_lite::textile(text).into())
 }
 
-/// A block's signature (`h1`, `bq`, `bc`, `p`, `fn1`, with any attributes and a
-/// trailing `..`) and the text after it.
-fn textile_signature(line: &str) -> (Option<String>, &str) {
-    let Some(dot) = line.find(". ") else { return (None, line) };
-    let head = &line[..dot];
-    let name: String = head.chars().take_while(|c| c.is_ascii_alphanumeric()).collect();
-    let attrs = &head[name.len()..];
-    let known = matches!(name.as_str(), "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "p" | "bq" | "bc" | "pre" | "notextile") || (name.starts_with("fn") && name[2..].chars().all(|c| c.is_ascii_digit()) && name.len() > 2);
-    let attrs_ok = attrs.trim_end_matches('.').chars().all(|c| "(){}[]<>=-#. :;%_".contains(c) || c.is_alphanumeric());
-    if known && attrs_ok { (Some(name), &line[dot + 2..]) } else { (None, line) }
-}
-
-fn textile_list(lines: &[&str], out: &mut String) {
-    let mut open: Vec<char> = Vec::new();
-    for line in lines {
-        let l = line.trim_start();
-        let marks: String = l.chars().take_while(|c| *c == '*' || *c == '#').collect();
-        let text = l[marks.len()..].trim();
-        if marks.is_empty() {
-            // A continuation of the previous item.
-            out.push_str(&format!("<br>{}", textile_inline(text)));
-            continue;
-        }
-        let depth = marks.len().min(16);
-        let kind = marks.chars().last().unwrap_or('*');
-        while open.len() > depth {
-            out.push_str(if open.pop() == Some('#') { "</li></ol>" } else { "</li></ul>" });
-        }
-        if open.len() == depth && open.last() != Some(&kind) {
-            out.push_str(if open.pop() == Some('#') { "</li></ol>" } else { "</li></ul>" });
-        }
-        if open.len() == depth {
-            out.push_str("</li>");
-        }
-        while open.len() < depth {
-            out.push_str(if kind == '#' { "<ol>" } else { "<ul>" });
-            open.push(kind);
-        }
-        out.push_str(&format!("<li>{}", textile_inline(text)));
-    }
-    while let Some(k) = open.pop() {
-        out.push_str(if k == '#' { "</li></ol>" } else { "</li></ul>" });
-    }
-}
-
-fn textile_table(lines: &[&str], out: &mut String) {
-    out.push_str("<table>");
-    let mut head = true;
-    for line in lines {
-        let l = line.trim();
-        if !l.starts_with('|') {
-            continue;
-        }
-        let cells: Vec<&str> = l.trim_matches('|').split('|').collect();
-        let header = cells.iter().all(|c| c.starts_with("_.")) && head;
-        if header {
-            out.push_str("<thead>");
-        }
-        out.push_str("<tr>");
-        for c in cells {
-            let c = c.strip_prefix("_.").unwrap_or(c);
-            // Cell attributes (`\2.`, `/3.`, `>.`, `{…}.`) end in ". ".
-            let c = match c.find(". ") {
-                Some(at) if c[..at].chars().all(|x| "\\/<>=^~-{}(): ;#%0123456789".contains(x) || x.is_alphabetic()) && at < 24 && c[..at].chars().any(|x| !x.is_alphabetic()) => &c[at + 2..],
-                _ => c,
-            };
-            let tag = if header { "th" } else { "td" };
-            out.push_str(&format!("<{tag}>{}</{tag}>", textile_inline(c.trim())));
-        }
-        out.push_str("</tr>");
-        if header {
-            out.push_str("</thead>");
-        }
-        head = false;
-    }
-    out.push_str("</table>");
-}
-
-/// Textile's phrase marks, links and images, as HTML.
-fn textile_inline(text: &str) -> String {
-    let chars: Vec<char> = text.chars().collect();
-    let mut out = String::with_capacity(text.len() + 16);
-    let mut i = 0;
-    let boundary = |i: usize| i == 0 || !chars[i - 1].is_alphanumeric();
-    while i < chars.len() {
-        let c = chars[i];
-        // `"text":url`
-        if c == '"'
-            && let Some(close) = chars[i + 1..].iter().position(|&x| x == '"').map(|p| i + 1 + p)
-                && chars.get(close + 1) == Some(&':') {
-                    let url: String = chars[close + 2..].iter().take_while(|x| !x.is_whitespace()).collect();
-                    let url = url.trim_end_matches(['.', ',', ';', ')', '!', '?']).to_string();
-                    if !url.is_empty() {
-                        let label: String = chars[i + 1..close].iter().collect();
-                        out.push_str(&format!("<a href=\"{}\">{}</a>", esc(&url), textile_inline(&label)));
-                        i = close + 2 + url.chars().count();
-                        continue;
-                    }
-                }
-        // `!image.png(alt)!` and `!image.png!:link`
-        if c == '!' && chars.get(i + 1).is_some_and(|x| !x.is_whitespace())
-            && let Some(close) = chars[i + 1..].iter().position(|&x| x == '!').map(|p| i + 1 + p) {
-                let inner: String = chars[i + 1..close].iter().collect();
-                if !inner.contains(' ') || inner.contains('(') {
-                    let (src, alt) = match inner.split_once('(') {
-                        Some((s, a)) => (s.to_string(), a.trim_end_matches(')').to_string()),
-                        None => (inner.clone(), String::new()),
-                    };
-                    let src = src.trim_start_matches(['<', '>', '=']).to_string();
-                    if !src.is_empty() {
-                        out.push_str(&format!("<img src=\"{}\" alt=\"{}\">", esc(&src), esc(&alt)));
-                        i = close + 1;
-                        if chars.get(i) == Some(&':') {
-                            i += chars[i..].iter().take_while(|x| !x.is_whitespace()).count();
-                        }
-                        continue;
-                    }
-                }
-            }
-        let marks: &[(&str, &str)] = &[("**", "b"), ("__", "i"), ("??", "cite"), ("*", "strong"), ("_", "em"), ("@", "code"), ("+", "ins"), ("-", "del"), ("^", "sup"), ("~", "sub"), ("%", "span")];
-        let mut matched = false;
-        if boundary(i) {
-            for (m, tag) in marks {
-                let mc: Vec<char> = m.chars().collect();
-                if chars[i..].starts_with(&mc) && chars.get(i + mc.len()).is_some_and(|x| !x.is_whitespace()) {
-                    // The closing mark, followed by a non-word character.
-                    let mut j = i + mc.len() + 1;
-                    let mut found = None;
-                    while j + mc.len() <= chars.len() {
-                        if chars[j..].starts_with(&mc) && !chars[j - 1].is_whitespace() && chars.get(j + mc.len()).is_none_or(|x| !x.is_alphanumeric()) {
-                            found = Some(j);
-                            break;
-                        }
-                        j += 1;
-                    }
-                    if let Some(end) = found {
-                        let inner: String = chars[i + mc.len()..end].iter().collect();
-                        if *tag == "code" {
-                            out.push_str(&format!("<code>{}</code>", esc(&inner)));
-                        } else {
-                            out.push_str(&format!("<{tag}>{}</{tag}>", textile_inline(&inner)));
-                        }
-                        i = end + mc.len();
-                        matched = true;
-                        break;
-                    }
-                }
-            }
-        }
-        if matched {
-            continue;
-        }
-        match c {
-            '&' => out.push_str("&amp;"),
-            '<' => out.push_str("&lt;"),
-            '>' => out.push_str("&gt;"),
-            c => out.push(c),
-        }
-        i += 1;
-    }
-    out
-}
 
 #[cfg(test)]
 mod tests {
@@ -1204,13 +974,6 @@ mod tests {
         assert!(doc.metadata().iter().any(|(k, v)| k == "Title" && v == "Head"));
     }
 
-    #[test]
-    fn textile_plain_text_survives() {
-        assert_eq!(textile_inline("a-b c*d 2*3 x_y"), "a-b c*d 2*3 x_y");
-        assert_eq!(textile_inline("<b>&"), "&lt;b&gt;&amp;");
-        assert_eq!(textile_signature("p. text").0.as_deref(), Some("p"));
-        assert_eq!(textile_signature("Hello. World").0, None);
-    }
 }
 
 

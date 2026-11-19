@@ -1,0 +1,9 @@
+[package]
+name = "markup-lite"
+description = "Plain-text markups no maintained crate reads, as HTML: thirteen wiki dialects (MediaWiki, Creole, DokuWiki, Jira, txt2tags, Muse, Haddock, XWiki, TikiWiki, TWiki, Zim, Vimwiki, Gemtext), Textile, man and mdoc manual pages, LaTeX, Texinfo, POD and Fountain. No dependencies."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]

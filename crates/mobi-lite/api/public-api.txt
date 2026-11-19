@@ -1,0 +1,51 @@
+pub mod mobi_lite
+pub enum mobi_lite::Error
+pub mobi_lite::Error::Damaged(alloc::string::String)
+pub mobi_lite::Error::NotMobi
+pub mobi_lite::Error::Protected
+pub mobi_lite::Error::Stopped
+pub mobi_lite::Error::TooLarge
+pub mobi_lite::Error::TooLarge::max: u64
+pub mobi_lite::Error::Unsupported(u16)
+impl core::clone::Clone for mobi_lite::Error
+pub fn mobi_lite::Error::clone(&self) -> mobi_lite::Error
+impl core::cmp::Eq for mobi_lite::Error
+impl core::cmp::PartialEq for mobi_lite::Error
+pub fn mobi_lite::Error::eq(&self, &mobi_lite::Error) -> bool
+impl core::error::Error for mobi_lite::Error
+impl core::fmt::Debug for mobi_lite::Error
+pub fn mobi_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::fmt::Display for mobi_lite::Error
+pub fn mobi_lite::Error::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for mobi_lite::Error
+pub struct mobi_lite::Book
+pub mobi_lite::Book::html: bool
+pub mobi_lite::Book::images: usize
+pub mobi_lite::Book::meta: alloc::vec::Vec<(&'static str, alloc::string::String)>
+pub mobi_lite::Book::text: alloc::string::String
+pub mobi_lite::Book::title: alloc::string::String
+impl core::clone::Clone for mobi_lite::Book
+pub fn mobi_lite::Book::clone(&self) -> mobi_lite::Book
+impl core::cmp::Eq for mobi_lite::Book
+impl core::cmp::PartialEq for mobi_lite::Book
+pub fn mobi_lite::Book::eq(&self, &mobi_lite::Book) -> bool
+impl core::default::Default for mobi_lite::Book
+pub fn mobi_lite::Book::default() -> mobi_lite::Book
+impl core::fmt::Debug for mobi_lite::Book
+pub fn mobi_lite::Book::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::StructuralPartialEq for mobi_lite::Book
+pub struct mobi_lite::Limits
+pub mobi_lite::Limits::max_text: u64
+impl core::clone::Clone for mobi_lite::Limits
+pub fn mobi_lite::Limits::clone(&self) -> mobi_lite::Limits
+impl core::cmp::Eq for mobi_lite::Limits
+impl core::cmp::PartialEq for mobi_lite::Limits
+pub fn mobi_lite::Limits::eq(&self, &mobi_lite::Limits) -> bool
+impl core::default::Default for mobi_lite::Limits
+pub fn mobi_lite::Limits::default() -> Self
+impl core::fmt::Debug for mobi_lite::Limits
+pub fn mobi_lite::Limits::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for mobi_lite::Limits
+impl core::marker::StructuralPartialEq for mobi_lite::Limits
+pub fn mobi_lite::is_mobi(&[u8]) -> bool
+pub fn mobi_lite::read(&[u8], &mobi_lite::Limits, &dyn core::ops::function::Fn() -> bool) -> core::result::Result<mobi_lite::Book, mobi_lite::Error>

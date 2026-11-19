@@ -1,0 +1,11 @@
+[package]
+name = "mobi-lite"
+description = "Reads Kindle (MOBI, AZW, PRC) and PalmDOC books: headers, EXTH metadata, and text through PalmDOC and HUFF/CDIC decompression. Depends on encoding_rs only."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+# Text in Windows-1252, the Mobipocket encoding that isn't UTF-8.
+encoding_rs = "0.8"

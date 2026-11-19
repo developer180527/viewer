@@ -21,6 +21,9 @@ libfileparser-core.workspace = true
 rtf-lite = { workspace = true, features = ["encodings"] }
 docx-lite.workspace = true
 odt-lite.workspace = true
+markup-lite.workspace = true
+xmldoc-lite.workspace = true
+mobi-lite.workspace = true
 # Markdown (CommonMark and GitHub's tables, strikethrough, task lists, footnotes).
 pulldown-cmark = { version = "0.13", default-features = false }
 # Comics' pages are images (a sideways use toward a leaf, docs/design/libfileparser.md §2).
@@ -55,8 +58,6 @@ msg_parser = "0.3"
 unhwp = { version = "0.24", default-features = false, features = ["hwp5", "hwpx", "hwp3"] }
 # DjVu: scanned books and papers, as pages.
 djvu-rs = { version = "0.46", default-features = false, features = ["std"] }
-# DocBook and TEI, as a stream.
-quick-xml = "0.41"
 # EPUB 2 and 3: the container, package, spine, table of contents and resources.
 rbook = { version = "0.7", default-features = false, features = ["threadsafe"] }
 # Org: orgize's parse, through its HTML export.

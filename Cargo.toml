@@ -39,6 +39,9 @@ numbers-lite = { path = "crates/numbers-lite" }
 chem-lite = { path = "crates/chem-lite" }
 docx-lite = { path = "crates/docx-lite" }
 odt-lite = { path = "crates/odt-lite" }
+markup-lite = { path = "crates/markup-lite" }
+xmldoc-lite = { path = "crates/xmldoc-lite" }
+mobi-lite = { path = "crates/mobi-lite" }
 libfileparser-mupdf = { path = "crates/libfileparser-mupdf" }
 libfileparser-pdfkit = { path = "crates/libfileparser-pdfkit" }
 libfileparser-docs = { path = "crates/libfileparser-docs" }

@@ -15,7 +15,6 @@ use mail_parser::{MessageParser, MessageRef};
 
 use crate::build::Builder;
 use crate::markup::esc;
-use crate::wiki::inline;
 
 static EML: ReaderInfo = ReaderInfo::new("eml", "Email message", Category::Docs).extensions(&["eml", "email", "msg.txt", "mime", "emlx"]).mime_types(&["message/rfc822"]);
 static MBOX: ReaderInfo = ReaderInfo::new("mbox", "Mailbox", Category::Docs).extensions(&["mbox", "mbx", "mbs"]).mime_types(&["application/mbox"]);
@@ -187,7 +186,7 @@ pub(crate) fn text_html(text: &str) -> String {
         } else if line.trim().is_empty() {
             flush_para(&mut para, &mut out);
         } else {
-            para.push(inline(line, &[]));
+            para.push(markup_lite::linkify(line));
         }
     }
     flush_quote(&mut quoted, &mut out);

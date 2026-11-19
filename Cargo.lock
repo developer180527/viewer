@@ -2003,12 +2003,13 @@ dependencies = [
  "libfileparser-mupdf",
  "libfileparser-testkit",
  "mail-parser",
+ "markup-lite",
+ "mobi-lite",
  "msg_parser",
  "odt-lite",
  "office_oxide",
  "orgize",
  "pulldown-cmark",
- "quick-xml 0.41.0",
  "rars",
  "rbook",
  "rst_parser",
@@ -2019,6 +2020,7 @@ dependencies = [
  "tar",
  "typst-syntax",
  "unhwp",
+ "xmldoc-lite",
  "zip",
 ]
 
@@ -2309,6 +2311,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "markup-lite"
+version = "0.3.1"
+
+[[package]]
 name = "markup5ever"
 version = "0.40.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2389,6 +2395,13 @@ checksum = "b63fbc4a50860e98e7b2aa7804ded1db5cbc3aff9193adaff57a6931bf7c4b4c"
 dependencies = [
  "adler2",
  "simd-adler32",
+]
+
+[[package]]
+name = "mobi-lite"
+version = "0.3.1"
+dependencies = [
+ "encoding_rs",
 ]
 
 [[package]]
@@ -5856,6 +5869,13 @@ name = "xml-rs"
 version = "0.8.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e450f9b2ed1dff33c94c12589a87338689467b9c4f5d8a5710bd09a847d2c8a7"
+
+[[package]]
+name = "xmldoc-lite"
+version = "0.3.1"
+dependencies = [
+ "quick-xml 0.41.0",
+]
 
 [[package]]
 name = "xmlss-lite"

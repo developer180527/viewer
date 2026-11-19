@@ -1,0 +1,10 @@
+[package]
+name = "xmldoc-lite"
+description = "Documents written in XML vocabularies, as HTML: DocBook 4 and 5 (in SGML too), TEI P5, FictionBook 2, and an OpenDocument presentation's content.xml. Streamed by quick-xml; nothing is fetched."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+# Reusable on its own: no dependency on libfileparser or the viewer.
+[dependencies]
+quick-xml = "0.41"
