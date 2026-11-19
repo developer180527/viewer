@@ -13,3 +13,8 @@ wgpu = { version = "30" }
 # Pinned to the same commit as the app (libgui is pre-1.0).
 libgui = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
 libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+
+[dev-dependencies]
+# Golden renders of the views, drawn on the CPU as the app's screenshots are.
+libgui_soft = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+image = { version = "0.25", default-features = false, features = ["png"] }

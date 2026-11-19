@@ -44,7 +44,12 @@ impl libviewer::Highlights for Highlighted<'_> {
 pub fn show(ui: &mut Ui, page: &mut Page, host: &mut dyn Host, dark: bool) -> Option<Action> {
     // State (scroll offsets, expanded nodes) is keyed by page, so going back restores it.
     ui.with_key(page.id, |ui| match (&page.doc.content, &mut page.view) {
-        (Content::Model(c), ViewState::Model(view)) => libviewer::show(ui, c, view, host, None, dark),
+        (Content::Model(c), ViewState::Model(view)) => {
+            if matches!(c, libfileparser_core::Content::Flow(_)) {
+                super::ensure_rich_faces(ui);
+            }
+            libviewer::show(ui, c, view, host, None, dark)
+        }
         (Content::Text(t), _) => {
             libviewer::text(ui, t, Some(&Highlighted(t)), dark);
             None

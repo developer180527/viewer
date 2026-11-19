@@ -28,6 +28,34 @@ use app::ViewerApp;
 
 const INTER: &[u8] = include_bytes!("../../assets/Inter.ttf");
 const HACK: &[u8] = include_bytes!("../../assets/Hack-Regular.ttf");
+// Inter's static bold, italic and bold italic (v4.0, as `Inter.ttf`; libgui draws a
+// variable font at its default weight only), registered the first time formatted
+// text is drawn: most files never need them, and each costs a few ms to register.
+const INTER_BOLD: &[u8] = include_bytes!("../../assets/Inter-Bold.ttf");
+const INTER_ITALIC: &[u8] = include_bytes!("../../assets/Inter-Italic.ttf");
+const INTER_BOLD_ITALIC: &[u8] = include_bytes!("../../assets/Inter-BoldItalic.ttf");
+
+/// Registers bold, italic and bold italic faces once, before formatted text first
+/// draws; until then those roles fall back to the body face.
+pub fn ensure_rich_faces(ui: &mut Ui) {
+    thread_local! {
+        static TRIED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    }
+    if TRIED.with(|t| t.replace(true)) {
+        return;
+    }
+    for (role, bytes) in [(FontRole::Bold, INTER_BOLD), (FontRole::Italic, INTER_ITALIC), (FontRole::BoldItalic, INTER_BOLD_ITALIC)] {
+        // With the system's fonts behind it, as the body face has, so bold Japanese
+        // or Arabic is drawn, in the system's face, rather than as boxes.
+        match FontStack::from_fonts(&[bytes]) {
+            Ok(stack) => {
+                let face = ui.fonts.add_rasterizer(Box::new(stack.with_source(Box::new(LazySystemFonts))));
+                ui.set_font_role(role, face);
+            }
+            Err(e) => eprintln!("viewer: loading the {role:?} face: {e:?}"),
+        }
+    }
+}
 
 /// Window size in logical px, for the window and for headless screenshots.
 const SIZE: (f32, f32) = (1100.0, 760.0);

@@ -1,6 +1,11 @@
 //! Formatted text (`Content::Flow`), drawn with libgui's Markdown widget: the blocks
 //! are written out as Markdown, which the widget lays out (headings, lists, tables,
 //! code, quotes, emphasis, links). Images show their alt text for now.
+//!
+//! Bold, italic and bold italic are drawn in the `Ui`'s faces for those [`FontRole`]s,
+//! which the app registers; one not registered falls back to the body face, and the
+//! marks don't show. Viewer registers Inter's the first time formatted text is drawn.
+//! Underline, superscript and subscript have no Markdown, so they show as plain text.
 
 use libfileparser_core::{Block, FlowSource, Inline};
 use libgui::*;

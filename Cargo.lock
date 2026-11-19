@@ -2221,9 +2221,11 @@ dependencies = [
 name = "libviewer"
 version = "0.3.1"
 dependencies = [
+ "image",
  "libfileparser-core",
  "libgui",
  "libgui_markdown",
+ "libgui_soft",
  "rendererx",
  "wgpu",
 ]
