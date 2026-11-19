@@ -46,6 +46,14 @@ The CB7 and CBR readers (sevenz-rust2, rars) were measured on libarchive's own t
 
 Every reader, and usd-lite and gltf-lite through their own APIs, is fuzzed by each crate's tests (`libfileparser-testkit`'s fuzzer): its samples and the corpus files it reads, damaged thousands of ways, opened, every facet made and read. Nothing may panic or hang. `LFP_FUZZ_ITERATIONS` (default 64) and `LFP_FUZZ_SEED` go further; failing inputs are saved under `target/fuzz-failures/`.
 
+## Every format, and what tested it
+
+`docs/formats.md` lists every reader by category library with what tested it: a corpus file, the conformance suite, the testkit's fuzzer, real-world files, the last soak. Each tick is from evidence the tests record (`LFP_TESTED`), never written in. Regenerate it after adding a reader or a round of testing:
+
+```bash
+scripts/formats.sh
+```
+
 ## After a change
 
 When a change is meant to alter what a file opens as, rewrite the expected files and review the diff before committing:

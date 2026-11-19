@@ -82,6 +82,7 @@ pub fn check(reader: &dyn Reader, samples: &[Sample]) -> Vec<String> {
 #[track_caller]
 pub fn assert_conforms(reader: &dyn Reader, samples: &[Sample]) {
     let failures = check(reader, samples);
+    crate::record("conformance", reader.info().id, failures.is_empty());
     assert!(failures.is_empty(), "{} conformance failures:\n{}", failures.len(), failures.join("\n"));
 }
 

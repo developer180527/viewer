@@ -472,7 +472,9 @@ pub fn assert_fuzz_clean(readers: &[&'static dyn Reader], samples: impl Fn(&str)
     let fuzz = Fuzz::new();
     let mut failures = Vec::new();
     for &r in readers {
-        failures.extend(fuzz.reader(r, &samples(r.info().id)));
+        let found = fuzz.reader(r, &samples(r.info().id));
+        crate::record("fuzz", r.info().id, found.is_empty());
+        failures.extend(found);
     }
     assert!(failures.is_empty(), "{} fuzz failures:\n{}", failures.len(), failures.iter().map(|f| format!("  {f}")).collect::<Vec<_>>().join("\n"));
 }
