@@ -21,12 +21,24 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
           "pdf": "pdf", "md": "markdown", "markdown": "markdown", "rst": "rst", "asciidoc": "asciidoc", "adoc": "asciidoc",
           "org": "org", "textile": "textile", "docx": "docx", "odt": "odt", "rtf": "rtf", "epub": "epub", "doc": "doc",
           "pptx": "pptx", "ppt": "ppt", "pps": "ppt", "odp": "odp", "html": "html", "htm": "html",
+          # Markup, mail, books (2026-11-18).
+          "adoc": "asciidoc", "dj": "djot", "djot": "djot", "typ": "typst", "ipynb": "ipynb", "man": "man", "mdoc": "man",
+          "mediawiki": "mediawiki", "wiki": "mediawiki", "latex": "latex", "tex": "latex", "creole": "creole", "pod": "pod", "gmi": "gemtext",
+          "fountain": "fountain", "dokuwiki": "dokuwiki", "jira": "jira", "t2t": "txt2tags", "muse": "muse", "haddock": "haddock",
+          "docbook": "docbook", "dbk": "docbook", "tei": "tei", "texinfo": "texinfo", "texi": "texinfo", "xwiki": "xwiki", "tikiwiki": "tikiwiki",
+          "twiki": "twiki", "zimwiki": "zimwiki", "vimwiki": "vimwiki", "eml": "eml", "mbox": "mbox", "mht": "mhtml", "mhtml": "mhtml",
+          "msg": "msg", "mobi": "mobi", "azw": "mobi", "azw3": "mobi", "prc": "mobi", "fb2": "fb2", "djvu": "djvu", "djv": "djvu",
+          "hwp": "hwp", "hwpx": "hwp", "cb7": "comic", "cbr": "comic", "opml": "opml",
+          "1": "man", "2": "man", "3": "man", "4": "man", "5": "man", "6": "man", "7": "man", "8": "man", "9": "man",
           # Spreadsheets.
           "xlsx": "xlsx", "xlsm": "xlsx", "xltx": "xlsx", "xltm": "xlsx", "xlam": "xlsx", "xlsb": "xlsb",
           "xls": "xls", "xla": "xls", "xlt": "xls", "ods": "ods", "ots": "ods", "fods": "fods", "slk": "sylk", "dif": "dif", "numbers": "numbers"}
 # Category folders, as corpus/real is laid out: data/, docs/, sheets/ (3d/ is
 # fetch-real-3d.sh's).
-DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odp", "odt", "org", "pdf", "ppt", "pptx", "rst", "rtf", "textile", "xps", "comic"}
+DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odp", "odt", "org", "pdf", "ppt", "pptx", "rst", "rtf", "textile", "xps", "comic",
+        "djot", "typst", "ipynb", "man", "mediawiki", "latex", "creole", "pod", "gemtext", "fountain", "dokuwiki", "jira", "txt2tags", "muse",
+        "haddock", "docbook", "tei", "texinfo", "xwiki", "tikiwiki", "twiki", "zimwiki", "vimwiki", "eml", "mbox", "mhtml", "msg", "mobi", "fb2",
+        "djvu", "hwp"}
 SHEETS = {"dif", "fods", "numbers", "ods", "sylk", "xls", "xlsb", "xlsx", "xmlss"}
 counts = {}
 for repo in [os.path.basename(clone)]:
@@ -35,6 +47,8 @@ for repo in [os.path.basename(clone)]:
         dirs[:] = [d for d in dirs if d != ".git"]
         for f in files:
             path = os.path.join(dp, f)
+            if not os.path.isfile(path):
+                continue  # a link to nothing
             rel = os.path.relpath(path, root)
             ext = f.rsplit(".", 1)[-1].lower() if "." in f else ""
             reader = by_ext.get(ext)
@@ -49,6 +63,10 @@ for repo in [os.path.basename(clone)]:
             # Excel 2003's XML, whatever it's named (often .xls).
             if ext in ("xls", "xml") and head.lstrip(b"\xef\xbb\xbf").startswith(b"<?xml") and b"urn:schemas-microsoft-com:office:spreadsheet" in head:
                 reader = "xmlss"
+            if reader == "mediawiki" and "vimwiki" in f.lower():
+                reader = "vimwiki"
+            if ext in "123456789" and len(ext) == 1 and not (head.startswith(b".") or head.startswith(b"'\\\"")):
+                reader = None
             # Known by name: VASP's POSCAR and CONTCAR, Turbomole's coord.
             low = f.lower()
             # Whatever follows: `POSCAR.relax`, `CONTCAR.MD` (a dynamics run, not Markdown).

@@ -39,7 +39,7 @@ fn flow(doc: &Html, base: &str, b: &mut Builder) -> Result<()> {
             Edge::Open(node) => match node.value() {
                 Node::Element(e) => {
                     let name = e.name();
-                    if skip > 0 || matches!(name, "script" | "style" | "head" | "template" | "noscript" | "svg" | "math" | "iframe" | "object" | "select" | "button") {
+                    if skip > 0 || matches!(name, "script" | "style" | "head" | "template" | "noscript" | "svg" | "math" | "iframe" | "object" | "select" | "button" | "metadata" | "dc-metadata" | "x-metadata") {
                         skip += 1;
                         continue;
                     }
@@ -109,7 +109,7 @@ fn open(name: &str, e: ElementRef, base: &str, b: &mut Builder, pre: &mut usize,
         "li" => b.open(Open::Item),
         "pre" => {
             *pre += 1;
-            b.open(Open::Code(None))
+            b.open(Open::Code(language(e)))
         }
         "code" | "kbd" | "samp" | "tt" if *pre == 0 => {
             *code = Some(String::new());
@@ -140,6 +140,17 @@ fn open(name: &str, e: ElementRef, base: &str, b: &mut Builder, pre: &mut usize,
         }
         _ => Ok(()),
     }
+}
+
+/// A `<pre>`'s language, as highlighters and markup converters mark it: `class=
+/// "language-rust"` or `"lang-rust"` (on it or its `<code>`), or `data-lang`.
+fn language(pre: ElementRef) -> Option<String> {
+    let code = pre.children().filter_map(ElementRef::wrap).find(|c| c.value().name() == "code");
+    let from = |e: ElementRef| {
+        let v = e.value();
+        v.attr("data-lang").map(str::to_string).or_else(|| v.classes().find_map(|c| c.strip_prefix("language-").or_else(|| c.strip_prefix("lang-")).map(str::to_string)))
+    };
+    from(pre).or_else(|| code.and_then(from)).filter(|l| !l.is_empty() && l.len() <= 32 && l.chars().all(|c| c.is_ascii_alphanumeric() || "+-_#.".contains(c)))
 }
 
 fn close(name: &str, b: &mut Builder, pre: &mut usize, code: &mut Option<String>) -> Result<()> {
@@ -183,7 +194,7 @@ mod tests {
         let cx = ParseContext::new();
         let mut b = Builder::new(&cx);
         parse(
-            "<html><head><title>T</title><style>p{}</style></head><body><h1>Ch&eacute;pter</h1><p>Some <em>em</em>,  <b>bold</b>\n and <code>x()</code> <a href=\"c2.xhtml\">next</a>.<p>Unclosed<img src=\"../img/a.png\" alt=\"A\"><ul><li>one<li>two</ul><table><thead><tr><th>h</th></tr></thead><tr><td>c</td></tr></table><pre>  keep\n  this</pre><script>bad()</script></body></html>",
+            "<html><head><title>T</title><style>p{}</style></head><body><h1>Ch&eacute;pter</h1><p>Some <em>em</em>,  <b>bold</b>\n and <code>x()</code> <a href=\"c2.xhtml\">next</a>.<p>Unclosed<img src=\"../img/a.png\" alt=\"A\"><ul><li>one<li>two</ul><table><thead><tr><th>h</th></tr></thead><tr><td>c</td></tr></table><pre>  keep\n  this</pre><pre><code class=\"hl language-rust\">fn f() {}</code></pre><script>bad()</script></body></html>",
             "OEBPS/text/c1.xhtml",
             &mut b,
         )
@@ -198,6 +209,7 @@ mod tests {
         assert!(blocks.iter().any(|b| matches!(b, Block::List { items, .. } if items.len() == 2)), "{blocks:?}");
         assert!(blocks.iter().any(|b| matches!(b, Block::Table { header_rows: 1, rows } if rows.len() == 2)), "{blocks:?}");
         assert!(blocks.contains(&Block::Code { language: None, text: "  keep\n  this".into() }), "{blocks:?}");
+        assert!(blocks.contains(&Block::Code { language: Some("rust".into()), text: "fn f() {}".into() }), "{blocks:?}");
         assert!(!format!("{blocks:?}").contains("bad()"));
     }
 

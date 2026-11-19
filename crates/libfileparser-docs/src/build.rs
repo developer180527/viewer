@@ -136,6 +136,11 @@ impl<'a> Builder<'a> {
     }
 
     /// `Cancelled` once the document is closed, for loops over a long input.
+    /// The context it builds under.
+    pub fn context(&self) -> &'a ParseContext {
+        self.cx
+    }
+
     pub fn cancel_check(&self) -> Result<()> {
         self.cx.cancel.check()
     }

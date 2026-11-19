@@ -65,6 +65,21 @@ fetch w3c/epubcheck '/src/test/resources/**/*.epub'
 # Pandoc's tests: documents in many formats (GPL tests, kept out of git like the rest).
 fetch jgm/pandoc '/test/'
 
+# Markup, mail and books (libfileparser-docs, 2026-11-18). Pandoc's tests (above) give
+# most markup formats a few files each.
+fetch stalwartlabs/mail-parser '/resources/eml/' '/resources/mbox/'
+fetch marirs/msg-parser-rs '/data/'
+fetch matyushkin/djvu-rs '/tests/fixtures/' '/tests/corpus/'
+fetch iyulab/unhwp '/tests/fixtures/'
+fetch mete0r/pyhwp '/samples/' '/tests/**/*.hwp'
+fetch jupyter/nbformat '/tests/'
+fetch openbsd/src '/bin/*/*.1' '/usr.bin/c*/*.1'
+fetch Perl/perl5 '/pod/perl[a-f]*.pod'
+fetch typst/typst '/tests/suite/model/*.typ' '/docs/**/*.typ'
+fetch asciidoctor/asciidoctor '/test/fixtures/*.adoc' '/docs/modules/**/*.adoc'
+fetch nyousefi/Fountain '/**/*.fountain'
+fetch bfabiszewski/libmobi '/tests/samples/'
+
 # Spreadsheets (libfileparser-sheets).
 fetch apache/poi '/test-data/spreadsheet/*.xlsx' '/test-data/spreadsheet/*.xlsm' '/test-data/spreadsheet/*.xlsb' '/test-data/spreadsheet/*.xls'
 fetch pandas-dev/pandas '/pandas/tests/io/data/excel/'

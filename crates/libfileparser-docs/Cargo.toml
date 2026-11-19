@@ -35,6 +35,24 @@ ego-tree = "0.11"
 encoding_rs = "0.8"
 # PowerPoint (PPTX, PPT) and Word 97–2003 (DOC): measured on 1,013 real files first.
 office_oxide = { version = "0.1.17", default-features = false }
+# Markup (2026-11-18): reStructuredText, Djot, AsciiDoc, Typst's syntax.
+rst_parser = "0.4"
+# rst_parser's tree, walked as JSON (its own HTML writer leaves 13 elements unimplemented).
+document_tree = "0.4"
+serde_json = "1"
+jotdown = "0.10"
+asciidoc-parser = "0.31"
+typst-syntax = "0.15"
+# Mail: RFC 5322 messages, mailboxes and web archives (Stalwart's parser), and
+# Outlook's .msg.
+mail-parser = { version = "1", default-features = false, features = ["full_encoding"] }
+msg_parser = "0.3"
+# Hangul Word Processor: HWP 3 and 5, and HWPX.
+unhwp = { version = "0.24", default-features = false, features = ["hwp5", "hwpx", "hwp3"] }
+# DjVu: scanned books and papers, as pages.
+djvu-rs = { version = "0.46", default-features = false, features = ["std"] }
+# DocBook and TEI, as a stream.
+quick-xml = "0.41"
 # EPUB 2 and 3: the container, package, spine, table of contents and resources.
 rbook = { version = "0.7", default-features = false, features = ["threadsafe"] }
 # Org: orgize's parse, through its HTML export.

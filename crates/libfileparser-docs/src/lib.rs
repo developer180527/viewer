@@ -12,39 +12,59 @@
 //! The API is the shape every libfileparser category has: [`readers`], [`detect`],
 //! [`open`] and [`open_with`].
 
+mod books;
 mod build;
 mod comics;
+mod djvu;
 mod docx;
 mod epub;
 mod html;
 mod office;
+mod latex;
 mod lite;
+mod mail;
+mod markup;
+mod notebook;
 mod markdown;
 mod odt;
 mod org;
 mod package;
 mod pages;
 pub mod pdf;
+mod roff;
+mod pod;
 mod rtf;
+mod wiki;
+mod xmldoc;
 mod xps;
 
 use libfileparser_core::{Bytes, Detection, Document, FileSource, Limit, ParseContext, Reader, Result};
 
+pub use books::{HwpReader, MobiReader};
 pub use comics::ComicReader;
+pub use djvu::DjvuReader;
 pub use docx::DocxReader;
 pub use epub::EpubReader;
 pub use html::HtmlReader;
+pub use latex::{LatexReader, TexinfoReader};
+pub use mail::{EmlReader, MboxReader, MhtReader, MsgReader};
 pub use markdown::MarkdownReader;
+pub use notebook::NotebookReader;
+pub use markup::{AsciidocReader, DjotReader, RstReader, TextileReader, TypstReader};
 pub use odt::OdtReader;
 pub use office::{DocReader, PptReader, PptxReader};
 pub use org::OrgReader;
+pub use roff::ManReader;
+pub use pod::{FountainReader, PodReader};
 pub use rtf::RtfReader;
 pub use pdf::PdfReader;
+pub use wiki::{CreoleReader, DokuWikiReader, GemtextReader, HaddockReader, JiraReader, MediaWikiReader, MuseReader, TWikiReader, TikiWikiReader, Txt2tagsReader, VimwikiReader, XWikiReader, ZimWikiReader};
+pub use xmldoc::{DocBookReader, Fb2Reader, OdpReader, TeiReader};
 pub use xps::XpsReader;
 
 /// Every format this category reads, in the order ties are broken.
 pub fn readers() -> &'static [&'static dyn Reader] {
-    &[&PdfReader, &XpsReader, &ComicReader, &EpubReader, &DocxReader, &PptxReader, &PptReader, &DocReader, &OdtReader, &RtfReader, &OrgReader, &MarkdownReader, &HtmlReader]
+    &[&PdfReader, &XpsReader, &DjvuReader, &ComicReader, &EpubReader, &DocxReader, &PptxReader, &PptReader, &DocReader, &OdtReader, &OdpReader, &HwpReader, &MobiReader, &RtfReader, &OrgReader, &MarkdownReader, &RstReader, &DjotReader, &AsciidocReader, &TypstReader, &TextileReader, &NotebookReader, &MediaWikiReader, &CreoleReader, &DokuWikiReader, &JiraReader, &Txt2tagsReader, &MuseReader, &HaddockReader, &XWikiReader, &TikiWikiReader, &TWikiReader, &ZimWikiReader, &VimwikiReader, &GemtextReader, &ManReader, &LatexReader, &TexinfoReader, &PodReader, &FountainReader, &DocBookReader, &TeiReader, &Fb2Reader, &MsgReader, &MboxReader, &MhtReader, &EmlReader, &HtmlReader]
 }
 
 /// The readers that fit a file, best first.
