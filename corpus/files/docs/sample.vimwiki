@@ -1,0 +1,7 @@
+= Corpus Vimwiki =
+*bold*, _italic_ and `code`, with [[https://example.org|a link]].
+* one
+* two
+{{{python
+print(1)
+}}}

@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt><title>Corpus TEI</title></titleStmt></fileDesc></teiHeader>
+<text><body><div><head>Section</head><p>Some <hi rend="bold">bold</hi>, <hi rend="italic">italic</hi> and <code>code</code>, with <ref target="https://example.org">a link</ref>.</p>
+<list><item>one</item><item>two</item></list><eg>print(1)</eg></div></body></text></TEI>

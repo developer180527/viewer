@@ -1,0 +1,15 @@
+From sender@example.org Thu Jan  1 00:00:00 2026
+From: sender@example.org
+Subject: First
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+
+The first message.
+
+From reader@example.org Thu Jan  1 01:00:00 2026
+From: reader@example.org
+Subject: Re: First
+Date: Thu, 1 Jan 2026 01:00:00 +0000
+
+> The first message.
+
+A reply.

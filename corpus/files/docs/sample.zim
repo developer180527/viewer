@@ -1,0 +1,10 @@
+Content-Type: text/x-zim-wiki
+Wiki-Format: zim 0.4
+
+====== Corpus Zim ======
+**bold**, //italic// and ''code'', with [[https://example.org|a link]].
+* one
+* two
+'''
+print(1)
+'''

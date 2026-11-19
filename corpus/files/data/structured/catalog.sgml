@@ -1,0 +1,5 @@
+<!DOCTYPE catalog SYSTEM "catalog.dtd">
+<catalog>
+<item id=a1><name>Lamp<price>12.50
+<item id=a2><name>Desk<price>89.00
+</catalog>

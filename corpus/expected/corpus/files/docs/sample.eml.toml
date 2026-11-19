@@ -1,0 +1,13 @@
+loader = "eml"
+format = "Email message"
+model = "Rich text"
+
+[flow]
+blocks = 5
+kinds = ["Table", "Heading", "Paragraph", "List"]
+
+[metadata]
+Attachments = "1"
+Title = "Corpus message"
+From = "Corpus Sender <sender@example.org>"
+Date = "2026-01-01T00:00:00Z"

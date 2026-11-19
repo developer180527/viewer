@@ -95,9 +95,90 @@ fn limits_stop_big_documents() {
     assert!(matches!(RtfReader.open(&FileSource::from_bytes("big.rtf", rtf.into_bytes()), &cx), Err(ParseError::TooLarge(_))));
 }
 
+/// Every reader added 2026-11-18/19 (markups, wikis, manuals, XML documents, mail,
+/// books), on its corpus sample: the conformance suite, then formatted text with a
+/// heading (and marks, where the format has them) as its first facet.
+const FLOWING: &[(&str, &str, bool)] = &[
+    ("rst", "sample.rst", true),
+    ("djot", "sample.dj", true),
+    ("asciidoc", "sample.adoc", true),
+    ("typst", "sample.typ", true),
+    ("textile", "sample.textile", true),
+    ("ipynb", "sample.ipynb", true),
+    ("mediawiki", "sample.mediawiki", true),
+    ("creole", "sample.creole", true),
+    ("dokuwiki", "sample.dokuwiki", true),
+    ("jira", "sample.jira", true),
+    ("txt2tags", "sample.t2t", true),
+    ("muse", "sample.muse", true),
+    ("haddock", "sample.haddock", true),
+    ("xwiki", "sample.xwiki", true),
+    ("tikiwiki", "sample.tikiwiki", true),
+    ("twiki", "sample.twiki", true),
+    ("zimwiki", "sample.zim", true),
+    ("vimwiki", "sample.vimwiki", true),
+    ("gemtext", "sample.gmi", false),
+    ("man", "sample.1", true),
+    ("latex", "sample.tex", true),
+    ("texinfo", "sample.texi", true),
+    ("pod", "sample.pod", true),
+    ("fountain", "sample.fountain", true),
+    ("docbook", "sample-docbook.xml", true),
+    ("tei", "sample-tei.xml", true),
+    ("fb2", "sample.fb2", true),
+    ("odp", "sample.odp", true),
+    ("mobi", "sample.mobi", true),
+    ("eml", "sample.eml", true),
+    ("mbox", "sample.mbox", true),
+    ("mhtml", "sample.mht", true),
+    ("msg", "sample.msg", true),
+    ("hwp", "sample.hwpx", false),
+];
+
+fn reader(id: &str) -> &'static dyn Reader {
+    *libfileparser_docs::readers().iter().find(|r| r.info().id == id).unwrap_or_else(|| panic!("no reader {id}"))
+}
+
+#[test]
+fn every_new_reader_on_its_sample() {
+    for &(id, file, marks) in FLOWING {
+        let r = reader(id);
+        let src = FileSource::from_bytes(file, corpus_bytes(file));
+        // Each sample is detected as its own format, ahead of every other reader.
+        let best = libfileparser_docs::detect(src.header(), src.name());
+        assert_eq!(best.first().map(|(r, _)| r.info().id), Some(id), "{file} is detected as {:?}", best.first().map(|(r, _)| r.info().id));
+        // Small documents fit tiny limits; `limits_stop_big_documents` checks a big one
+        // doesn't (every one of these builds through the same counting builder).
+        assert_conforms(r, &[corpus(file).fits_tiny_limits()]);
+        let cx = ParseContext::new();
+        let doc = r.open(&src, &cx).unwrap_or_else(|e| panic!("{file}: {e}"));
+        let Ok(Content::Flow(flow)) = doc.facet(0, &cx) else { panic!("{file}: not formatted text") };
+        let text = format!("{:?}", flow.blocks(0..1000).unwrap());
+        assert!(text.contains("Heading") || id == "hwp" || id == "msg", "{file}: a heading in {text}");
+        if marks {
+            assert!(text.contains("Strong") || text.contains("Emphasis"), "{file}: marks in {text}");
+        }
+    }
+}
+
+#[test]
+fn djvu_pages() {
+    let r = reader("djvu");
+    assert_conforms(r, &[corpus("sample.djvu")]);
+    let cx = ParseContext::new();
+    let doc = r.open(&FileSource::from_bytes("sample.djvu", corpus_bytes("sample.djvu")), &cx).unwrap();
+    let Ok(Content::Pages(p)) = doc.facet(0, &cx) else { panic!("no pages") };
+    let size = p.page_size(0).unwrap();
+    let mut rgba = Vec::new();
+    let (w, h) = p.render(0, 0.5, libfileparser_core::PageRect::whole(size), &mut rgba, &libfileparser_core::Cancel::new()).unwrap();
+    assert_eq!(rgba.len(), (w * h * 4) as usize);
+    // A scan: not one colour.
+    assert!(rgba.chunks(4).any(|c| c[0] < 128) && rgba.chunks(4).any(|c| c[0] > 128));
+}
+
 #[test]
 fn comics() {
-    for file in ["sample.cbz", "sample.cbt"] {
+    for file in ["sample.cbz", "sample.cbt", "sample.cb7", "sample.cbr"] {
         assert_conforms(&ComicReader, &[corpus(file)]);
         let doc = ComicReader.open(&FileSource::from_bytes(file, corpus_bytes(file)), &ParseContext::new()).unwrap();
         let Ok(Content::Pages(p)) = doc.facet(0, &ParseContext::new()) else { panic!("{file}: no pages") };
@@ -129,7 +210,9 @@ fn fuzz() {
         "markdown" => vec![Sample::new("a.md", "# T\n\n> quote\n\n```rust\nfn x() {}\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |\n")],
         "pdf" => vec![Sample::new("p.pdf", pdf(&[(200.0, 100.0, 0), (100.0, 200.0, 90)]))],
         "xps" => vec![corpus("sample.xps")],
-        "comic" => vec![corpus("sample.cbz"), corpus("sample.cbt")],
+        "comic" => vec![corpus("sample.cbz"), corpus("sample.cbt"), corpus("sample.cb7"), corpus("sample.cbr")],
+        "djvu" => vec![corpus("sample.djvu")],
+        id if FLOWING.iter().any(|(r, _, _)| *r == id) => FLOWING.iter().filter(|(r, _, _)| *r == id).map(|(_, f, _)| corpus(f)).collect(),
         "epub" => vec![corpus("sample.epub")],
         "docx" => vec![corpus("sample.docx")],
         "odt" => vec![corpus("sample.odt")],
@@ -142,3 +225,4 @@ fn fuzz() {
         _ => Vec::new(),
     });
 }
+

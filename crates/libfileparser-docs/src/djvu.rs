@@ -108,7 +108,7 @@ impl PageSource for Djvu {
         if (pm.width, pm.height) == (w, h) {
             // On white, opaque, as pages are drawn.
             rgba.clear();
-            rgba.extend(pm.data.chunks_exact(4).flat_map(|px| {
+            rgba.extend(pm.data.as_chunks::<4>().0.iter().flat_map(|px| {
                 let a = px[3] as u32;
                 let over = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
                 [over(px[0]), over(px[1]), over(px[2]), 255]

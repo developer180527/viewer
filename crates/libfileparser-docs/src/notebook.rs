@@ -28,9 +28,7 @@ impl Reader for NotebookReader {
         if !object || !is_text(header) {
             return Detection::NONE;
         }
-        if INFO.matches_extension(name) {
-            Detection::new(Confidence::Content).with_language("json")
-        } else if head.contains("\"nbformat\"") && (head.contains("\"cells\"") || head.contains("\"worksheets\"")) {
+        if INFO.matches_extension(name) || (head.contains("\"nbformat\"") && (head.contains("\"cells\"") || head.contains("\"worksheets\""))) {
             Detection::new(Confidence::Content).with_language("json")
         } else {
             Detection::NONE
@@ -166,11 +164,10 @@ fn out(o: &Value, base: &str, b: &mut Builder) -> Result<usize> {
                 b.block(Block::Paragraph(vec![Inline::Emphasis(vec![Inline::Text(format!("[Image output: {kind}]"))])]))?;
                 return Ok(1);
             }
-            if let Some(t) = get(&["text/plain", "text", "text/latex", "latex"]) {
-                if !t.trim().is_empty() {
+            if let Some(t) = get(&["text/plain", "text", "text/latex", "latex"])
+                && !t.trim().is_empty() {
                     b.block(Block::Code { language: None, text: strip_ansi(t.trim_end_matches('\n')) })?;
                 }
-            }
             Ok(0)
         }
     }

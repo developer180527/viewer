@@ -1,0 +1,10 @@
+loader = "fountain"
+format = "Screenplay"
+model = "Rich text"
+
+[flow]
+blocks = 9
+kinds = ["Heading", "Paragraph", "Rule", "Heading", "Paragraph", "Quote", "Paragraph"]
+
+[metadata]
+Title = "Corpus Fountain"

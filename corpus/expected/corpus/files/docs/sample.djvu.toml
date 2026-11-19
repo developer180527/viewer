@@ -1,0 +1,12 @@
+loader = "djvu"
+format = "DjVu document"
+model = "Pages"
+
+[pages]
+backend = "djvu-rs"
+count = 1
+sizes = ["138.24x184.32"]
+
+[metadata]
+Pages = "1"
+"Rendered by" = "djvu-rs"

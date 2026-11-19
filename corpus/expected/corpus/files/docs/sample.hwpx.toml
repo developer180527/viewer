@@ -1,0 +1,10 @@
+loader = "hwp"
+format = "Hangul document"
+model = "Rich text"
+
+[flow]
+blocks = 2
+kinds = ["Paragraph"]
+
+[metadata]
+Version = "HWPX"

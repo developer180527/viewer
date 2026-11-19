@@ -1,0 +1,10 @@
+loader = "man"
+format = "Manual page"
+model = "Rich text"
+
+[flow]
+blocks = 12
+kinds = ["Heading", "Paragraph", "Heading", "Paragraph", "Heading", "Paragraph", "Quote", "Heading", "Code", "Heading", "Paragraph"]
+
+[metadata]
+Title = "CORPUS(1)"

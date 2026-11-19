@@ -1,0 +1,10 @@
+loader = "pod"
+format = "Perl documentation"
+model = "Rich text"
+
+[flow]
+blocks = 6
+kinds = ["Heading", "Paragraph", "Heading", "Paragraph", "List", "Code"]
+
+[metadata]
+Title = "Corpus::Pod"

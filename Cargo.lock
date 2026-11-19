@@ -345,6 +345,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "blake2s_simd"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2380c0236432f7b22a70229df30f218f5293870c056beb76f5ca068e3273a366"
+dependencies = [
+ "arrayvec",
+ "constant_time_eq",
+]
+
+[[package]]
 name = "blend-lite"
 version = "0.3.1"
 dependencies = [
@@ -601,6 +611,12 @@ name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
+name = "constant_time_eq"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3d52eff69cd5e647efe296129160853a42795992097e8af39800e1060caeea9b"
 
 [[package]]
 name = "core-foundation"
@@ -1993,11 +2009,13 @@ dependencies = [
  "orgize",
  "pulldown-cmark",
  "quick-xml 0.41.0",
+ "rars",
  "rbook",
  "rst_parser",
  "rtf-lite",
  "scraper",
  "serde_json",
+ "sevenz-rust2",
  "tar",
  "typst-syntax",
  "unhwp",
@@ -2270,6 +2288,12 @@ checksum = "f1c46f3fcd2e888afdb01a07efc071cb21300e07c68d32c3e8b01b5c8cb1fcaa"
 dependencies = [
  "sha2",
 ]
+
+[[package]]
+name = "lzma-rust2"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ef1d73c59a56771343712b22ea5615092c612c16ba291c0979e3105dfeec4890"
 
 [[package]]
 name = "mail-parser"
@@ -3580,6 +3604,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ca45419789ae5a7899559e9512e58ca889e41f04f1f2445e9f4b290ceccd1d08"
 
 [[package]]
+name = "rars"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1da01c12cc3255e4c42fbd643820efad0c179e98362770f992eff6ba436cba3c"
+dependencies = [
+ "aho-corasick",
+ "blake2s_simd",
+ "crc32fast",
+ "libc",
+]
+
+[[package]]
 name = "rav1e"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4122,6 +4158,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4eceb519ec34d8290aaf6e46f435102f2bfa63f22b05a144fb16ab266d3b198"
 dependencies = [
  "stable_deref_trait",
+]
+
+[[package]]
+name = "sevenz-rust2"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e5e465701779cbc6d0d10cf907f175035cfdd50b8d3cb628d7f1f435ef02972f"
+dependencies = [
+ "bzip2",
+ "crc32fast",
+ "flate2",
+ "js-sys",
+ "lzma-rust2 0.25.0",
+ "ppmd-rust",
+ "wasm-bindgen",
+ "zstd",
 ]
 
 [[package]]
@@ -5933,7 +5985,7 @@ dependencies = [
  "flate2",
  "getrandom 0.4.3",
  "indexmap",
- "lzma-rust2",
+ "lzma-rust2 0.23.0",
  "memchr",
  "nix",
  "ppmd-rust",

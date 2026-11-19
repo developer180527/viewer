@@ -113,6 +113,123 @@ path = "corpus/files/docs/sample.xps"
 # No MuPDF on Windows yet (docs/design/pdf.md §10 step 7).
 skip_on = ["windows"]
 
+# Markups, wikis, manuals, XML documents, mail and books (2026-11-18), all from make.py.
+[[file]]
+path = "corpus/files/docs/sample.rst"
+
+[[file]]
+path = "corpus/files/docs/sample.dj"
+
+[[file]]
+path = "corpus/files/docs/sample.adoc"
+
+[[file]]
+path = "corpus/files/docs/sample.typ"
+
+[[file]]
+path = "corpus/files/docs/sample.textile"
+
+[[file]]
+path = "corpus/files/docs/sample.ipynb"
+
+[[file]]
+path = "corpus/files/docs/sample.mediawiki"
+
+[[file]]
+path = "corpus/files/docs/sample.creole"
+
+[[file]]
+path = "corpus/files/docs/sample.dokuwiki"
+
+[[file]]
+path = "corpus/files/docs/sample.jira"
+
+[[file]]
+path = "corpus/files/docs/sample.t2t"
+
+[[file]]
+path = "corpus/files/docs/sample.muse"
+
+[[file]]
+path = "corpus/files/docs/sample.haddock"
+
+[[file]]
+path = "corpus/files/docs/sample.xwiki"
+
+[[file]]
+path = "corpus/files/docs/sample.tikiwiki"
+
+[[file]]
+path = "corpus/files/docs/sample.twiki"
+
+[[file]]
+path = "corpus/files/docs/sample.zim"
+
+[[file]]
+path = "corpus/files/docs/sample.vimwiki"
+
+[[file]]
+path = "corpus/files/docs/sample.gmi"
+
+[[file]]
+path = "corpus/files/docs/sample.1"
+
+[[file]]
+path = "corpus/files/docs/sample.tex"
+
+[[file]]
+path = "corpus/files/docs/sample.texi"
+
+[[file]]
+path = "corpus/files/docs/sample.pod"
+
+[[file]]
+path = "corpus/files/docs/sample.fountain"
+
+[[file]]
+path = "corpus/files/docs/sample-docbook.xml"
+
+[[file]]
+path = "corpus/files/docs/sample-tei.xml"
+
+[[file]]
+path = "corpus/files/docs/sample.fb2"
+
+[[file]]
+path = "corpus/files/docs/sample.odp"
+
+[[file]]
+path = "corpus/files/docs/sample.eml"
+
+[[file]]
+path = "corpus/files/docs/sample.mbox"
+
+[[file]]
+path = "corpus/files/docs/sample.mht"
+
+[[file]]
+path = "corpus/files/docs/sample.mobi"
+
+# 7-Zip and RAR comics: the CBZ's pages, packed by macOS's bsdtar (libarchive) and by
+# rars (RAR 5, compressed; genuine UnRAR reads it).
+[[file]]
+path = "corpus/files/docs/sample.cb7"
+
+[[file]]
+path = "corpus/files/docs/sample.cbr"
+
+# From the readers' own test suites (all MIT): msg_parser's ascii.msg, unhwp's
+# two_sections.hwpx, djvu-rs's boy.djvu.
+[[file]]
+path = "corpus/files/docs/sample.msg"
+
+[[file]]
+path = "corpus/files/docs/sample.hwpx"
+
+[[file]]
+path = "corpus/files/docs/sample.djvu"
+golden = true
+
 # Spreadsheets. The binary samples are from tafia/calamine's tests (MIT).
 [[file]]
 path = "corpus/files/sheets/sample.xlsx"
@@ -208,8 +325,13 @@ path = "corpus/files/data/logs/events.gelf"
 [[file]]
 path = "corpus/files/data/logs/session.har"
 
+# DocBook in SGML is a document (docs/design/libfileparser.md §2.1): the DocBook
+# reader takes it by its DTD, and the SGML reader takes any other SGML.
 [[file]]
 path = "corpus/files/data/structured/guide.sgml"
+
+[[file]]
+path = "corpus/files/data/structured/catalog.sgml"
 
 [[file]]
 path = "corpus/files/data/delimited/people.fwf"

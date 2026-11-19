@@ -1,7 +1,8 @@
-//! Comic book archives: CBZ (zip) and CBT (tar) as pages, one per image, in the
-//! order their names sort naturally ("page2" before "page10"). Their ComicInfo.xml
-//! (title, series, number, writer…) is metadata. CB7 and CBR are recognised and refused
-//! until 7-Zip and RAR can be read.
+//! Comic book archives as pages, one per image, in the order their names sort
+//! naturally ("page2" before "page10"): CBZ (zip), CBT (tar), CB7 (7-Zip, through
+//! `sevenz-rust2`) and CBR (RAR 1.3 to 5, through `rars`; both pure Rust, measured
+//! first on libarchive's test archives). Their ComicInfo.xml (title, series, number,
+//! writer…) is metadata. Encrypted archives are refused.
 
 use std::io::{Cursor, Read};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -18,6 +19,47 @@ static INFO: ReaderInfo = ReaderInfo::new("comic", "Comic book", Category::Docs)
 const IMAGES: &[&str] = &["jpg", "jpeg", "png", "gif", "webp", "bmp", "tif", "tiff", "avif", "jxl"];
 
 pub struct ComicReader;
+
+const SEVEN_Z: &[u8] = b"7z\xBC\xAF\x27\x1C";
+
+/// A 7-Zip error as ours: encryption is unsupported, a coder's memory past the limit
+/// too large, anything else damage.
+fn seven_z_error(e: sevenz_rust2::Error, cx: &ParseContext) -> ParseError {
+    if let sevenz_rust2::Error::MaxMemLimited { max_kb, actaul_kb } = e {
+        let _ = cx;
+        return ParseError::too_large(Limit::Allocation, actaul_kb as u64 * 1024, max_kb as u64 * 1024);
+    }
+    let msg = e.to_string();
+    if msg.contains("AES") || msg.to_ascii_lowercase().contains("password") { ParseError::unsupported("this comic is encrypted") } else { ParseError::corrupt(format!("7z: {msg}")) }
+}
+
+/// An entry the comic keeps: an image page, or ComicInfo.xml.
+fn wanted(name: &str) -> (bool, bool) {
+    let base = name.rsplit(['/', '\\']).next().unwrap_or(name);
+    let image = IMAGES.contains(&ext(name).as_str()) && !name.starts_with("__MACOSX/") && !base.starts_with('.');
+    (image, base.eq_ignore_ascii_case("ComicInfo.xml"))
+}
+
+/// An entry's bytes as they're extracted, refused past `max` (one allocation's limit).
+struct Capped {
+    buf: std::rc::Rc<std::cell::RefCell<Vec<u8>>>,
+    max: u64,
+}
+
+impl std::io::Write for Capped {
+    fn write(&mut self, b: &[u8]) -> std::io::Result<usize> {
+        let mut buf = self.buf.borrow_mut();
+        if (buf.len() + b.len()) as u64 > self.max {
+            return Err(std::io::Error::other("an entry is larger than the allocation limit"));
+        }
+        buf.extend_from_slice(b);
+        Ok(b.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
 
 fn is_zip(h: &[u8]) -> bool {
     h.starts_with(b"PK\x03\x04") || h.starts_with(b"PK\x05\x06")
@@ -42,7 +84,7 @@ impl Reader for ComicReader {
         let ok = match ext(name).as_str() {
             "cbz" => is_zip(header),
             "cbt" => is_tar(header),
-            "cb7" => header.starts_with(b"7z\xBC\xAF\x27\x1C"),
+            "cb7" => header.starts_with(SEVEN_Z),
             "cbr" => header.starts_with(b"Rar!"),
             _ => false,
         };
@@ -56,8 +98,10 @@ impl Reader for ComicReader {
             Comic::zip(src, cx)?
         } else if is_tar(header) {
             Comic::tar(src, cx)?
-        } else if header.starts_with(b"7z\xBC\xAF\x27\x1C") || header.starts_with(b"Rar!") {
-            return Err(ParseError::unsupported("CB7 and CBR comics (7-Zip and RAR) can't be read yet"));
+        } else if header.starts_with(SEVEN_Z) {
+            Comic::sevenz(src, cx)?
+        } else if header.starts_with(b"Rar!") {
+            Comic::rar(src, cx)?
         } else {
             return Err(ParseError::NotThisFormat);
         };
@@ -140,6 +184,96 @@ impl Comic {
         Ok(Self::new(entries, info, cx))
     }
 
+    fn sevenz(src: &FileSource, cx: &ParseContext) -> Result<Self> {
+        let bytes = crate::whole(src, cx)?;
+        // The coders' dictionaries within one allocation's limit.
+        let kb = (cx.limits.allocation / 1024).min(usize::MAX as u64) as usize;
+        let mut r = sevenz_rust2::ArchiveReader::new_with_memory_limit(Cursor::new(bytes.as_slice()), sevenz_rust2::Password::empty(), kb).map_err(|e| seven_z_error(e, cx))?;
+        cx.limits.check(Limit::Entries, r.archive().files.len() as u64)?;
+        let (mut entries, mut info, mut failure) = (Vec::new(), None, None);
+        let result = r.for_each_entries(|e, rd| {
+            if cx.cancel.check().is_err() {
+                failure = Some(ParseError::Cancelled);
+                return Ok(false);
+            }
+            let name = e.name().to_string();
+            let (image, is_info) = wanted(&name);
+            if e.is_directory() || !(image || is_info) {
+                // Solid blocks decode through skipped entries anyway.
+                std::io::copy(rd, &mut std::io::sink())?;
+                return Ok(true);
+            }
+            match read_entry(rd, e.size(), e.size(), cx) {
+                Ok(data) if is_info => info = Some(String::from_utf8_lossy(&data).into_owned()),
+                Ok(data) => entries.push((name.clone(), FileSource::from_bytes(name.rsplit('/').next().unwrap_or(&name).to_string(), data))),
+                Err(err) => {
+                    failure = Some(err);
+                    return Ok(false);
+                }
+            }
+            Ok(true)
+        });
+        if let Some(f) = failure {
+            return Err(f);
+        }
+        result.map_err(|e| seven_z_error(e, cx))?;
+        Ok(Self::new(entries, info, cx))
+    }
+
+    fn rar(src: &FileSource, cx: &ParseContext) -> Result<Self> {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        let bytes = crate::whole(src, cx)?;
+        let refuse = |e: rars::Error| {
+            let msg = e.to_string();
+            let lower = msg.to_ascii_lowercase();
+            if lower.contains("password") || lower.contains("encrypt") {
+                ParseError::unsupported("this comic is encrypted")
+            } else if lower.contains("multivolume") || lower.contains("spans volumes") {
+                ParseError::unsupported("a comic split over several RAR volumes")
+            } else {
+                ParseError::corrupt(format!("rar: {msg}"))
+            }
+        };
+        let archive = rars::ArchiveReader::read(&bytes).map_err(refuse)?;
+        cx.limits.check(Limit::Entries, archive.members().count() as u64)?;
+        // Each kept entry: its name, whether it's ComicInfo.xml, and its bytes as they come.
+        type Kept = Vec<(String, bool, Rc<RefCell<Vec<u8>>>)>;
+        let kept: Rc<RefCell<Kept>> = Rc::new(RefCell::new(Vec::new()));
+        let (k, max) = (kept.clone(), cx.limits.allocation);
+        let mut count = 0u64;
+        archive
+            .extract_to(None, |meta| {
+                count += 1;
+                if count.is_multiple_of(64) && cx.cancel.check().is_err() {
+                    return Err(rars::Error::from(std::io::Error::other("cancelled")));
+                }
+                let name = String::from_utf8_lossy(&meta.name).replace('\\', "/");
+                let (image, is_info) = wanted(&name);
+                if meta.is_directory || !(image || is_info) {
+                    return Ok(Box::new(std::io::sink()) as Box<dyn std::io::Write>);
+                }
+                let buf = Rc::new(RefCell::new(Vec::new()));
+                k.borrow_mut().push((name, is_info, buf.clone()));
+                Ok(Box::new(Capped { buf, max }) as Box<dyn std::io::Write>)
+            })
+            .map_err(|e| {
+                cx.cancel.check().err().unwrap_or_else(|| {
+                    if e.to_string().contains("allocation limit") { ParseError::too_large(Limit::Allocation, max + 1, max) } else { refuse(e) }
+                })
+            })?;
+        let (mut entries, mut info) = (Vec::new(), None);
+        for (name, is_info, buf) in kept.take() {
+            let data = buf.take();
+            if is_info {
+                info = Some(String::from_utf8_lossy(&data).into_owned());
+            } else {
+                entries.push((name.clone(), FileSource::from_bytes(name.rsplit('/').next().unwrap_or(&name).to_string(), data)));
+            }
+        }
+        Ok(Self::new(entries, info, cx))
+    }
+
     /// Page `index` decoded, from the cache or now.
     fn decoded(&self, index: u64) -> Result<(u32, u32, Arc<Vec<u8>>)> {
         if let Some(&(_, w, h, ref p)) = self.cache.lock().unwrap_or_else(|e| e.into_inner()).iter().find(|c| c.0 == index) {
@@ -160,7 +294,7 @@ impl Comic {
 }
 
 /// An archive entry's bytes, within the limits on one allocation and on unpacking.
-fn read_entry(r: &mut impl Read, packed: u64, size: u64, cx: &ParseContext) -> Result<Vec<u8>> {
+fn read_entry(r: &mut (impl Read + ?Sized), packed: u64, size: u64, cx: &ParseContext) -> Result<Vec<u8>> {
     cx.limits.check(Limit::Allocation, size)?;
     cx.limits.check_unpack(packed, size)?;
     let mut data = Vec::with_capacity(size as usize);

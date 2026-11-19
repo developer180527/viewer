@@ -143,14 +143,13 @@ impl Roff {
     /// Ends the open item's body.
     fn end_body(&mut self) {
         self.end_para();
-        if let Some(top) = self.frames.last_mut() {
-            if top.body {
+        if let Some(top) = self.frames.last_mut()
+            && top.body {
                 top.body = false;
                 if top.kind == Kind::Tag {
                     self.html.push_str("</blockquote>");
                 }
             }
-        }
     }
 
     /// Ends man's implicit tagged lists (at `.PP`, `.SH`).
@@ -195,12 +194,11 @@ impl Roff {
     /// A list item with a term (`term_html`, already formatted) and a body to come.
     fn tag_item(&mut self, term_html: &str, implicit: bool) {
         self.end_table();
-        if implicit {
-            if !self.frames.last().is_some_and(|f| f.implicit) {
+        if implicit
+            && !self.frames.last().is_some_and(|f| f.implicit) {
                 self.end_para();
                 self.frames.push(Frame { kind: Kind::Tag, count: 0, body: false, implicit: true });
             }
-        }
         self.end_body();
         let top = self.frames.last().map(|f| f.kind).unwrap_or(Kind::Tag);
         match top {
@@ -891,8 +889,7 @@ fn roff(text: &str) -> Result<Rendered> {
                     }
                 }
                 let kind = r.frames.last().map(|f| f.kind);
-                let mut term = Roff::default();
-                term.name = r.name.clone();
+                let mut term = Roff { name: r.name.clone(), ..Roff::default() };
                 mdoc_line(&mut term, &a);
                 term.end_para_inline();
                 match kind {
@@ -904,7 +901,7 @@ fn roff(text: &str) -> Result<Rendered> {
                             if w == "Ta" {
                                 cells.push(Vec::new());
                             } else {
-                                cells.last_mut().map(|c| c.push(w.clone()));
+                                if let Some(c) = cells.last_mut() { c.push(w.clone()) }
                             }
                         }
                         let row = cells
@@ -957,8 +954,7 @@ fn roff(text: &str) -> Result<Rendered> {
                     let words: Vec<String> = a.iter().filter(|w| !MDOC.contains(&w.as_str())).cloned().collect();
                     r.pre(&[words.join(" ")]);
                 } else {
-                    let mut line = Roff::default();
-                    line.name = r.name.clone();
+                    let mut line = Roff { name: r.name.clone(), ..Roff::default() };
                     mdoc_line(&mut line, &a);
                     line.end_para_inline();
                     r.html.push_str(&format!("<blockquote><p>{}</p></blockquote>", line.inl));
@@ -981,8 +977,7 @@ fn roff(text: &str) -> Result<Rendered> {
                 let mut words = vec![name.clone()];
                 words.extend(a.iter().cloned());
                 r.space();
-                let mut line = Roff::default();
-                line.name = r.name.clone();
+                let mut line = Roff { name: r.name.clone(), ..Roff::default() };
                 mdoc_line(&mut line, &words);
                 line.end_para_inline();
                 let html = line.inl;

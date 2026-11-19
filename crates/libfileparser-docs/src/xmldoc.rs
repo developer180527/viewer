@@ -423,11 +423,10 @@ fn walk(text: &str, map: impl Fn(&str, &BytesStart, &[Option<String>]) -> Map, e
                 match w.stack.pop().flatten() {
                     Some(c) if c == "\u{0}section" => w.sections = w.sections.saturating_sub(1),
                     Some(c) => {
-                        if c.starts_with("</h") {
-                            if let Some(at) = w.heading_at.take() {
+                        if c.starts_with("</h")
+                            && let Some(at) = w.heading_at.take() {
                                 w.title = Some(strip_tags(&w.out[at..]).trim().to_string()).filter(|t| !t.is_empty());
                             }
-                        }
                         if c.ends_with("</pre>") {
                             w.pre = w.pre.saturating_sub(1);
                         }

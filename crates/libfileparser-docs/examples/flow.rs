@@ -63,7 +63,7 @@ fn main() {
             let mut rgba = Vec::new();
             let (w, h) = p.render(0, scale, libfileparser_core::PageRect::whole(size), &mut rgba, &cx.cancel).expect("renders");
             let mut ppm = format!("P6 {w} {h} 255\n").into_bytes();
-            ppm.extend(rgba.chunks_exact(4).flat_map(|c| [c[0], c[1], c[2]]));
+            ppm.extend(rgba.as_chunks::<4>().0.iter().flat_map(|c| [c[0], c[1], c[2]]));
             std::fs::write(&out, ppm).expect("writable");
             println!("{} pages; page 1 is {w} × {h} px in {out}", p.page_count());
         }

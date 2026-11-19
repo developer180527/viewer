@@ -1,0 +1,11 @@
+loader = "odp"
+format = "OpenDocument presentation"
+model = "Rich text"
+
+[flow]
+blocks = 6
+kinds = ["Heading", "Paragraph", "List", "Quote", "Heading", "Paragraph"]
+
+[metadata]
+Slides = "2"
+Title = "Corpus Slides"

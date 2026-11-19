@@ -43,7 +43,7 @@ optional, beside them:
 | **`-core`** | — | Defines everything below | Nothing heavy |
 | **`-images`** | PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, SVG; later HEIC, RAW, JPEG XL, PSD | Raster | A leaf |
 | **`-3d`** | glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDA/USDC/USDZ, `.blend`; later CAD, point clouds | Scene | `-images`, ufbx, `usd-lite` |
-| **`-docs`** | ✅ PDF, XPS, CBZ, CBT, EPUB, DOCX, ODT, RTF, Org, Markdown, HTML, PPTX, PPT, DOC (2026-11-18, office_oxide: slides as headings with their notes, and a Slides table); later reStructuredText, AsciiDoc, ODP | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`); office_oxide (MIT/Apache) for PowerPoint and Word 97–2003 |
+| **`-docs`** | ✅ PDF, XPS, DjVu; CBZ, CBT, CB7, CBR; EPUB, MOBI/AZW, FB2; DOCX, ODT, RTF, DOC, HWP/HWPX; PPTX, PPT, ODP (slides as headings with their notes); HTML, MHTML; Markdown, Org, reStructuredText, AsciiDoc, Djot, Typst, Textile; Jupyter notebooks; MediaWiki, Creole, DokuWiki, Jira, txt2tags, Muse, Haddock, XWiki, TikiWiki, TWiki, Zim, Vimwiki, Gemtext; man and mdoc, LaTeX, Texinfo, POD, Fountain; DocBook, TEI; EML, mbox, Outlook MSG (2026-11-19) | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`); office_oxide (MIT/Apache) for PowerPoint and Word 97–2003 |
 | **`-data`** | Data written as text: structured, config, delimited tables, schemas, RDF, graphs, geo, logs, science records, SQL, contacts and calendars, business messages, localization, feeds (§2.1) | Tree, Table | Pure Rust, a feature per family |
 | **`-sheets`** | ✅ XLSX, XLSM, XLSB, XLS (and Excel 2–5's bare BIFF), XML Spreadsheet 2003, ODS, FODS, SYLK, DIF, Numbers (2013 on; a table per table, as a sheet there holds several) | Tables, one per sheet, with Formulas and Defined names | calamine; `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`, `numbers-lite`; zip |
 | **`-datasets`** | HDF5, NetCDF, FITS, MATLAB, R, SAS, Stata, SPSS, Parquet, ORC, Feather, SQLite | Table, Tree | Heavy readers, as features |
@@ -140,9 +140,11 @@ The same rule gives HTML its prose (owner), its elements tree and its source; DO
 |---|---|---|
 | `.html` `.htm` `.xhtml` | `-docs` (2026-11-11, by convention: a web page is a document; ✅ built 2026-11-18) | Nothing: `-docs` gives the elements tree itself, from the same parse (item 7); `-data`'s XML tree also reads `.xhtml` |
 | `.m3u` `.m3u8` `.pls` `.xspf` | `-media` (2026-11-11, by convention: a playlist opens in a player) | Table of entries; opens them until `-media` exists |
-| `.ipynb` | `-docs` (a notebook is read; later) | JSON tree; opens it until then |
+| `.ipynb` | `-docs` (a notebook is read; ✅ 2026-11-18) | JSON tree |
 | `.md` `.markdown` | `-docs` (`-text` until then) | Front matter as a Tree |
-| `.rst` `.adoc` `.org` `.textile` `.rtf` | `-docs` | Nothing |
+| `.rst` `.adoc` `.dj` `.typ` `.org` `.textile` `.rtf`, the wikis, man pages, `.tex`, `.texi`, `.pod`, `.fountain` | `-docs` (✅ 2026-11-18) | Nothing; `-text` keeps their source |
+| DocBook, TEI, FictionBook (`.xml` by their root or DTD, `.dbk`, `.tei`, `.fb2`) | `-docs` (✅ 2026-11-18; DocBook in SGML too, by its DTD) | XML tree |
+| `.eml` `.mbox` `.mht` `.msg` | `-docs` (✅ 2026-11-18: a message is read) | Nothing |
 | `.svg` | `-images` | XML tree |
 | `.srt` `.vtt` `.ttml` | `-media` | Table of cues; opens them until `-media` exists |
 
@@ -169,8 +171,12 @@ The same rule gives HTML its prose (owner), its elements tree and its source; DO
 | Format | Made of | Category | Why |
 |---|---|---|---|
 | PDF, XPS | Text and binary streams; a zip of XML | `-docs` | Documents with pages |
-| DOCX, ODT, EPUB, CBZ, CBT | Zip or tar of XML, HTML or images | `-docs` | A word-processor document, a book, a comic |
-| Markdown, Org, RTF; later reStructuredText, AsciiDoc, Textile, HTML | Plain text with markup | `-docs` | Written to be read as prose |
+| DOCX, ODT, ODP, HWPX, EPUB, CBZ, CBT, CB7, CBR | Zip, tar, 7-Zip or RAR of XML, HTML or images | `-docs` | A word-processor document, slides, a book, a comic |
+| Markdown, Org, RTF, reStructuredText, AsciiDoc, Djot, Typst, Textile, the wikis, man pages, LaTeX, Texinfo, POD, Fountain, HTML | Plain text with markup | `-docs` | Written to be read as prose |
+| DocBook, TEI, FictionBook | XML (DocBook also SGML) | `-docs` | Books and articles; never the XML reader's when their root or DTD says so |
+| Jupyter notebooks | JSON | `-docs` | Read as a document: prose, code and its output |
+| EML, mbox, MHTML | Plain text (MIME) | `-docs` | A message, a mailbox, a saved page: read, not edited as text |
+| MOBI, Outlook MSG, DjVu | Palm database, OLE, IFF | `-docs` | A book, a message, scanned pages |
 | XLSX, XLSB, ODS | Zip of XML or binary parts | `-sheets` | Workbooks |
 | FODS, XML Spreadsheet 2003 | One XML file | `-sheets` | Workbooks; never the XML reader's |
 | SYLK, DIF | Plain text | `-sheets` | Spreadsheet interchange: cells at rows and columns |
@@ -192,7 +198,8 @@ Judgement calls, and how they went:
 | VCD | A waveform category of its own | `-data` | A record of values over time, with no program family here; a waveform view later, in libviewer |
 | Playlists | `-data` (a list of entries) | `-media`, when it exists | Opened in a player; `-data`'s table until then |
 | vCard, iCalendar, feeds | A category of their own | `-data` | Records with no program family here; item 0.3 |
-| PPTX, ODP, legacy `.doc` (none read yet) | A presentations category | `-docs` | Office documents; slides are pages |
+| PPTX, PPT, ODP | A presentations category | `-docs` | Office documents; read as slides, each a heading with its text and notes (2026-11-18) |
+| OPML | `-docs` (an outline is written) | `-data` | An outline is a tree, and is used as a list of feeds; `-data`'s XML tree reads it |
 
 The corpus follows the same rule: `corpus/files/<category>/` and `corpus/real/<category>/<reader>/` are named by the owner's category, so a PDF is under `docs/`, an XML spreadsheet under `sheets/`.
 
@@ -410,10 +417,10 @@ Format libraries follow §5's rules too, and keep their own extension points: gl
 
 (2026-11-08)
 
-1. **Mature, popular libraries first,** measured on the real-world corpus (corpus/README.md) before one is adopted: how many files it opens, and whether it ever panics or hangs. Today: pulldown-cmark, html5ever (through scraper), rbook, orgize.
+1. **Mature, popular libraries first,** measured on the real-world corpus (corpus/README.md) before one is adopted: how many files it opens, and whether it ever panics or hangs. Today: pulldown-cmark, html5ever (through scraper), rbook, orgize, office_oxide, rst_parser, jotdown, asciidoc-parser, typst-syntax, mail-parser, msg_parser, unhwp, djvu-rs, sevenz-rust2, rars.
 2. **Licence counts only where it constrains.** GPL and AGPL are allowed behind an opt-in feature, like MuPDF, never in a default build.
 3. **We write a parser only when no library does the job** or the measurements say ours opens more. `docx-lite` opened 263 of 279 files against docx-rust's 254; `rtf-lite` 17 of 18 against rtf-parser's 16, which also panicked; no Rust library reads ODT; the `blend` crate panicked on 29 of 208 real `.blend` files; calamine failed on 46 of 399 real ODS files. Fixes found on the way go upstream ([upstream-issues.md](../upstream-issues.md)).
-4. **A parser we write is its own embeddable crate** (a format library, as above): `usd-lite`, `blend-lite`, `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`, `numbers-lite`, `chem-lite`, `rtf-lite`, `docx-lite`, `odt-lite`. No libfileparser types in it; the category's reader only adapts it.
+4. **A parser we write is its own embeddable crate** (a format library, as above): `usd-lite`, `blend-lite`, `ods-lite`, `sylk-lite`, `dif-lite`, `biff-lite`, `xmlss-lite`, `numbers-lite`, `chem-lite`, `rtf-lite`, `docx-lite`, `odt-lite`. No libfileparser types in it; the category's reader only adapts it. **Not yet** (2026-11-19, docs/decisions.md): `-docs`' own readers of the markups without a crate (the wikis, Textile, man and mdoc, LaTeX, Texinfo, POD, Fountain), of DocBook, TEI, FictionBook and ODP, and its MOBI decoder are modules of `-docs` today.
 5. **A newly found or invented format is added as above:** one `Reader` and one line in `readers()`, or from outside the crate with `Library::reader` and `replace`. That is how a category keeps its promise of opening any file of its kind.
 
 ### Other extension points

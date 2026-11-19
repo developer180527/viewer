@@ -1,0 +1,13 @@
+loader = "mhtml"
+format = "Web archive"
+model = "Rich text"
+
+[flow]
+blocks = 3
+kinds = ["Heading", "Paragraph", "Image"]
+
+[metadata]
+Resources = "1"
+Title = "Corpus web archive"
+"Saved from" = "https://example.org/page"
+Saved = "2026-01-01T00:00:00Z"

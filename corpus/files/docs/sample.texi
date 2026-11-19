@@ -1,0 +1,14 @@
+\input texinfo
+@settitle Corpus Texinfo
+@node Top
+@chapter Chapter
+@strong{bold}, @emph{italic} and @code{code}, with @uref{https://example.org, a link}.
+
+@itemize @bullet
+@item one
+@item two
+@end itemize
+@example
+print(1)
+@end example
+@bye

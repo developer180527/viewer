@@ -1,0 +1,10 @@
+loader = "docbook"
+format = "DocBook document"
+model = "Rich text"
+
+[flow]
+blocks = 5
+kinds = ["Heading", "Paragraph", "List", "Code"]
+
+[metadata]
+Title = "Corpus DocBook"

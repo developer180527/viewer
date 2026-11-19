@@ -1,0 +1,19 @@
+=head1 NAME
+
+Corpus::Pod - a sample
+
+=head1 DESCRIPTION
+
+Some B<bold>, I<italic> and C<code>, with L<a link|https://example.org>.
+
+=over
+
+=item * one
+
+=item * two
+
+=back
+
+    print 1;
+
+=cut

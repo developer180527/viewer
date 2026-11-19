@@ -335,9 +335,10 @@ impl Reader for MhtReader {
     fn detect(&self, header: &[u8], name: &str) -> Detection {
         let head = String::from_utf8_lossy(&header[..header.len().min(4096)]).to_ascii_lowercase();
         let related = head.contains("multipart/related") && (head.contains("text/html") || head.contains("snapshot-content-location") || head.contains("saved by"));
-        if MHT.matches_extension(name) && (related || head.contains("mime-version") || head.contains("content-type")) {
-            Detection::new(Confidence::Content).with_language("email")
-        } else if related && known_headers(header) >= 1 && head.contains("mime-version") && !head.contains("\nfrom:") && !head.starts_with("from:") {
+        let named = MHT.matches_extension(name) && (related || head.contains("mime-version") || head.contains("content-type"));
+        // Unnamed, a saved page's headers: multipart/related, and not a message's From.
+        let saved = related && known_headers(header) >= 1 && head.contains("mime-version") && !head.contains("\nfrom:") && !head.starts_with("from:");
+        if named || saved {
             Detection::new(Confidence::Content).with_language("email")
         } else {
             Detection::NONE
@@ -393,7 +394,16 @@ impl Reader for MsgReader {
         if header.starts_with(OLE) && MSG.matches_extension(name) { Detection::new(Confidence::Certain) } else { Detection::NONE }
     }
 
+    /// msg_parser panics on some damaged files (found by fuzzing: an overflow, and
+    /// strings sliced inside a character), so its work is guarded here and a panic is
+    /// a damaged file, whoever calls.
     fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| open_msg(src, cx))).unwrap_or_else(|_| Err(ParseError::corrupt("not a readable Outlook message: msg_parser panicked on it")))
+    }
+}
+
+fn open_msg(src: &FileSource, cx: &ParseContext) -> Result<Document> {
+    {
         cx.cancel.check()?;
         if !src.header().starts_with(OLE) {
             return Err(ParseError::NotThisFormat);
@@ -477,12 +487,11 @@ fn msg_html(o: &msg_parser::Outlook, depth: usize) -> String {
     }
     let mut listed = Vec::new();
     for a in &o.attachments {
-        if a.is_embedded_message() && depth < 8 {
-            if let Some(Ok(nested)) = a.as_message() {
+        if a.is_embedded_message() && depth < 8
+            && let Some(Ok(nested)) = a.as_message() {
                 out.push_str(&format!("<blockquote><p><em>Attached message</em></p>{}</blockquote>", msg_html(&nested, depth + 1)));
                 continue;
             }
-        }
         listed.push(format!("<li>{} <em>({}{})</em></li>", esc(&attachment_name(a)), if a.mime_tag.is_empty() { String::new() } else { format!("{}, ", esc(&a.mime_tag)) }, size(a.payload_bytes.len())));
     }
     if !listed.is_empty() {

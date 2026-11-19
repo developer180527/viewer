@@ -1,0 +1,10 @@
+loader = "texinfo"
+format = "Texinfo manual"
+model = "Rich text"
+
+[flow]
+blocks = 5
+kinds = ["Heading", "Paragraph", "List", "Code"]
+
+[metadata]
+Title = "Corpus Texinfo"

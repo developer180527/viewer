@@ -9,11 +9,36 @@ pub static libfileparser_docs::pdf::INFO: libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::pdf::detect(&[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::pdf::document(&libfileparser_core::source::FileSource, alloc::sync::Arc<dyn libfileparser_core::pages::PageSource>, alloc::vec::Vec<(alloc::string::String, alloc::string::String)>, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub fn libfileparser_docs::pdf::is_pdf(&[u8]) -> bool
+pub struct libfileparser_docs::AsciidocReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::AsciidocReader
+pub fn libfileparser_docs::AsciidocReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::AsciidocReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::AsciidocReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::ComicReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::ComicReader
 pub fn libfileparser_docs::ComicReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::ComicReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::ComicReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::CreoleReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::CreoleReader
+pub fn libfileparser_docs::CreoleReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::CreoleReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::CreoleReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::DjotReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::DjotReader
+pub fn libfileparser_docs::DjotReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::DjotReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::DjotReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::DjvuReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::DjvuReader
+pub fn libfileparser_docs::DjvuReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::DjvuReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::DjvuReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::DocBookReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::DocBookReader
+pub fn libfileparser_docs::DocBookReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::DocBookReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::DocBookReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::DocReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::DocReader
 pub fn libfileparser_docs::DocReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
@@ -24,21 +49,111 @@ impl libfileparser_core::reader::Reader for libfileparser_docs::DocxReader
 pub fn libfileparser_docs::DocxReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::DocxReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::DocxReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::DokuWikiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::DokuWikiReader
+pub fn libfileparser_docs::DokuWikiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::DokuWikiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::DokuWikiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::EmlReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::EmlReader
+pub fn libfileparser_docs::EmlReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::EmlReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::EmlReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::EpubReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::EpubReader
 pub fn libfileparser_docs::EpubReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::EpubReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::EpubReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::Fb2Reader
+impl libfileparser_core::reader::Reader for libfileparser_docs::Fb2Reader
+pub fn libfileparser_docs::Fb2Reader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::Fb2Reader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::Fb2Reader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::FountainReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::FountainReader
+pub fn libfileparser_docs::FountainReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::FountainReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::FountainReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::GemtextReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::GemtextReader
+pub fn libfileparser_docs::GemtextReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::GemtextReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::GemtextReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::HaddockReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::HaddockReader
+pub fn libfileparser_docs::HaddockReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::HaddockReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::HaddockReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::HtmlReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::HtmlReader
 pub fn libfileparser_docs::HtmlReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::HtmlReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::HtmlReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::HwpReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::HwpReader
+pub fn libfileparser_docs::HwpReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::HwpReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::HwpReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::JiraReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::JiraReader
+pub fn libfileparser_docs::JiraReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::JiraReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::JiraReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::LatexReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::LatexReader
+pub fn libfileparser_docs::LatexReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::LatexReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::LatexReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::ManReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::ManReader
+pub fn libfileparser_docs::ManReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::ManReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::ManReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::MarkdownReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::MarkdownReader
 pub fn libfileparser_docs::MarkdownReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::MarkdownReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::MarkdownReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::MboxReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::MboxReader
+pub fn libfileparser_docs::MboxReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::MboxReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::MboxReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::MediaWikiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::MediaWikiReader
+pub fn libfileparser_docs::MediaWikiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::MediaWikiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::MediaWikiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::MhtReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::MhtReader
+pub fn libfileparser_docs::MhtReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::MhtReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::MhtReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::MobiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::MobiReader
+pub fn libfileparser_docs::MobiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::MobiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::MobiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::MsgReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::MsgReader
+pub fn libfileparser_docs::MsgReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::MsgReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::MsgReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::MuseReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::MuseReader
+pub fn libfileparser_docs::MuseReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::MuseReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::MuseReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::NotebookReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::NotebookReader
+pub fn libfileparser_docs::NotebookReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::NotebookReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::NotebookReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::OdpReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::OdpReader
+pub fn libfileparser_docs::OdpReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::OdpReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::OdpReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::OdtReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::OdtReader
 pub fn libfileparser_docs::OdtReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
@@ -54,6 +169,11 @@ impl libfileparser_core::reader::Reader for libfileparser_docs::pdf::PdfReader
 pub fn libfileparser_docs::pdf::PdfReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::pdf::PdfReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::pdf::PdfReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::PodReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::PodReader
+pub fn libfileparser_docs::PodReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::PodReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::PodReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::PptReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::PptReader
 pub fn libfileparser_docs::PptReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
@@ -64,16 +184,71 @@ impl libfileparser_core::reader::Reader for libfileparser_docs::PptxReader
 pub fn libfileparser_docs::PptxReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::PptxReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::PptxReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::RstReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::RstReader
+pub fn libfileparser_docs::RstReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::RstReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::RstReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::RtfReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::RtfReader
 pub fn libfileparser_docs::RtfReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::RtfReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::RtfReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::TWikiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::TWikiReader
+pub fn libfileparser_docs::TWikiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::TWikiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::TWikiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::TeiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::TeiReader
+pub fn libfileparser_docs::TeiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::TeiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::TeiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::TexinfoReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::TexinfoReader
+pub fn libfileparser_docs::TexinfoReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::TexinfoReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::TexinfoReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::TextileReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::TextileReader
+pub fn libfileparser_docs::TextileReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::TextileReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::TextileReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::TikiWikiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::TikiWikiReader
+pub fn libfileparser_docs::TikiWikiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::TikiWikiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::TikiWikiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::Txt2tagsReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::Txt2tagsReader
+pub fn libfileparser_docs::Txt2tagsReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::Txt2tagsReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::Txt2tagsReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::TypstReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::TypstReader
+pub fn libfileparser_docs::TypstReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::TypstReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::TypstReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::VimwikiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::VimwikiReader
+pub fn libfileparser_docs::VimwikiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::VimwikiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::VimwikiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::XWikiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::XWikiReader
+pub fn libfileparser_docs::XWikiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::XWikiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::XWikiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub struct libfileparser_docs::XpsReader
 impl libfileparser_core::reader::Reader for libfileparser_docs::XpsReader
 pub fn libfileparser_docs::XpsReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
 pub fn libfileparser_docs::XpsReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
 pub fn libfileparser_docs::XpsReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
+pub struct libfileparser_docs::ZimWikiReader
+impl libfileparser_core::reader::Reader for libfileparser_docs::ZimWikiReader
+pub fn libfileparser_docs::ZimWikiReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
+pub fn libfileparser_docs::ZimWikiReader::info(&self) -> &libfileparser_core::reader::ReaderInfo
+pub fn libfileparser_docs::ZimWikiReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub fn libfileparser_docs::detect(&[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
 pub fn libfileparser_docs::open(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub fn libfileparser_docs::open_with(&str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>

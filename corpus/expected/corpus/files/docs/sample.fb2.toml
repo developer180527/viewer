@@ -1,0 +1,10 @@
+loader = "fb2"
+format = "FictionBook"
+model = "Rich text"
+
+[flow]
+blocks = 5
+kinds = ["Heading", "Paragraph", "Heading", "Paragraph", "Quote"]
+
+[metadata]
+Title = "Corpus FictionBook"

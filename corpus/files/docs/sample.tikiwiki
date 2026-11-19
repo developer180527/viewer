@@ -1,0 +1,7 @@
+! Corpus TikiWiki
+__bold__, ''italic'' and -+code+-, with [https://example.org|a link].
+* one
+* two
+{CODE(colors="python")}
+print(1)
+{CODE}

@@ -21,3 +21,10 @@ Found measuring calamine 0.38 on 2,100 real spreadsheets.
 **XLSX: `Unrecognized sheet:type` refuses a workbook with an Excel 4 macro sheet** (`xl/macrosheets/`), as in POI's `xlmmacro.xlsm` and `64420.xlsm`. Suggestion: list it as `SheetType::MacroSheet`.
 
 **`open_workbook_auto_from_rs` reports `Cannot detect file format` for a file of a known format that failed to parse,** hiding the real error.
+
+Found fuzzing `-docs`' new readers (2026-11-19), 1,000 damaged copies of each corpus sample over three seeds.
+
+**msg_parser 0.3.6: panics on damaged files.** `attempt to add with overflow` at `parser/named_prop.rs:173`, and `byte index is not a char boundary` at `parser/stream.rs:26–27` (a stream's name sliced by bytes). Suggestion: checked arithmetic, and slicing by `char_indices`. Our `MsgReader` catches its panics meanwhile.
+
+**rst_parser 0.4.2: parse time grows with the square of a line's length.** A 4,000-character line of words takes 2.5 s in a debug build, an 11 KB one over 10 s; many short lines stay linear. Our `RstReader` swaps lines over 800 characters for placeholders meanwhile. Its HTML writer, rst_renderer 0.4.2, also leaves 13 elements `unimplemented!()` (`Problematic` among them), so we write its tree out ourselves.
+

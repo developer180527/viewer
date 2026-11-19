@@ -1,0 +1,10 @@
+loader = "sgml"
+format = "SGML"
+model = "Tree"
+
+[tree]
+nodes = 12
+top = ["catalog"]
+
+[metadata]
+Nodes = "12"

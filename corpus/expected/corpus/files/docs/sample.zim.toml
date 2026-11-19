@@ -1,0 +1,10 @@
+loader = "zimwiki"
+format = "Zim page"
+model = "Rich text"
+
+[flow]
+blocks = 4
+kinds = ["Heading", "Paragraph", "List", "Code"]
+
+[metadata]
+Title = "Corpus Zim"

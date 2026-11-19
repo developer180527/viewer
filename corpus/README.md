@@ -38,6 +38,10 @@ corpus/fetch-real.sh
 LFP_REAL_CORPUS=$PWD/corpus/real cargo test -p libfileparser --test real_world -- --ignored --nocapture
 ```
 
+### Comic archives (7-Zip and RAR)
+
+The CB7 and CBR readers (sevenz-rust2, rars) were measured on libarchive's own test archives, which `fetch-real.sh` doesn't fetch because libarchive keeps them uuencoded: clone `libarchive/libarchive` sparsely with `/libarchive/test/test_read_format_rar*.uu` and `/libarchive/test/test_read_format_7z*.uu`, then `uudecode` each. Of the 100 RAR files, rars read every one genuine UnRAR read except the deliberately malformed ones and single volumes of a set, and never claimed one UnRAR refused; sevenz-rust2 read all 82 7-Zip files but the encrypted, malformed and self-extracting ones (docs/decisions.md, 2026-11-19).
+
 ## Fuzzing
 
 Every reader, and usd-lite and gltf-lite through their own APIs, is fuzzed by each crate's tests (`libfileparser-testkit`'s fuzzer): its samples and the corpus files it reads, damaged thousands of ways, opened, every facet made and read. Nothing may panic or hang. `LFP_FUZZ_ITERATIONS` (default 64) and `LFP_FUZZ_SEED` go further; failing inputs are saved under `target/fuzz-failures/`.

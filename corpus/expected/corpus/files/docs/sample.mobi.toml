@@ -1,0 +1,12 @@
+loader = "mobi"
+format = "Kindle book"
+model = "Rich text"
+
+[flow]
+blocks = 2
+kinds = ["Heading", "Paragraph"]
+
+[metadata]
+Title = "Corpus Kindle book"
+Author = "Corpus Author"
+Publisher = "Viewer"

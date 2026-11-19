@@ -1,0 +1,7 @@
+loader = "mediawiki"
+format = "MediaWiki page"
+model = "Rich text"
+
+[flow]
+blocks = 4
+kinds = ["Heading", "Paragraph", "List", "Code"]

@@ -1,0 +1,10 @@
+loader = "twiki"
+format = "TWiki topic"
+model = "Rich text"
+
+[flow]
+blocks = 4
+kinds = ["Heading", "Paragraph", "List", "Code"]
+
+[metadata]
+Title = "Corpus TWiki"

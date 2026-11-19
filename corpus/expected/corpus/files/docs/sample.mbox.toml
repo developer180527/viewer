@@ -1,0 +1,10 @@
+loader = "mbox"
+format = "Mailbox"
+model = "Rich text"
+
+[flow]
+blocks = 8
+kinds = ["Heading", "Table", "Paragraph", "Rule", "Heading", "Table", "Quote", "Paragraph"]
+
+[metadata]
+Messages = "2"

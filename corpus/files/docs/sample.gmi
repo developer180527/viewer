@@ -1,0 +1,8 @@
+# Corpus Gemtext
+Gemtext has no marks: *this* stays as written.
+=> https://example.org A link
+* one
+* two
+```python
+print(1)
+```

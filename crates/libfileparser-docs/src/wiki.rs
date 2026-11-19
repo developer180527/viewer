@@ -735,8 +735,8 @@ fn simple_wiki(text: &str, s: &WikiSyntax) -> Result<Rendered> {
             o.rule();
             continue;
         }
-        if let Some((sep, header)) = s.table {
-            if t.starts_with(sep) || (header == ["^"] && t.starts_with('^')) {
+        if let Some((sep, header)) = s.table
+            && (t.starts_with(sep) || (header == ["^"] && t.starts_with('^'))) {
                 if is_separator_row(t) {
                     o.header_separator();
                 } else {
@@ -750,13 +750,11 @@ fn simple_wiki(text: &str, s: &WikiSyntax) -> Result<Rendered> {
                 }
                 continue;
             }
-        }
-        if let Some(q) = s.quote {
-            if let Some(rest) = t.strip_prefix(q) {
+        if let Some(q) = s.quote
+            && let Some(rest) = t.strip_prefix(q) {
                 o.quote(&inline(rest.trim(), s.rules));
                 continue;
             }
-        }
         if let Some(tab) = s.indent_lists {
             if let Some((indent, ordered, rest)) = indented_marker(line, tab) {
                 o.indented_item(indent, ordered, &inline(rest, s.rules));
@@ -1379,10 +1377,10 @@ fn tikiwiki(text: &str) -> Result<Rendered> {
             i = next;
             continue;
         }
-        if t.starts_with("||") {
+        if let Some(first) = t.strip_prefix("||") {
             // `||a|b\nc|d||`: rows by line, cells by `|`.
             let mut rows = vec![t.trim_start_matches("||").to_string()];
-            if !t[2..].contains("||") {
+            if !first.contains("||") {
                 let (body, next) = until(&lines, i, |l| l.contains("||"));
                 rows.extend(body.iter().map(|l| l.to_string()));
                 if let Some(last) = lines.get(next.wrapping_sub(1)).filter(|l| next > i && l.contains("||")) {

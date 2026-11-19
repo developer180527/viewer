@@ -1,0 +1,19 @@
+From: <Saved by Blink>
+Snapshot-Content-Location: https://example.org/page
+Subject: Corpus web archive
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+MIME-Version: 1.0
+Content-Type: multipart/related; type="text/html"; boundary="----b"
+
+------b
+Content-Type: text/html
+Content-Location: https://example.org/page
+
+<html><body><h1>Corpus web archive</h1><p>Some <b>bold</b> and <i>italic</i>, with <a href="https://example.org">a link</a>.</p><img src="https://example.org/a.png"></body></html>
+------b
+Content-Type: image/png
+Content-Location: https://example.org/a.png
+Content-Transfer-Encoding: base64
+
+iVBORw0KGgo=
+------b--

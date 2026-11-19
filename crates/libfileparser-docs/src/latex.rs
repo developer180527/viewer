@@ -213,7 +213,8 @@ impl Tex {
     fn environment_body(&mut self, name: &str) -> String {
         let begin: Vec<char> = format!("\\begin{{{name}}}").chars().collect();
         let end: Vec<char> = format!("\\end{{{name}}}").chars().collect();
-        let start = self.i;
+        // A trailing backslash can step past the end.
+        let start = self.i.min(self.chars.len());
         let mut depth = 1usize;
         while self.i < self.chars.len() {
             if self.chars[self.i..].starts_with(&end) {

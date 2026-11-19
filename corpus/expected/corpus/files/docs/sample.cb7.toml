@@ -1,0 +1,15 @@
+loader = "comic"
+format = "Comic book"
+model = "Pages"
+
+[pages]
+backend = "images"
+count = 3
+sizes = ["48x64", "48x64", "48x64"]
+
+[metadata]
+Pages = "3"
+"Rendered by" = "images"
+Title = "Corpus Comic"
+Series = "Samples"
+Number = "1"

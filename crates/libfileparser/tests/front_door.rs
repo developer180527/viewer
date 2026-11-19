@@ -224,6 +224,10 @@ fn categories_follow_convention() {
         ("docs/sample.pptx", Docs),
         ("docs/sample.ppt", Docs),
         ("docs/sample.doc", Docs),
+        ("docs/sample.odp", Docs),
+        ("docs/sample.hwpx", Docs),
+        ("docs/sample.cb7", Docs),
+        ("docs/sample.cbr", Docs),
         ("sheets/sample.xlsx", Sheets),
         ("sheets/sample.xlsb", Sheets),
         ("sheets/sample.ods", Sheets),
@@ -236,8 +240,30 @@ fn categories_follow_convention() {
         ("../../samples/logo.svg", Images),
         ("data/geo/run.gpx", Data),
         ("data/feeds/feed.xml", Data),
+        // XML that is a document: DocBook and TEI in files named `.xml`, a FictionBook.
+        ("docs/sample-docbook.xml", Docs),
+        ("docs/sample-tei.xml", Docs),
+        ("docs/sample.fb2", Docs),
         // Plain text that is a document, a workbook, a model.
         ("docs/sample.org", Docs),
+        // Every plain-text markup, wiki and manual is a document (2026-11-18), not text.
+        ("docs/sample.rst", Docs),
+        ("docs/sample.adoc", Docs),
+        ("docs/sample.typ", Docs),
+        ("docs/sample.mediawiki", Docs),
+        ("docs/sample.1", Docs),
+        ("docs/sample.tex", Docs),
+        ("docs/sample.pod", Docs),
+        ("docs/sample.fountain", Docs),
+        // JSON that is a notebook; mail, which is text by its syntax.
+        ("docs/sample.ipynb", Docs),
+        ("docs/sample.eml", Docs),
+        ("docs/sample.mbox", Docs),
+        ("docs/sample.mht", Docs),
+        // Binary books and messages.
+        ("docs/sample.mobi", Docs),
+        ("docs/sample.msg", Docs),
+        ("docs/sample.djvu", Docs),
         // A web page is a document (2026-11-11), not text or a tree.
         ("docs/sample.html", Docs),
         ("docs/sample.rtf", Docs),

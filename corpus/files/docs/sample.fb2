@@ -1,0 +1,3 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><author><first-name>Corpus</first-name><last-name>Author</last-name></author><book-title>Corpus FictionBook</book-title></title-info></description>
+<body><section><title><p>Chapter</p></title><p>Some <strong>bold</strong>, <emphasis>italic</emphasis> and <code>code</code>, with <a l:href="https://example.org">a link</a>.</p><poem><stanza><v>A line of verse</v></stanza></poem></section></body></FictionBook>

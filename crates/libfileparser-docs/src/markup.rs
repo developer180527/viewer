@@ -109,13 +109,56 @@ fn rst(text: &str) -> Result<Rendered> {
     if !text.ends_with('\n') {
         text.push('\n');
     }
+    let (text, long) = tame_rst(&text);
     let doc = rst_parser::parse(&text).map_err(|e| ParseError::invalid(format!("not reStructuredText this parser reads: {}", first_line(&e.to_string()))))?;
     // The tree as JSON (document_tree derives Serialize), walked generically: rst_parser's
     // own HTML writer, rst_renderer, panics on 13 kinds of element.
     let tree = serde_json::to_value(&doc).map_err(ParseError::invalid)?;
     let mut w = RstHtml { out: String::with_capacity(text.len() * 2), sections: 0, title: None, depth: 0 };
     w.children(&tree);
-    Ok(Rendered { html: w.out, title: w.title, warnings: Vec::new() })
+    let mut warnings = Vec::new();
+    if !long.is_empty() {
+        // Each long line back where its placeholder is, as written.
+        for (n, line) in long.iter().enumerate() {
+            w.out = w.out.replacen(&placeholder(n), &esc(line.trim()), 1);
+        }
+        warnings.push(format!("{} line(s) over {LONG_LINE} characters shown without their inline formatting: reading them as reStructuredText takes too long.", long.len()));
+    }
+    let title = w.title.map(|t| long.iter().enumerate().fold(t, |t, (n, line)| t.replacen(&placeholder(n), line.trim(), 1)));
+    Ok(Rendered { html: w.out, title, warnings })
+}
+
+/// Characters in one line past which rst_parser is too slow: its parse grows with the
+/// square of a line's length (4,000 characters take seconds), and it can't be
+/// cancelled. Found by fuzzing; many short lines stay linear.
+const LONG_LINE: usize = 800;
+
+/// A word standing in for long line `n` while rst_parser reads the rest.
+fn placeholder(n: usize) -> String {
+    format!("lfplongline{n}x")
+}
+
+/// `text` with every line over [`LONG_LINE`] characters swapped for a placeholder (its
+/// indent kept, so it stays in the same block), and those lines.
+fn tame_rst(text: &str) -> (String, Vec<String>) {
+    if !text.lines().any(|l| l.chars().count() > LONG_LINE) {
+        return (text.to_string(), Vec::new());
+    }
+    let mut long = Vec::new();
+    let mut out = String::with_capacity(text.len());
+    for line in text.split_inclusive('\n') {
+        let body = line.trim_end_matches('\n');
+        if body.chars().count() > LONG_LINE {
+            let indent = &body[..body.len() - body.trim_start().len()];
+            out.push_str(indent);
+            out.push_str(&placeholder(long.len()));
+            out.push('\n');
+            long.push(body.to_string());
+        } else {
+            out.push_str(line);
+        }
+    }
+    (out, long)
 }
 
 struct RstHtml {
@@ -343,11 +386,10 @@ fn adoc_block<'a>(block: &'a asciidoc_parser::blocks::Block<'a>, out: &mut Strin
         return;
     }
     // A block's own title (".Title" above it), except a section's, which is its heading.
-    if !matches!(block, Block::Section(_)) {
-        if let Some(t) = block.title() {
+    if !matches!(block, Block::Section(_))
+        && let Some(t) = block.title() {
             out.push_str(&format!("<p><strong>{t}</strong></p>"));
         }
-    }
     let context = block.resolved_context();
     match block {
         Block::Section(s) => {
@@ -741,7 +783,7 @@ impl Typst {
         let name = callee.rsplit('.').next().unwrap_or("").to_string();
         let Some(args) = n.children().find(|c| c.kind() == K::Args) else { return };
         let positional: Vec<_> = args.children().filter(|c| !matches!(c.kind(), K::LeftParen | K::RightParen | K::Comma | K::Space | K::Named | K::Spread | K::LineComment | K::BlockComment)).collect();
-        let named = |key: &str| args.children().filter(|c| c.kind() == K::Named).find(|c| c.children().next().is_some_and(|k| k.leaf_text() == key)).and_then(|c| c.children().filter(|x| !matches!(x.kind(), K::Ident | K::Colon | K::Space)).last());
+        let named = |key: &str| args.children().filter(|c| c.kind() == K::Named).find(|c| c.children().next().is_some_and(|k| k.leaf_text() == key)).and_then(|c| c.children().rfind(|x| !matches!(x.kind(), K::Ident | K::Colon | K::Space)));
         let str_arg = |i: usize| positional.get(i).filter(|a| a.kind() == K::Str).map(|a| a.leaf_text().trim_matches('"').to_string());
         let wrap = |t: &mut Typst, tag: &str| {
             t.inline();
@@ -1013,9 +1055,9 @@ fn textile_inline(text: &str) -> String {
     while i < chars.len() {
         let c = chars[i];
         // `"text":url`
-        if c == '"' {
-            if let Some(close) = chars[i + 1..].iter().position(|&x| x == '"').map(|p| i + 1 + p) {
-                if chars.get(close + 1) == Some(&':') {
+        if c == '"'
+            && let Some(close) = chars[i + 1..].iter().position(|&x| x == '"').map(|p| i + 1 + p)
+                && chars.get(close + 1) == Some(&':') {
                     let url: String = chars[close + 2..].iter().take_while(|x| !x.is_whitespace()).collect();
                     let url = url.trim_end_matches(['.', ',', ';', ')', '!', '?']).to_string();
                     if !url.is_empty() {
@@ -1025,11 +1067,9 @@ fn textile_inline(text: &str) -> String {
                         continue;
                     }
                 }
-            }
-        }
         // `!image.png(alt)!` and `!image.png!:link`
-        if c == '!' && chars.get(i + 1).is_some_and(|x| !x.is_whitespace()) {
-            if let Some(close) = chars[i + 1..].iter().position(|&x| x == '!').map(|p| i + 1 + p) {
+        if c == '!' && chars.get(i + 1).is_some_and(|x| !x.is_whitespace())
+            && let Some(close) = chars[i + 1..].iter().position(|&x| x == '!').map(|p| i + 1 + p) {
                 let inner: String = chars[i + 1..close].iter().collect();
                 if !inner.contains(' ') || inner.contains('(') {
                     let (src, alt) = match inner.split_once('(') {
@@ -1047,7 +1087,6 @@ fn textile_inline(text: &str) -> String {
                     }
                 }
             }
-        }
         let marks: &[(&str, &str)] = &[("**", "b"), ("__", "i"), ("??", "cite"), ("*", "strong"), ("_", "em"), ("@", "code"), ("+", "ins"), ("-", "del"), ("^", "sup"), ("~", "sub"), ("%", "span")];
         let mut matched = false;
         if boundary(i) {
@@ -1117,6 +1156,20 @@ mod tests {
         assert!(doc.metadata().iter().any(|(k, v)| k == "Title" && v == "Title"));
     }
 
+    /// Found by fuzzing: one long line took rst_parser tens of seconds.
+    #[test]
+    fn rst_long_lines_are_kept_and_quick() {
+        let long = "word ".repeat(2000);
+        let text = format!("Title\n=====\n\nShort *em*.\n\n{long}\n\n::\n\n    {long}\n");
+        let t = std::time::Instant::now();
+        let (doc, s) = blocks(&RstReader, "l.rst", &text);
+        assert!(t.elapsed().as_secs() < 3, "{:?}", t.elapsed());
+        assert!(s.contains("Emphasis") && !s.contains("lfplongline"), "{}", &s[..300]);
+        assert!(s.matches("word word").count() >= 2);
+        assert!(s.contains("Code {"), "the literal block keeps its long line: {}", &s[..200]);
+        assert!(doc.warnings()[0].message.contains("2 line(s)"));
+    }
+
     #[test]
     fn djot() {
         let (_, s) = blocks(&DjotReader, "a.dj", "# Head\n\n_em_ and *strong* and `code` [link](https://x.org)\n\n- a\n- b\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n``` rust\nfn main() {}\n```\n");
@@ -1159,4 +1212,5 @@ mod tests {
         assert_eq!(textile_signature("Hello. World").0, None);
     }
 }
+
 

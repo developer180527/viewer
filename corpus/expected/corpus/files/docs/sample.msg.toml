@@ -1,0 +1,12 @@
+loader = "msg"
+format = "Outlook message"
+model = "Rich text"
+
+[flow]
+blocks = 2
+kinds = ["Table", "Paragraph"]
+
+[metadata]
+Title = "creating an outlook message file"
+From = "from@domain.com"
+Class = "IPM.Note"

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.0"><info><title>Corpus DocBook</title></info>
+<section><title>Section</title><para>Some <emphasis role="bold">bold</emphasis>, <emphasis>italic</emphasis> and <literal>code</literal>, with <link xlink:href="https://example.org">a link</link>.</para>
+<itemizedlist><listitem><para>one</para></listitem><listitem><para>two</para></listitem></itemizedlist>
+<programlisting language="python">print(1)</programlisting></section></article>

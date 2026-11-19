@@ -1,0 +1,18 @@
+From: Corpus Sender <sender@example.org>
+To: reader@example.org
+Subject: Corpus message
+Date: Thu, 1 Jan 2026 00:00:00 +0000
+Message-ID: <corpus@example.org>
+MIME-Version: 1.0
+Content-Type: multipart/mixed; boundary="b"
+
+--b
+Content-Type: text/html; charset=utf-8
+
+<h1>Corpus message</h1><p>Some <b>bold</b> and <i>italic</i>, with <a href="https://example.org">a link</a>.</p>
+--b
+Content-Type: text/plain; name="notes.txt"
+Content-Disposition: attachment; filename="notes.txt"
+
+attached
+--b--

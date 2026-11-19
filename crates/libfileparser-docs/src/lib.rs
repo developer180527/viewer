@@ -1,6 +1,15 @@
-//! Any document into pages or formatted text (docs/design/libfileparser.md §2): PDF
-//! as pages, Markdown as formatted text over its source. Comics, EPUB, DOCX and
-//! slides come later.
+//! Any document into pages or formatted text (docs/design/libfileparser.md §2):
+//! - **pages:** PDF and XPS (MuPDF), DjVu, comics (CBZ, CBT, CB7, CBR);
+//! - **books and office documents:** EPUB, MOBI/AZW, FictionBook, DOCX, ODT, RTF, DOC,
+//!   HWP, and slides (PPTX, PPT, ODP);
+//! - **the web and mail:** HTML, MHTML, EML, mbox, Outlook MSG;
+//! - **plain-text markup:** Markdown, Org, reStructuredText, AsciiDoc, Djot, Typst,
+//!   Textile, Jupyter notebooks, thirteen wiki dialects, man pages, LaTeX, Texinfo,
+//!   POD, Fountain, DocBook and TEI.
+//!
+//! Every formatted-text reader builds through one builder (`build`), most through
+//! one HTML pipeline (`html`), so nesting and limits are the same everywhere. Nothing
+//! a document contains is run or fetched.
 //!
 //! **PDF is MuPDF, and only MuPDF.** With the `mupdf` feature (AGPL), PDFs open as
 //! pages rendered by MuPDF built from source. Without it, a PDF is still recognised and

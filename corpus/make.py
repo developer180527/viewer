@@ -429,7 +429,138 @@ def docs():
     write("docs/sample.cbt", comic("cbt"))
     write("docs/sample.xps", xps())
     write("docs/sample.rtf", RTF)
+    docs_more()
     write("docs/sample.org", "#+TITLE: Corpus Org\n* Heading\nSome *bold*, /italic/ and =code=, with [[https://example.org][a link]].\n- one\n- two\n#+BEGIN_SRC sh\nls\n#+END_SRC\n| a | b |\n|---+---|\n| 1 | 2 |\n")
+
+
+# Plain-text markups (2026-11-19): each with a heading, marks, a list, a link and code.
+MARKUP = {
+    "sample.rst": "Corpus reST\n===========\n\nSome **bold**, *italic* and ``code``, with `a link <https://example.org>`_.\n\n* one\n* two\n\n.. code:: python\n\n   print(1)\n",
+    "sample.dj": "# Corpus Djot\n\nSome *bold*, _italic_ and `code`, with [a link](https://example.org).\n\n- one\n- two\n\n``` python\nprint(1)\n```\n",
+    "sample.adoc": "= Corpus AsciiDoc\n\n== Section\n\nSome *bold*, _italic_ and `code`, with https://example.org[a link].\n\n* one\n* two\n\n[source,python]\n----\nprint(1)\n----\n",
+    "sample.typ": "= Corpus Typst\nSome *bold*, _italic_ and `code`, with #link(\"https://example.org\")[a link].\n\n- one\n- two\n\n```python\nprint(1)\n```\n",
+    "sample.textile": "h1. Corpus Textile\n\nSome *bold*, _italic_ and @code@, with \"a link\":https://example.org.\n\n* one\n* two\n\nbc. print(1)\n",
+    "sample.mediawiki": "== Corpus MediaWiki ==\n'''bold''', ''italic'' and <code>code</code>, with [https://example.org a link].\n* one\n* two\n<syntaxhighlight lang=\"python\">\nprint(1)\n</syntaxhighlight>\n",
+    "sample.creole": "= Corpus Creole\n**bold**, //italic// and {{{code}}}, with [[https://example.org|a link]].\n* one\n* two\n{{{\nprint(1)\n}}}\n",
+    "sample.dokuwiki": "====== Corpus DokuWiki ======\n**bold**, //italic// and ''code'', with [[https://example.org|a link]].\n  * one\n  * two\n<code python>\nprint(1)\n</code>\n",
+    "sample.jira": "h1. Corpus Jira\n*bold*, _italic_ and {{code}}, with [a link|https://example.org].\n* one\n* two\n{code:python}\nprint(1)\n{code}\n",
+    "sample.t2t": "Corpus txt2tags\n\n\n= Section =\n**bold**, //italic// and ``code``, with [a link https://example.org].\n- one\n- two\n```\nprint(1)\n```\n",
+    "sample.muse": "#title Corpus Muse\n\n* Section\n**bold**, *italic* and =code=, with [[https://example.org][a link]].\n\n - one\n - two\n\n<example>\nprint(1)\n</example>\n",
+    "sample.haddock": "= Corpus Haddock\n__bold__, /italic/ and @code@, with <https://example.org a link>.\n\n* one\n* two\n\n> main = print 1\n",
+    "sample.xwiki": "= Corpus XWiki =\n**bold**, //italic// and ##code##, with [[a link>>https://example.org]].\n* one\n* two\n{{code language=\"python\"}}\nprint(1)\n{{/code}}\n",
+    "sample.tikiwiki": "! Corpus TikiWiki\n__bold__, ''italic'' and -+code+-, with [https://example.org|a link].\n* one\n* two\n{CODE(colors=\"python\")}\nprint(1)\n{CODE}\n",
+    "sample.twiki": "---+ Corpus TWiki\n*bold*, _italic_ and =code=, with [[https://example.org][a link]].\n   * one\n   * two\n<verbatim>\nprint(1)\n</verbatim>\n",
+    "sample.zim": "Content-Type: text/x-zim-wiki\nWiki-Format: zim 0.4\n\n====== Corpus Zim ======\n**bold**, //italic// and ''code'', with [[https://example.org|a link]].\n* one\n* two\n'''\nprint(1)\n'''\n",
+    "sample.vimwiki": "= Corpus Vimwiki =\n*bold*, _italic_ and `code`, with [[https://example.org|a link]].\n* one\n* two\n{{{python\nprint(1)\n}}}\n",
+    "sample.gmi": "# Corpus Gemtext\nGemtext has no marks: *this* stays as written.\n=> https://example.org A link\n* one\n* two\n```python\nprint(1)\n```\n",
+    "sample.1": ".TH CORPUS 1 2026 Viewer\n.SH NAME\ncorpus \\- a manual page\n.SH SYNOPSIS\n.B corpus\n[\\fIFILE\\fR]\n.SH OPTIONS\n.TP\n.B \\-v\nSay more.\n.SH EXAMPLE\n.EX\ncorpus \\-v file\n.EE\n.SH SEE ALSO\n.UR https://example.org\nthe site\n.UE\n",
+    "sample.tex": "\\documentclass{article}\n\\title{Corpus LaTeX}\n\\begin{document}\n\\maketitle\n\\section{Section}\nSome \\textbf{bold}, \\emph{italic} and \\texttt{code}, with \\href{https://example.org}{a link}.\n\\begin{itemize}\n\\item one\n\\item two\n\\end{itemize}\n\\begin{verbatim}\nprint(1)\n\\end{verbatim}\n\\end{document}\n",
+    "sample.texi": "\\input texinfo\n@settitle Corpus Texinfo\n@node Top\n@chapter Chapter\n@strong{bold}, @emph{italic} and @code{code}, with @uref{https://example.org, a link}.\n\n@itemize @bullet\n@item one\n@item two\n@end itemize\n@example\nprint(1)\n@end example\n@bye\n",
+    "sample.pod": "=head1 NAME\n\nCorpus::Pod - a sample\n\n=head1 DESCRIPTION\n\nSome B<bold>, I<italic> and C<code>, with L<a link|https://example.org>.\n\n=over\n\n=item * one\n\n=item * two\n\n=back\n\n    print 1;\n\n=cut\n",
+    "sample.fountain": "Title: Corpus Fountain\nAuthor: Viewer\n\n# Act One\n\nINT. ROOM - DAY\n\nA *quiet* room, **very** quiet.\n\nALICE\n(softly)\nHello there.\n\nCUT TO:\n",
+}
+
+NOTEBOOK = {
+    "nbformat": 4, "nbformat_minor": 5,
+    "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"}},
+    "cells": [
+        {"cell_type": "markdown", "metadata": {}, "source": ["# Corpus Notebook\n", "Some **bold** and *italic*, with [a link](https://example.org)."]},
+        {"cell_type": "code", "execution_count": 1, "metadata": {}, "source": ["print(1)"], "outputs": [{"output_type": "stream", "name": "stdout", "text": ["1\n"]}]},
+    ],
+}
+
+DOCBOOK = """<?xml version="1.0" encoding="utf-8"?>
+<article xmlns="http://docbook.org/ns/docbook" xmlns:xlink="http://www.w3.org/1999/xlink" version="5.0"><info><title>Corpus DocBook</title></info>
+<section><title>Section</title><para>Some <emphasis role="bold">bold</emphasis>, <emphasis>italic</emphasis> and <literal>code</literal>, with <link xlink:href="https://example.org">a link</link>.</para>
+<itemizedlist><listitem><para>one</para></listitem><listitem><para>two</para></listitem></itemizedlist>
+<programlisting language="python">print(1)</programlisting></section></article>
+"""
+
+TEI = """<?xml version="1.0" encoding="utf-8"?>
+<TEI xmlns="http://www.tei-c.org/ns/1.0"><teiHeader><fileDesc><titleStmt><title>Corpus TEI</title></titleStmt></fileDesc></teiHeader>
+<text><body><div><head>Section</head><p>Some <hi rend="bold">bold</hi>, <hi rend="italic">italic</hi> and <code>code</code>, with <ref target="https://example.org">a link</ref>.</p>
+<list><item>one</item><item>two</item></list><eg>print(1)</eg></div></body></text></TEI>
+"""
+
+FB2 = """<?xml version="1.0" encoding="utf-8"?>
+<FictionBook xmlns="http://www.gribuser.ru/xml/fictionbook/2.0" xmlns:l="http://www.w3.org/1999/xlink"><description><title-info><author><first-name>Corpus</first-name><last-name>Author</last-name></author><book-title>Corpus FictionBook</book-title></title-info></description>
+<body><section><title><p>Chapter</p></title><p>Some <strong>bold</strong>, <emphasis>italic</emphasis> and <code>code</code>, with <a l:href="https://example.org">a link</a>.</p><poem><stanza><v>A line of verse</v></stanza></poem></section></body></FictionBook>
+"""
+
+EML = ("From: Corpus Sender <sender@example.org>\r\nTo: reader@example.org\r\nSubject: Corpus message\r\nDate: Thu, 1 Jan 2026 00:00:00 +0000\r\n"
+       "Message-ID: <corpus@example.org>\r\nMIME-Version: 1.0\r\nContent-Type: multipart/mixed; boundary=\"b\"\r\n\r\n--b\r\nContent-Type: text/html; charset=utf-8\r\n\r\n"
+       "<h1>Corpus message</h1><p>Some <b>bold</b> and <i>italic</i>, with <a href=\"https://example.org\">a link</a>.</p>\r\n--b\r\n"
+       "Content-Type: text/plain; name=\"notes.txt\"\r\nContent-Disposition: attachment; filename=\"notes.txt\"\r\n\r\nattached\r\n--b--\r\n")
+
+MBOX = ("From sender@example.org Thu Jan  1 00:00:00 2026\nFrom: sender@example.org\nSubject: First\nDate: Thu, 1 Jan 2026 00:00:00 +0000\n\nThe first message.\n\n"
+        "From reader@example.org Thu Jan  1 01:00:00 2026\nFrom: reader@example.org\nSubject: Re: First\nDate: Thu, 1 Jan 2026 01:00:00 +0000\n\n> The first message.\n\nA reply.\n")
+
+MHT = ("From: <Saved by Blink>\r\nSnapshot-Content-Location: https://example.org/page\r\nSubject: Corpus web archive\r\nDate: Thu, 1 Jan 2026 00:00:00 +0000\r\nMIME-Version: 1.0\r\n"
+       "Content-Type: multipart/related; type=\"text/html\"; boundary=\"----b\"\r\n\r\n------b\r\nContent-Type: text/html\r\nContent-Location: https://example.org/page\r\n\r\n"
+       "<html><body><h1>Corpus web archive</h1><p>Some <b>bold</b> and <i>italic</i>, with <a href=\"https://example.org\">a link</a>.</p><img src=\"https://example.org/a.png\"></body></html>\r\n"
+       "------b\r\nContent-Type: image/png\r\nContent-Location: https://example.org/a.png\r\nContent-Transfer-Encoding: base64\r\n\r\niVBORw0KGgo=\r\n------b--\r\n")
+
+
+def odp():
+    content = ('<?xml version="1.0" encoding="UTF-8"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+               'xmlns:draw="urn:oasis:names:tc:opendocument:xmlns:drawing:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" '
+               'xmlns:presentation="urn:oasis:names:tc:opendocument:xmlns:presentation:1.0" xmlns:xlink="http://www.w3.org/1999/xlink" office:version="1.3">'
+               '<office:body><office:presentation>'
+               '<draw:page draw:name="page1"><draw:frame presentation:class="title"><draw:text-box><text:p>Corpus Slides</text:p></draw:text-box></draw:frame>'
+               '<draw:frame><draw:text-box><text:list><text:list-item><text:p>First point</text:p></text:list-item><text:list-item><text:p>Second point</text:p></text:list-item></text:list></draw:text-box></draw:frame>'
+               '<presentation:notes><draw:frame><draw:text-box><text:p>Speaker notes.</text:p></draw:text-box></draw:frame></presentation:notes></draw:page>'
+               '<draw:page draw:name="page2"><draw:frame presentation:class="title"><draw:text-box><text:p>Second slide</text:p></draw:text-box></draw:frame></draw:page>'
+               '</office:presentation></office:body></office:document-content>')
+    meta = ('<?xml version="1.0" encoding="UTF-8"?><office:document-meta xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" '
+            'xmlns:dc="http://purl.org/dc/elements/1.1/"><office:meta><dc:title>Corpus Slides</dc:title></office:meta></office:document-meta>')
+    return zip_of([("mimetype", "application/vnd.oasis.opendocument.presentation"), ("content.xml", content), ("meta.xml", meta)], stored_first="mimetype")
+
+
+def mobi():
+    """A Mobipocket book: a Palm database whose first record holds the PalmDOC and
+    MOBI headers (and EXTH metadata), then one uncompressed text record."""
+    text = b'<html><body><h1>Corpus Kindle book</h1><p>Some <b>bold</b> and <i>italic</i>, with <a href="https://example.org">a link</a>.</p></body></html>'
+    title = b"Corpus Kindle book"
+    exth_recs = [(100, b"Corpus Author"), (101, b"Viewer")]
+    exth_body = b"".join(struct.pack(">II", t, 8 + len(v)) + v for t, v in exth_recs)
+    exth = b"EXTH" + struct.pack(">II", 12 + len(exth_body), len(exth_recs)) + exth_body
+    header_len = 0xE8
+    mobi_header = bytearray(header_len)
+    mobi_header[0:4] = b"MOBI"
+    struct.pack_into(">III", mobi_header, 4, header_len, 2, 65001)
+    rec0 = bytearray(struct.pack(">HHIHHHH", 1, 0, len(text), 1, 4096, 0, 0)) + mobi_header + exth
+    title_at = len(rec0)
+    rec0 += title + b"\0\0"
+    # Offsets from record 0's start: full name (0x54, 0x58), first image (0x6C:
+    # none), EXTH present (0x80), no extra data after text records (0xF2: zero).
+    struct.pack_into(">II", rec0, 0x54, title_at, len(title))
+    struct.pack_into(">I", rec0, 0x6C, 0xFFFFFFFF)
+    struct.pack_into(">I", rec0, 0x80, 0x40)
+    records = [bytes(rec0), text]
+    head = bytearray(78)
+    head[0:18] = b"Corpus_Kindle_book"
+    head[60:68] = b"BOOKMOBI"
+    struct.pack_into(">H", head, 76, len(records))
+    offset = 78 + 8 * len(records) + 2
+    table = b""
+    for i, r in enumerate(records):
+        table += struct.pack(">II", offset, i * 2)
+        offset += len(r)
+    return bytes(head) + table + b"\0\0" + b"".join(records)
+
+
+def docs_more():
+    for name, text in MARKUP.items():
+        write("docs/" + name, text)
+    write("docs/sample.ipynb", json.dumps(NOTEBOOK, indent=1) + "\n")
+    write("docs/sample-docbook.xml", DOCBOOK)
+    write("docs/sample-tei.xml", TEI)
+    write("docs/sample.fb2", FB2)
+    write("docs/sample.eml", EML)
+    write("docs/sample.mbox", MBOX)
+    write("docs/sample.mht", MHT)
+    write("docs/sample.odp", odp())
+    write("docs/sample.mobi", mobi())
 
 
 # ---------------------------------------------------------------- data

@@ -1,0 +1,7 @@
+= Corpus XWiki =
+**bold**, //italic// and ##code##, with [[a link>>https://example.org]].
+* one
+* two
+{{code language="python"}}
+print(1)
+{{/code}}

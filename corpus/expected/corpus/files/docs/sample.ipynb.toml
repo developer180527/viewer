@@ -1,0 +1,14 @@
+loader = "ipynb"
+format = "Jupyter notebook"
+model = "Rich text"
+
+[flow]
+blocks = 5
+kinds = ["Heading", "Paragraph", "Code"]
+
+[metadata]
+Cells = "2"
+"Code cells" = "1"
+Language = "python"
+Format = "nbformat 4.5"
+Kernel = "Python 3"

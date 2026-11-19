@@ -105,11 +105,10 @@ fn mobi_book(data: &[u8], cx: &ParseContext) -> Result<Book> {
     if mobi {
         let header_len = be32(r0, 20).unwrap_or(0) as usize;
         utf8 = be32(r0, 28) == Some(65001);
-        if let (Some(off), Some(len)) = (be32(r0, 84), be32(r0, 88)) {
-            if let Some(name) = r0.get(off as usize..off as usize + len as usize) {
+        if let (Some(off), Some(len)) = (be32(r0, 84), be32(r0, 88))
+            && let Some(name) = r0.get(off as usize..off as usize + len as usize) {
                 title = decode(name, utf8);
             }
-        }
         first_image = be32(r0, 108).filter(|&i| i != u32::MAX && (i as usize) < count).map(|i| i as usize);
         let (h, n) = (be32(r0, 112).unwrap_or(0) as usize, be32(r0, 116).unwrap_or(0) as usize);
         if compression == 17480 {
@@ -209,11 +208,10 @@ fn trailing(rec: &[u8], extra_flags: u16) -> usize {
         }
         flags >>= 1;
     }
-    if extra_flags & 1 != 0 {
-        if let Some(&b) = rec.len().checked_sub(num + 1).and_then(|at| rec.get(at)) {
+    if extra_flags & 1 != 0
+        && let Some(&b) = rec.len().checked_sub(num + 1).and_then(|at| rec.get(at)) {
             num += (b & 3) as usize + 1;
         }
-    }
     num
 }
 
@@ -389,7 +387,7 @@ impl Reader for HwpReader {
             }
         })?;
         cx.cancel.check()?;
-        let md = unhwp::render::render_markdown(&hwp, &unhwp::RenderOptions::default()).map_err(|e| ParseError::corrupt(e))?;
+        let md = unhwp::render::render_markdown(&hwp, &unhwp::RenderOptions::default()).map_err(ParseError::corrupt)?;
         let mut b = Builder::new(cx);
         for block in crate::markdown::parse(&md, cx)? {
             b.block(block)?;

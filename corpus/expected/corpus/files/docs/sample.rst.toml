@@ -1,0 +1,10 @@
+loader = "rst"
+format = "reStructuredText document"
+model = "Rich text"
+
+[flow]
+blocks = 4
+kinds = ["Heading", "Paragraph", "List", "Code"]
+
+[metadata]
+Title = "Corpus reST"
