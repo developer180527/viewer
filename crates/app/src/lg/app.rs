@@ -14,7 +14,7 @@ use libfilepicker::{PickOptions, Picked};
 use viewer_core::{GrantId, Info, Notice, Session, Status, human_bytes};
 
 use libviewer::Host;
-use super::views::{self, Action, ViewState};
+use viewer_surface::views::{self, Action, ViewState};
 
 /// An answer from the file picker, and what it was for.
 struct Pick {

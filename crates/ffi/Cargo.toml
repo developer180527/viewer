@@ -1,0 +1,29 @@
+[package]
+name = "viewer-ffi"
+description = "viewer-core for Swift (and other languages UniFFI speaks): the session, its commands, and content by range, for the SwiftUI shell (docs/design/apple-ui.md §3)."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+# A static library for the xcframework; a dynamic one for uniffi-bindgen to read
+# the interface from; the Rust one for tests.
+crate-type = ["staticlib", "cdylib", "lib"]
+
+[features]
+# The `uniffi-bindgen` binary, which writes the Swift (scripts/apple.sh).
+cli = ["uniffi/cli"]
+
+[dependencies]
+viewer-core.workspace = true
+viewer-model.workspace = true
+libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
+uniffi = "0.32"
+# The Metal view: libviewer drawn into the shell's layer, as the libgui app draws it.
+viewer-surface.workspace = true
+libgui = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+anyhow.workspace = true
+
+[[bin]]
+name = "uniffi-bindgen"
+required-features = ["cli"]

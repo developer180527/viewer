@@ -6,7 +6,6 @@
 //! applies what the UI asks for (cursor, title, textures to free).
 
 mod app;
-mod views;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -28,80 +27,15 @@ pub static WAKE: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::O
 use crate::{Args, startup};
 use app::ViewerApp;
 
-const INTER: &[u8] = include_bytes!("../../assets/Inter.ttf");
-const HACK: &[u8] = include_bytes!("../../assets/Hack-Regular.ttf");
-// Inter's static bold, italic and bold italic (v4.0, as `Inter.ttf`; libgui draws a
-// variable font at its default weight only), registered the first time formatted
-// text is drawn: most files never need them, and each costs a few ms to register.
-const INTER_BOLD: &[u8] = include_bytes!("../../assets/Inter-Bold.ttf");
-const INTER_ITALIC: &[u8] = include_bytes!("../../assets/Inter-Italic.ttf");
-const INTER_BOLD_ITALIC: &[u8] = include_bytes!("../../assets/Inter-BoldItalic.ttf");
-
-/// Registers bold, italic and bold italic faces once, before formatted text first
-/// draws; until then those roles fall back to the body face.
-pub fn ensure_rich_faces(ui: &mut Ui) {
-    thread_local! {
-        static TRIED: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
-    }
-    if TRIED.with(|t| t.replace(true)) {
-        return;
-    }
-    for (role, bytes) in [(FontRole::Bold, INTER_BOLD), (FontRole::Italic, INTER_ITALIC), (FontRole::BoldItalic, INTER_BOLD_ITALIC)] {
-        // With the system's fonts behind it, as the body face has, so bold Japanese
-        // or Arabic is drawn, in the system's face, rather than as boxes.
-        match FontStack::from_fonts(&[bytes]) {
-            Ok(stack) => {
-                let face = ui.fonts.add_rasterizer(Box::new(stack.with_source(Box::new(LazySystemFonts))));
-                ui.set_font_role(role, face);
-            }
-            Err(e) => eprintln!("viewer: loading the {role:?} face: {e:?}"),
-        }
-    }
-}
-
 /// Window size in logical px, for the window and for headless screenshots.
 const SIZE: (f32, f32) = (1100.0, 760.0);
 
-// Views are libviewer's; this file is their host (`Host`), on the GPU or the CPU.
+// Views are libviewer's; viewer-surface hosts them on the GPU (`Gpu`), as the SwiftUI
+// shell's canvas does, and this file on the CPU (`Headless`).
 use libviewer::{Frame3d, Host as ViewHost, SceneGpu, draw_scene};
-
-fn new_ui(dark: bool) -> anyhow::Result<Ui> {
-    let theme = if dark { Theme::dark() } else { Theme::light() };
-    // Inter first, then the system's fonts, opened lazily the first time a
-    // script Inter lacks (CJK file names, say) is drawn.
-    let stack = FontStack::from_fonts(&[INTER]).map_err(|e| anyhow!("loading fonts: {e:?}"))?;
-    let mut ui = Ui::with_rasterizer(theme, Box::new(stack.with_source(Box::new(LazySystemFonts))));
-    startup::mark("  body font + system font source");
-    let mono = ui.fonts.add_font(HACK).map_err(|e| anyhow!("loading mono font: {e:?}"))?;
-    ui.set_font_role(FontRole::Mono, mono);
-    libgui_keymap::Keymap::<u8>::for_current_platform().install(&mut ui);
-    Ok(ui)
-}
-
-/// The installed fonts, listed on a thread (`scan_system_fonts`, started first
-/// thing in `main`): listing them reads every font directory, 5–10 ms warm but
-/// close to 200 ms from a cold disk, and most files never need one.
-static SYSTEM_FONTS: std::sync::OnceLock<libgui_sysfonts::SystemFonts> = std::sync::OnceLock::new();
-static SYSTEM_FONTS_SCAN: std::sync::Mutex<Option<std::thread::JoinHandle<libgui_sysfonts::SystemFonts>>> =
-    std::sync::Mutex::new(None);
-
-pub fn scan_system_fonts() {
-    *SYSTEM_FONTS_SCAN.lock().unwrap() = Some(std::thread::spawn(libgui_sysfonts::SystemFonts::new));
-}
-
-/// The system fonts, waiting for the scan the first time a character needs them.
-struct LazySystemFonts;
-
-impl FontSource for LazySystemFonts {
-    fn face_for(&self, ch: char) -> Option<Box<dyn FontRasterizer>> {
-        SYSTEM_FONTS
-            .get_or_init(|| {
-                let scan = SYSTEM_FONTS_SCAN.lock().unwrap().take();
-                scan.and_then(|t| t.join().ok()).unwrap_or_default()
-            })
-            .face_for(ch)
-    }
-}
+use viewer_surface::fonts::new_ui;
+pub use viewer_surface::fonts::scan_system_fonts;
+use viewer_surface::{Gpu, Rx, Wake, open_device};
 
 pub fn run(title: String, args: Args, session: viewer_core::Session) -> anyhow::Result<()> {
     if let Some(path) = &args.screenshot {
@@ -210,16 +144,6 @@ fn open_gpu(display: winit::event_loop::OwnedDisplayHandle) -> anyhow::Result<Gp
     let (device, queue) = open_device(&adapter)?;
     startup::mark("  GPU device opened");
     Ok((instance, adapter, device, queue))
-}
-
-fn open_device(adapter: &wgpu::Adapter) -> anyhow::Result<(wgpu::Device, wgpu::Queue)> {
-    let desc = wgpu::DeviceDescriptor {
-        required_limits: adapter.limits(),
-        // Compressed texture formats, where the GPU has them.
-        required_features: adapter.features() & rendererx::OPTIONAL_FEATURES,
-        ..Default::default()
-    };
-    pollster::block_on(adapter.request_device(&desc)).context("creating the GPU device")
 }
 
 // --- Headless ------------------------------------------------------------------
@@ -333,143 +257,6 @@ fn headless(path: &Path, size: (f32, f32), info: bool, session: viewer_core::Ses
 
 // --- Windowed --------------------------------------------------------------------
 
-/// RendererX for windows, in background-compile mode, and the thread that compiles
-/// its pipelines: on a cold driver cache each takes 65–100 ms, which on the UI thread
-/// froze the window on the first 3D file and stalled a frame per shading model. Now
-/// a model shows as soon as clay is ready and switches to its own shading as each
-/// pipeline arrives.
-struct Rx {
-    renderer: std::sync::Arc<rendererx::Renderer>,
-    /// Wakes the worker; one slot, so nudges while it is busy merge.
-    kick: std::sync::mpsc::SyncSender<()>,
-}
-
-impl Rx {
-    fn new(device: &wgpu::Device, queue: &wgpu::Queue) -> Self {
-        let desc = rendererx::RendererDesc { background_compile: true, ..Default::default() };
-        let renderer = std::sync::Arc::new(rendererx::Renderer::new(device, queue, desc));
-        let (kick, nudged) = std::sync::mpsc::sync_channel::<()>(1);
-        let worker = renderer.clone();
-        // Exits when the window (and so `kick`) goes away.
-        let spawned = std::thread::Builder::new().name("shader compile".into()).spawn(move || {
-            while nudged.recv().is_ok() {
-                while worker.compile_one() {
-                    if let Some(wake) = WAKE.get() {
-                        wake();
-                    }
-                }
-            }
-        });
-        if spawned.is_err() {
-            // No thread: compile here instead, as foreground hosts do.
-            renderer.compile_pending();
-        }
-        let rx = Self { renderer, kick };
-        // The clay pipelines queued by `new`.
-        rx.nudge();
-        rx
-    }
-
-    fn nudge(&self) {
-        let _ = self.kick.try_send(());
-    }
-}
-
-struct Gpu<'a> {
-    device: &'a wgpu::Device,
-    queue: &'a wgpu::Queue,
-    renderer: &'a mut libgui_wgpu::Renderer,
-    /// RendererX on the same device, created the first time a 3D view needs it so
-    /// startup never pays for its pipelines.
-    rx: &'a mut Option<Rx>,
-    scale: f32,
-    /// Set by `uploads_done`.
-    settle: &'a mut bool,
-    /// Textures views freed this frame; unregistered once the frame is prepared.
-    freed: &'a mut Vec<TextureId>,
-    /// See `ViewHost::trackpad_pinch`.
-    pinch: f32,
-}
-
-impl ViewHost for Gpu<'_> {
-    fn image_opener(&self) -> Option<libviewer::ImageOpener> {
-        Some(std::sync::Arc::new(viewer_formats::open_image))
-    }
-
-    fn trackpad_pinch(&self) -> f32 {
-        self.pinch
-    }
-
-    fn waker(&self) -> libviewer::Waker {
-        std::sync::Arc::new(|| {
-            if let Some(wake) = WAKE.get() {
-                wake();
-            }
-        })
-    }
-
-    fn max_side(&self) -> u32 {
-        self.device.limits().max_texture_dimension_2d
-    }
-
-    fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
-        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("image tile"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        self.queue.write_texture(
-            texture.as_image_copy(),
-            rgba,
-            wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 4), rows_per_image: Some(height) },
-            size,
-        );
-        // The renderer's bind group keeps the texture alive.
-        self.renderer.register_texture(&texture.create_view(&Default::default()))
-    }
-
-    fn pixels_per_point(&self) -> f32 {
-        self.scale
-    }
-
-    fn uploads_done(&mut self) {
-        *self.settle = true;
-    }
-
-    fn free(&mut self, id: TextureId) {
-        self.freed.push(id);
-    }
-
-    fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
-        let rx = self.rx.get_or_insert_with(|| Rx::new(self.device, self.queue));
-        let busy = draw_scene((&rx.renderer, self.device, self.queue), st, scene, size, camera, background, false);
-        // The frame queued pipelines it lacked (drawing clay, or nothing, meanwhile).
-        if rx.renderer.pipelines_pending() {
-            rx.nudge();
-        }
-        // The target is recreated on resize; point the UI's texture at the new one.
-        let view = st.view.as_ref().expect("created by draw_scene");
-        if let Some(target) = view.target_view() {
-            let generation = view.target_generation();
-            match st.texture {
-                Some((_, g)) if g == generation => {}
-                Some((id, _)) => {
-                    self.renderer.update_texture(id, target);
-                    st.texture = Some((id, generation));
-                }
-                None => st.texture = Some((self.renderer.register_texture(target), generation)),
-            }
-        }
-        Frame3d::shown(st.texture(), busy)
-    }
-}
-
 struct Live {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
@@ -492,6 +279,7 @@ struct Live {
     batches: Vec<Batch>,
     clear: Color,
     rx: Option<Rx>,
+    wake: Wake,
 }
 
 #[derive(Default)]
@@ -552,6 +340,7 @@ impl Host {
 
         let dark = window.theme().is_none_or(|t| t == winit::window::Theme::Dark);
         let ui = new_ui(dark)?;
+        startup::mark("  fonts");
         if let Some(app) = self.app.as_mut() {
             app.dark = dark;
         }
@@ -573,6 +362,11 @@ impl Host {
             stale: false,
             batches: Vec::new(),
             rx: None,
+            wake: std::sync::Arc::new(|| {
+                if let Some(wake) = WAKE.get() {
+                    wake();
+                }
+            }),
         });
         Ok(())
     }
@@ -610,7 +404,7 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0 };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0, wake: &w.wake };
             w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
             let out = w.ui.end_frame();

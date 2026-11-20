@@ -15,6 +15,9 @@ libviewer.workspace = true
 viewer-model.workspace = true
 # The app without its UI: what's open and what can be done with it.
 viewer-core.workspace = true
+# libviewer on a GPU surface: fonts, the GPU host and the page views, shared with
+# the SwiftUI shell.
+viewer-surface.workspace = true
 viewer-fmt-doc.workspace = true
 viewer-formats.workspace = true
 libfilepicker.workspace = true

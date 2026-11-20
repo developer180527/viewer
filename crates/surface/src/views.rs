@@ -46,7 +46,7 @@ pub fn show(ui: &mut Ui, page: &Page, view: &mut ViewState, host: &mut dyn Host,
     ui.with_key(page.id, |ui| match (&page.doc.content, view) {
         (Content::Model(c), ViewState::Model(view)) => {
             if matches!(c, libfileparser_core::Content::Flow(_)) {
-                super::ensure_rich_faces(ui);
+                crate::fonts::ensure_rich_faces(ui);
             }
             libviewer::show(ui, c, view, host, None, dark)
         }

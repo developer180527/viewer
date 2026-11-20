@@ -13,11 +13,11 @@ use libfileparser_core::{Block, FileSource, Inline, OwnedFlow, Raster};
 use libgui::*;
 use libviewer::{Frame3d, Host, ImageOpener, SceneGpu};
 
-const INTER: &[u8] = include_bytes!("../../app/assets/Inter.ttf");
-const INTER_BOLD: &[u8] = include_bytes!("../../app/assets/Inter-Bold.ttf");
-const INTER_ITALIC: &[u8] = include_bytes!("../../app/assets/Inter-Italic.ttf");
-const INTER_BOLD_ITALIC: &[u8] = include_bytes!("../../app/assets/Inter-BoldItalic.ttf");
-const HACK: &[u8] = include_bytes!("../../app/assets/Hack-Regular.ttf");
+const INTER: &[u8] = include_bytes!("../../surface/assets/Inter.ttf");
+const INTER_BOLD: &[u8] = include_bytes!("../../surface/assets/Inter-Bold.ttf");
+const INTER_ITALIC: &[u8] = include_bytes!("../../surface/assets/Inter-Italic.ttf");
+const INTER_BOLD_ITALIC: &[u8] = include_bytes!("../../surface/assets/Inter-BoldItalic.ttf");
+const HACK: &[u8] = include_bytes!("../../surface/assets/Hack-Regular.ttf");
 
 /// Pixels that may differ: rasterisers round slightly differently across platforms.
 const PIXEL_TOLERANCE: f64 = 0.01;

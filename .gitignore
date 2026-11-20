@@ -11,3 +11,4 @@ ios/Viewer.xcodeproj/
 /fuzz/artifacts/
 /fuzz/coverage/
 /soak/
+apple/ViewerShell.xcodeproj/
