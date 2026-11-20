@@ -165,6 +165,12 @@ impl ViewerCanvas {
         with(self.id, |c| c.resize(width, height, scale));
     }
 
+    /// On an iPhone or iPad: hints speak of taps and fingers until a mouse or
+    /// trackpad hovers.
+    pub fn set_touch_screen(&self, touch: bool) {
+        with(self.id, |c| c.set_touch_screen(touch));
+    }
+
     pub fn set_dark(&self, dark: bool) {
         with(self.id, |c| c.set_dark(dark));
     }

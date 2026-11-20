@@ -93,3 +93,39 @@ fn drawn_content_reaches_the_pixels() {
     while session.back() {}
     canvas.draw(session.pages(), session.current());
 }
+
+/// A resize lays the page out again at the new size, without waiting for input. (On
+/// an iPad turned on its side the page stayed where portrait had it until touched:
+/// views place themselves by the last frame's rects, so the canvas draws two frames
+/// after a resize. Offscreen, the page's own redraws hid that, so this checks the
+/// result rather than catching that case.)
+#[test]
+fn a_resize_lays_out_again() {
+    let woke = Arc::new(AtomicBool::new(false));
+    let w = woke.clone();
+    let wake: Wake = Arc::new(move || w.store(true, Ordering::SeqCst));
+    let ws = woke.clone();
+    let mut session = Session::new(Hooks::new(Arc::new(move || ws.store(true, Ordering::SeqCst))));
+    let Ok(mut canvas) = Canvas::offscreen(600, 800, 1.0, true, wake) else {
+        eprintln!("no GPU, skipped");
+        return;
+    };
+    let background = {
+        canvas.draw(&[], None);
+        let (_, _, px) = canvas.read_pixels().unwrap();
+        [px[0], px[1], px[2]]
+    };
+    session.open_path(root().join("corpus/files/docs/two-pages.pdf"));
+    while !session.poll() {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    draw_settled(&mut canvas, &mut session, &woke);
+    canvas.resize(1400, 800, 1.0);
+    draw_settled(&mut canvas, &mut session, &woke);
+    // The page's left and right edges along a row through its middle: centred.
+    let (w, h, px) = canvas.read_pixels().unwrap();
+    let row = (h / 2) as usize * w as usize * 4;
+    let drawn: Vec<usize> = (0..w as usize).filter(|x| px[row + x * 4..row + x * 4 + 3] != background).collect();
+    let (left, right) = (drawn[0], w as usize - 1 - drawn[drawn.len() - 1]);
+    assert!(left.abs_diff(right) <= 4, "page not centred after the resize: {left} px left, {right} px right");
+}

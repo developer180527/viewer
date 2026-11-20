@@ -28,6 +28,11 @@ pub trait Host {
     fn trackpad_pinch(&self) -> f32 {
         0.0
     }
+    /// The screen is touched (an iPhone or iPad): hints speak of taps and fingers until
+    /// a mouse or trackpad shows up.
+    fn touch_screen(&self) -> bool {
+        false
+    }
     /// How the formatted-text view opens the images a document embeds; `None` (the
     /// default) shows their alt text instead.
     fn image_opener(&self) -> Option<ImageOpener> {

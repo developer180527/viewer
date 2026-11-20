@@ -24,42 +24,116 @@ struct ViewerApp: App {
     }
 }
 
+/// iPad (regular width): a sidebar of recent files beside the content, Info as an
+/// inspector column. iPhone (compact): the content alone in a stack, Info as a sheet.
 struct Root: View {
     @EnvironmentObject var shell: Shell
+    @Environment(\.horizontalSizeClass) private var width
     @State private var showInfo = false
+    /// The sidebar shows until the user hides it.
+    @State private var columns = NavigationSplitViewVisibility.doubleColumn
 
     var body: some View {
-        NavigationStack {
-            VStack(spacing: 0) {
-                ForEach(Array(shell.notices.enumerated()), id: \.offset) { _, n in NoticeBar(notice: n) }
-                if let error = shell.error { Banner(text: error, tint: .red) }
-                ContentArea().frame(maxWidth: .infinity, maxHeight: .infinity)
-                Divider()
-                HStack {
-                    Text(shell.statusText).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
-                    Spacer()
+        Group {
+            if width == .regular {
+                NavigationSplitView(columnVisibility: $columns) {
+                    Sidebar()
+                        .navigationTitle("Viewer")
+                        .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 380)
+                } detail: {
+                    Detail(showInfo: $showInfo, wide: true)
                 }
-                .padding(.horizontal, 12).padding(.vertical, 4)
+                .navigationSplitViewStyle(.balanced)
+            } else {
+                NavigationStack { Detail(showInfo: $showInfo, wide: false) }
             }
-            .navigationTitle(shell.crumbs.last ?? "Viewer")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    if shell.canGoBack {
-                        Button { shell.back() } label: { Label("Back", systemImage: "chevron.left") }
-                            .keyboardShortcut("[")
+        }
+        .fileImporter(isPresented: $shell.picking, allowedContentTypes: shell.allowing == nil ? [.item, .folder] : [.folder]) { result in
+            if case let .success(url) = result { shell.picked(url) }
+        }
+    }
+}
+
+/// The iPad's sidebar: Open, and the recent files, the one on screen marked.
+struct Sidebar: View {
+    @EnvironmentObject var shell: Shell
+    var body: some View {
+        List {
+            Section {
+                Button { shell.openPanel() } label: { Label("Open…", systemImage: "folder") }
+            }
+            if !shell.recents.isEmpty {
+                Section("Recent") {
+                    ForEach(shell.recents, id: \.path) { item in
+                        Button { shell.openRecent(item) } label: {
+                            Label {
+                                VStack(alignment: .leading, spacing: 1) {
+                                    Text(item.name).lineLimit(1)
+                                    Text((item.path as NSString).deletingLastPathComponent)
+                                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                                }
+                            } icon: { Image(systemName: "doc") }
+                        }
+                        .listRowBackground(shell.isOpen(item) ? Color.accentColor.opacity(0.15) : nil)
+                        .swipeActions { Button("Remove", role: .destructive) { shell.forget(item) } }
                     }
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    if shell.choices.names.count > 1 {
-                        Menu {
-                            Picker("View as", selection: Binding(get: { Int(shell.choices.current) }, set: { shell.choose($0) })) {
-                                ForEach(Array(shell.choices.names.enumerated()), id: \.offset) { i, name in Text(name).tag(i) }
-                            }
-                        } label: { Label("View as", systemImage: "eye") }
+            }
+        }
+        .listStyle(.sidebar)
+        .tint(.primary)
+    }
+}
+
+/// The page on screen, its notices and status, and the toolbar.
+struct Detail: View {
+    @EnvironmentObject var shell: Shell
+    @Binding var showInfo: Bool
+    /// iPad width: view-as as a segmented control, the path in the title.
+    let wide: Bool
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(shell.notices.enumerated()), id: \.offset) { _, n in NoticeBar(notice: n) }
+            if let error = shell.error { Banner(text: error, tint: .red) }
+            ContentArea().frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider()
+            HStack {
+                Text(shell.statusText).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+                Spacer()
+            }
+            .padding(.horizontal, 12).padding(.vertical, 4)
+        }
+        .navigationTitle(wide ? shell.title : (shell.crumbs.last ?? "Viewer"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarLeading) {
+                if shell.canGoBack {
+                    Button { shell.back() } label: { Label("Back", systemImage: "chevron.left") }
+                        .keyboardShortcut("[")
+                }
+            }
+            if wide, (2...4).contains(shell.choices.names.count) {
+                ToolbarItem(placement: .principal) {
+                    Picker("View as", selection: viewAs) {
+                        ForEach(Array(shell.choices.names.enumerated()), id: \.offset) { i, name in Text(name).tag(i) }
                     }
-                    Button { showInfo = true } label: { Label("Info", systemImage: "info.circle") }
-                        .disabled(shell.info.isEmpty)
+                    .pickerStyle(.segmented)
+                    .fixedSize()
+                }
+            }
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                if shell.choices.names.count > (wide ? 4 : 1) {
+                    Menu {
+                        Picker("View as", selection: viewAs) {
+                            ForEach(Array(shell.choices.names.enumerated()), id: \.offset) { i, name in Text(name).tag(i) }
+                        }
+                    } label: { Label("View as", systemImage: "eye") }
+                }
+                Button { showInfo.toggle() } label: { Label("Info", systemImage: "info.circle") }
+                    .disabled(shell.info.isEmpty)
+                    .keyboardShortcut("i")
+                if !wide {
                     Menu {
                         Button { shell.openPanel() } label: { Label("Open…", systemImage: "folder") }
                         if !shell.recents.isEmpty {
@@ -70,21 +144,20 @@ struct Root: View {
                             }
                         }
                     } label: { Label("Open", systemImage: "folder") } primaryAction: { shell.openPanel() }
-                        .keyboardShortcut("o")
                 }
             }
-            .sheet(isPresented: $showInfo) {
-                NavigationStack {
-                    InfoPanel()
-                        .navigationTitle("Info").navigationBarTitleDisplayMode(.inline)
-                        .toolbar { Button("Done") { showInfo = false } }
-                }
+        }
+        .background { Button("") { shell.openPanel() }.keyboardShortcut("o").hidden() }
+        // A column beside the content on iPad, a sheet on iPhone.
+        .inspector(isPresented: $showInfo) {
+            InfoPanel()
+                .inspectorColumnWidth(min: 260, ideal: 320, max: 420)
                 .presentationDetents([.medium, .large])
-            }
         }
-        .fileImporter(isPresented: $shell.picking, allowedContentTypes: shell.allowing == nil ? [.item, .folder] : [.folder]) { result in
-            if case let .success(url) = result { shell.picked(url) }
-        }
+    }
+
+    private var viewAs: Binding<Int> {
+        Binding(get: { Int(shell.choices.current) }, set: { shell.choose($0) })
     }
 }
 

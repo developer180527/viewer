@@ -119,6 +119,12 @@ final class Shell: ObservableObject {
         open(url, reopen: url.path == item.path ? nil : item.path)
     }
 
+    /// The file on screen (or the one its pages were opened from): the newest recent,
+    /// while something is open.
+    func isOpen(_ item: RecentItem) -> Bool { page != nil && item.path == recents.first?.path }
+
+    func forget(_ item: RecentItem) { session.forgetRecent(path: item.path); save(); refresh() }
+
     func clearRecents() { session.clearRecents(); save(); refresh() }
 
     /// Writes the recent list and the places in it.

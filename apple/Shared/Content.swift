@@ -26,6 +26,13 @@ final class Chunks<Row> {
 
 struct ContentArea: View {
     @EnvironmentObject var shell: Shell
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var width
+    /// The iPad's sidebar lists them already.
+    private var recentsHere: Bool { width != .regular }
+    #else
+    private let recentsHere = true
+    #endif
     var body: some View {
         switch shell.kind {
         case .none:
@@ -33,7 +40,7 @@ struct ContentArea: View {
                 Image(systemName: "doc.viewfinder").font(.system(size: 44)).foregroundStyle(.tertiary)
                 Text("Open a file or folder, or drop one here").foregroundStyle(.secondary)
                 Button("Open…") { shell.openPanel() }
-                if !shell.recents.isEmpty {
+                if recentsHere, !shell.recents.isEmpty {
                     RecentList().frame(maxWidth: 420, maxHeight: 260).padding(.top, 12)
                 }
             }

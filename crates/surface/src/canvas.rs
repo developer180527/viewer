@@ -45,6 +45,10 @@ pub struct Canvas {
     wake: Wake,
     scale: f32,
     dark: bool,
+    /// Drawn on a touch screen (iPhone, iPad): see [`Canvas::set_touch_screen`].
+    touch_screen: bool,
+    /// Frames still to draw after a resize, so layout catches up with the size.
+    relayout: u8,
     last: Instant,
     /// Time since the last frame that was built.
     idle: f32,
@@ -127,6 +131,8 @@ impl Canvas {
             wake,
             scale,
             dark,
+            touch_screen: false,
+            relayout: 0,
             last: Instant::now(),
             idle: 0.0,
             pinch: 1.0,
@@ -148,6 +154,9 @@ impl Canvas {
         }
         self.scale = scale;
         self.stale = true;
+        // Views place themselves by the last frame's rects: the frame after a resize
+        // is the first laid out at the new size.
+        self.relayout = 2;
     }
 
     pub fn set_dark(&mut self, dark: bool) {
@@ -171,6 +180,12 @@ impl Canvas {
 
     /// Something outside the canvas changed (a load finished, a texture decoded):
     /// build the next frame.
+    /// The canvas is on a touch screen: views word their hints for fingers.
+    pub fn set_touch_screen(&mut self, touch: bool) {
+        self.touch_screen = touch;
+        self.stale = true;
+    }
+
     pub fn touch(&mut self) {
         self.stale = true;
     }
@@ -245,6 +260,7 @@ impl Canvas {
                 freed: &mut freed,
                 pinch: self.pinch - 1.0,
                 wake: &self.wake,
+                touch_screen: self.touch_screen,
             };
             self.pinch = 1.0;
             let (dark, views) = (self.dark, &mut self.views);
@@ -258,6 +274,11 @@ impl Canvas {
             let out = self.ui.end_frame();
             drawn.action = action;
             drawn.repaint_after = out.platform.repaint_after;
+            if self.relayout > 0 {
+                self.relayout -= 1;
+                self.stale = true;
+                drawn.repaint_after = Some(0.0);
+            }
             drawn.cursor = out.platform.cursor;
             self.clear = out.clear_color;
             self.renderer.prepare(&out);

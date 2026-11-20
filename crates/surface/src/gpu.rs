@@ -79,6 +79,8 @@ pub struct Gpu<'a> {
     /// See `Host::trackpad_pinch`.
     pub pinch: f32,
     pub wake: &'a Wake,
+    /// An iPhone or iPad: hints speak of taps and fingers.
+    pub touch_screen: bool,
 }
 
 impl Host for Gpu<'_> {
@@ -88,6 +90,10 @@ impl Host for Gpu<'_> {
 
     fn trackpad_pinch(&self) -> f32 {
         self.pinch
+    }
+
+    fn touch_screen(&self) -> bool {
+        self.touch_screen
     }
 
     fn waker(&self) -> libviewer::Waker {

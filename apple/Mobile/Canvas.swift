@@ -80,6 +80,7 @@ final class CanvasView: UIView {
         let (w, h) = pixels
         do {
             canvas = try ViewerCanvas(session: shell.session, layer: address, width: w, height: h, scale: Float(scale), dark: dark)
+            canvas?.setTouchScreen(touch: true)
         } catch {
             failed = true
             shell.canvasFailed("\(error)")

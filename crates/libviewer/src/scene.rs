@@ -19,6 +19,11 @@ pub struct SceneView {
     wakes: bool,
     /// Everything, textures included, reached the GPU.
     settled: bool,
+    /// A mouse or trackpad has hovered the scene, so hints speak of clicks.
+    pointer_seen: bool,
+    /// The view's shape (width / height) when the camera was last framed; 0 before
+    /// the view had a size.
+    framed_aspect: f32,
 }
 
 impl SceneView {
@@ -43,7 +48,8 @@ pub fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, host: &mut dyn Hos
     let id = ui.make_id("scene");
     let resp = ui.interact_drag(id);
     let rect = resp.rect; // last frame's: one frame of latency, as for images
-    let aspect = if rect.h > 0.0 { rect.w / rect.h } else { 1.0 };
+    let sized = rect.w > 0.0 && rect.h > 0.0;
+    let aspect = if sized { rect.w / rect.h } else { 1.0 };
 
     let (bounds, loading) = {
         let read = doc.scene().read();
@@ -53,10 +59,19 @@ pub fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, host: &mut dyn Hos
     if let Some(b) = bounds {
         // Frame as soon as there are bounds, and once more on the finished model's
         // measured bounds unless the user has taken over the camera.
-        if st.controls.is_none() || reset || (!st.moved && !st.framed_final && !loading) {
+        // And again when the view changes shape (its first real size, a rotated
+        // iPad, a resized window) while the camera is still the framed one: framed
+        // for a square, a model overflows a phone's narrow screen.
+        let reshaped = sized && (aspect / st.framed_aspect.max(1e-3) - 1.0).abs() > 0.02;
+        if st.controls.is_none() || reset || (!st.moved && ((!st.framed_final && !loading) || reshaped)) {
             st.controls = Some(rendererx::OrbitControls::framing(b, aspect));
             st.framed_final = !loading;
+            st.framed_aspect = if sized { aspect } else { 0.0 };
             st.moved &= !reset;
+        }
+        if !sized {
+            // Framed for a square: frame again next frame, at the view's real shape.
+            ui.request_repaint();
         }
     }
     if let Some(c) = st.controls.as_mut() {
@@ -112,7 +127,12 @@ pub fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, host: &mut dyn Hos
     let status = match (loading, pending()) {
         (true, _) => "Loading model…".to_string(),
         (false, n) if n > 0 => format!("Decoding textures… ({n} left)"),
-        _ => "Drag to orbit · Shift-drag to pan · Scroll to zoom · Double-click to reframe".to_string(),
+        _ => {
+            st.pointer_seen |= resp.hovered && ui.input().pointer_kind == PointerKind::Mouse;
+            let touch = ui.input().pointer_kind == PointerKind::Touch || (host.touch_screen() && !st.pointer_seen);
+            // About 6.5 points a character at 12 points: a phone gets the short one.
+            hint(touch, rect.w < 560.0).to_string()
+        }
     };
     let frame_style = Frame { fill: pal.bg_inset, clip: true, ..Frame::none() };
     ui.container(Layout::column(), frame_style, |ui| {
@@ -125,4 +145,30 @@ pub fn scene(ui: &mut Ui, doc: &SceneDoc, st: &mut SceneView, host: &mut dyn Hos
             p.text(Vec2::new(r.x + 8.0, r.y + r.h - 22.0), 12.0, faint, status);
         });
     });
+}
+
+/// How to move the camera, in the words of the input at hand; `narrow`, the essentials
+/// (a phone's width).
+fn hint(touch: bool, narrow: bool) -> &'static str {
+    match (touch, narrow) {
+        (true, false) => "Drag to orbit · Two-finger drag to pan · Pinch to zoom · Double-tap to reframe",
+        (true, true) => "Drag to orbit · Pinch to zoom · Double-tap to reframe",
+        (false, false) => "Drag to orbit · Shift-drag to pan · Scroll to zoom · Double-click to reframe",
+        (false, true) => "Drag to orbit · Scroll to zoom · Double-click to reframe",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::hint;
+
+    #[test]
+    fn hints_speak_of_the_input_at_hand() {
+        assert!(hint(true, false).contains("Double-tap") && !hint(true, false).contains("click"));
+        assert!(hint(false, false).contains("Double-click") && !hint(false, false).contains("tap"));
+        // The short ones fit a phone: 402 points less margins, at about 6.5 a character.
+        for touch in [true, false] {
+            assert!(hint(touch, true).chars().count() as f32 * 6.5 < 386.0, "{}", hint(touch, true));
+        }
+    }
 }

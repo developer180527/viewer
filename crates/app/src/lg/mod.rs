@@ -404,7 +404,7 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0, wake: &w.wake };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: false };
             w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
             let out = w.ui.end_frame();
