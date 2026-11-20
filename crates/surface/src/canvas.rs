@@ -40,6 +40,8 @@ pub struct Canvas {
     ui: Ui,
     /// Per-page view state (scroll, zoom, camera), so going back restores it.
     views: HashMap<u64, ViewState>,
+    /// Places to restore in views not made yet.
+    saved: HashMap<u64, libviewer::PagesPlace>,
     wake: Wake,
     scale: f32,
     dark: bool,
@@ -121,6 +123,7 @@ impl Canvas {
             rx: None,
             ui,
             views: HashMap::new(),
+            saved: HashMap::new(),
             wake,
             scale,
             dark,
@@ -172,6 +175,26 @@ impl Canvas {
         self.stale = true;
     }
 
+    pub fn has_view(&self, id: u64) -> bool {
+        self.views.contains_key(&id)
+    }
+
+    /// Where the reader is in page `id`'s view, for views that can come back to it.
+    pub fn place(&self, id: u64) -> Option<libviewer::PagesPlace> {
+        self.views.get(&id)?.place()
+    }
+
+    /// Puts page `id`'s view at `place`: now if it's drawn, else when it first is.
+    pub fn restore(&mut self, id: u64, place: libviewer::PagesPlace) {
+        match self.views.get_mut(&id) {
+            Some(view) => view.restore(place),
+            None => {
+                self.saved.insert(id, place);
+            }
+        }
+        self.stale = true;
+    }
+
     /// Draws `current`, keeping view state for the `pages` still open and freeing the
     /// rest.
     pub fn draw(&mut self, pages: &[Page], current: Option<&Page>) -> Drawn {
@@ -185,8 +208,16 @@ impl Canvas {
             open
         });
         if let Some(page) = current {
-            self.views.entry(page.id).or_insert_with(|| ViewState::new(&page.doc.content));
+            let saved = &mut self.saved;
+            self.views.entry(page.id).or_insert_with(|| {
+                let mut view = ViewState::new(&page.doc.content);
+                if let Some(place) = saved.remove(&page.id) {
+                    view.restore(place);
+                }
+                view
+            });
         }
+        self.saved.retain(|id, _| pages.iter().any(|p| p.id == *id));
 
         let now = Instant::now();
         self.idle += (now - self.last).as_secs_f32();

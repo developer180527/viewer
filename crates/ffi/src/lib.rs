@@ -18,7 +18,7 @@ use viewer_core::{Hooks, Info, Notice, Session, Status};
 use viewer_model::Content;
 
 mod canvas;
-pub use canvas::{CanvasError, CursorShape, Frame, MouseButton, ViewerCanvas};
+pub use canvas::{CanvasError, CursorShape, Frame, MouseButton, TouchPhase, ViewerCanvas};
 
 uniffi::setup_scaffolding!();
 
@@ -84,6 +84,17 @@ pub struct EntryItem {
     pub folder: bool,
 }
 
+/// A recently opened file, newest first.
+#[derive(uniffi::Record, Clone, Debug, PartialEq)]
+pub struct RecentItem {
+    pub path: String,
+    pub name: String,
+    /// Seconds since 1970.
+    pub opened: u64,
+    /// The token given when it was opened (a security-scoped bookmark); empty if none.
+    pub bookmark: Vec<u8>,
+}
+
 /// The app's session: what's open, and what can be done with it. Thread-safe; its
 /// calls are quick (opening runs on loader threads).
 #[derive(uniffi::Object)]
@@ -123,9 +134,39 @@ impl ViewerSession {
 
     /// Opens what the user picked; with `reopen` inside it, that file instead. Returns
     /// the grant's number: keep the platform's access (a security-scoped URL) until
-    /// [`Self::take_released`] returns it.
-    pub fn open_granted(&self, picked: String, reopen: Option<String>) -> u64 {
-        self.session().open_granted(&PathBuf::from(picked), reopen.map(PathBuf::from))
+    /// [`Self::take_released`] returns it. `bookmark`, the platform's token for opening
+    /// `picked` again, is kept with it in the recent list.
+    pub fn open_granted(&self, picked: String, reopen: Option<String>, bookmark: Option<Vec<u8>>) -> u64 {
+        self.session().open_granted(&PathBuf::from(picked), reopen.map(PathBuf::from), bookmark)
+    }
+
+    // ---------------------------------------------------------------- recent files
+
+    /// Keeps the recent list in `file` (in the app's support folder), loading it now.
+    pub fn use_recents_file(&self, file: String) {
+        self.session().set_recents(viewer_core::Recents::load(PathBuf::from(file)));
+    }
+
+    pub fn recents(&self) -> Vec<RecentItem> {
+        self.session()
+            .recents()
+            .items()
+            .iter()
+            .map(|r| RecentItem { path: r.path.display().to_string(), name: r.name(), opened: r.opened, bookmark: r.bookmark.clone() })
+            .collect()
+    }
+
+    pub fn forget_recent(&self, path: String) {
+        self.session().recents_mut().remove(&PathBuf::from(path));
+    }
+
+    pub fn clear_recents(&self) {
+        self.session().recents_mut().clear();
+    }
+
+    /// Writes the recent list (and the places in it) if it changed. Returns why not.
+    pub fn save_recents(&self) -> Option<String> {
+        self.session().recents_mut().save().err().map(|e| e.to_string())
     }
 
     /// Grants no page reads through any more: stop accessing them.

@@ -33,6 +33,9 @@ struct ContentArea: View {
                 Image(systemName: "doc.viewfinder").font(.system(size: 44)).foregroundStyle(.tertiary)
                 Text("Open a file or folder, or drop one here").foregroundStyle(.secondary)
                 Button("Open…") { shell.openPanel() }
+                if !shell.recents.isEmpty {
+                    RecentList().frame(maxWidth: 420, maxHeight: 260).padding(.top, 12)
+                }
             }
         case .text: TextLines(session: shell.session).id(shell.page)
         case .table: TableRows(session: shell.session).id(shell.page)
@@ -131,6 +134,35 @@ struct Entries: View {
         }
         .contextMenu(forSelectionType: Int.self) { _ in } primaryAction: { picked in
             if let i = picked.first { shell.openEntry(UInt64(i)) }
+        }
+    }
+}
+
+/// Recently opened files, on the empty screen.
+struct RecentList: View {
+    @EnvironmentObject var shell: Shell
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Recent").font(.headline).foregroundStyle(.secondary)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 2) {
+                    ForEach(shell.recents, id: \.path) { item in
+                        Button { shell.openRecent(item) } label: {
+                            HStack {
+                                Image(systemName: "doc").foregroundStyle(.secondary)
+                                VStack(alignment: .leading, spacing: 0) {
+                                    Text(item.name).lineLimit(1)
+                                    Text((item.path as NSString).deletingLastPathComponent).font(.caption).foregroundStyle(.tertiary).lineLimit(1).truncationMode(.middle)
+                                }
+                                Spacer()
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.vertical, 3)
+                    }
+                }
+            }
         }
     }
 }

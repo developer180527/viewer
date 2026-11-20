@@ -17,6 +17,13 @@ struct ViewerApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {
                 Button("Open…") { shell.openPanel() }.keyboardShortcut("o")
+                Menu("Open Recent") {
+                    ForEach(shell.recents, id: \.path) { item in
+                        Button(item.name) { shell.openRecent(item) }
+                    }
+                    Divider()
+                    Button("Clear Menu") { shell.clearRecents() }.disabled(shell.recents.isEmpty)
+                }
             }
             CommandGroup(after: .toolbar) {
                 Button("Back") { shell.back() }.keyboardShortcut("[").disabled(!shell.canGoBack)
@@ -66,6 +73,9 @@ struct Root: View {
         }
         // Files opened from Finder, the Dock or `open -a`: the system grants each.
         .onOpenURL { url in if url.isFileURL { shell.open(url) } }
+        // Where the reader is in the file on screen, for the next time it's opened.
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in shell.save() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)) { _ in shell.save() }
         .inspector(isPresented: $showInfo) { InfoPanel().inspectorColumnWidth(min: 220, ideal: 280) }
         .onDrop(of: [.fileURL], isTargeted: nil) { providers in
             guard let p = providers.first else { return false }

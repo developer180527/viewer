@@ -303,7 +303,29 @@ impl Default for PagesView {
     }
 }
 
+/// Where the reader is in a paged document, to come back to: the page at the window's
+/// top, how far into it in page points (negative in the gap above), and the zoom
+/// (`None`: fit to width).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PagesPlace {
+    pub page: usize,
+    pub offset: f32,
+    pub zoom: Option<f32>,
+}
+
 impl PagesView {
+    pub fn place(&self) -> PagesPlace {
+        PagesPlace { page: self.anchor.0, offset: self.anchor.1, zoom: self.zoom }
+    }
+
+    /// Goes back to `place`. A page past the end is the last; the scroll is kept within
+    /// the document once its pages are measured.
+    pub fn restore(&mut self, place: PagesPlace) {
+        let offset = if place.offset.is_finite() { place.offset } else { -GAP };
+        self.anchor = (place.page, offset);
+        self.zoom = place.zoom.filter(|z| z.is_finite()).map(|z| z.clamp(MIN_ZOOM, MAX_ZOOM));
+    }
+
     pub fn textures(&self) -> Vec<TextureId> {
         self.tiles.values().map(|t| t.tex).collect()
     }
@@ -754,6 +776,22 @@ mod tests {
         assert_eq!(v.top_y(1.0), 0.0);
         v.set_top_y(1e9, 1.0, 500.0);
         assert_eq!(v.top_y(1.0), v.layout.height(1.0) - 500.0);
+    }
+
+    #[test]
+    fn a_place_comes_back_and_bad_ones_are_tamed() {
+        let mut v = PagesView { layout: Layout::new(3, letter()), ..Default::default() };
+        v.set_top_y(v.layout.top(1, 1.0) + 40.0, 1.0, 500.0);
+        v.zoom = Some(1.5);
+        let place = v.place();
+        let mut w = PagesView { layout: Layout::new(3, letter()), ..Default::default() };
+        w.restore(place);
+        assert_eq!(w.place(), place);
+        assert_eq!(w.top_y(1.0), v.top_y(1.0));
+        // From a file saved by hand, or a document that lost pages.
+        w.restore(PagesPlace { page: 99, offset: f32::NAN, zoom: Some(1e9) });
+        assert_eq!(w.zoom, Some(MAX_ZOOM));
+        assert_eq!(w.top_y(1.0), w.layout.top(3, 1.0) - GAP);
     }
 
     #[test]

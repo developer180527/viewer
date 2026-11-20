@@ -22,6 +22,20 @@ impl ViewState {
         }
     }
 
+    /// Where the reader is, for views that can come back to it.
+    pub fn place(&self) -> Option<libviewer::PagesPlace> {
+        match self {
+            Self::Model(v) => v.place(),
+            Self::None => None,
+        }
+    }
+
+    pub fn restore(&mut self, place: libviewer::PagesPlace) {
+        if let Self::Model(v) = self {
+            v.restore(place);
+        }
+    }
+
     /// GPU textures this page owns, to free when it is closed.
     pub fn textures(&self) -> Vec<TextureId> {
         match self {

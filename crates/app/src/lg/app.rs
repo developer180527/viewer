@@ -182,7 +182,7 @@ impl ViewerApp {
     pub fn poll_job(&mut self) -> bool {
         let pick = self.picked.borrow_mut().take();
         if let Some(Pick { picked, reopen }) = pick {
-            let id = self.session.open_granted(picked.path(), reopen);
+            let id = self.session.open_granted(picked.path(), reopen, None);
             self.grants.insert(id, picked);
             return true;
         }

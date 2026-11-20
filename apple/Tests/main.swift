@@ -82,13 +82,13 @@ if case let .fallback(message)? = s.notices().first {
 } else { check(false, "a fallback notice: \(s.notices())") }
 
 // Grants: released once no page reads through them; a failed open's at once.
-let g = s.openGranted(picked: "\(root)/samples", reopen: nil)
+let g = s.openGranted(picked: "\(root)/samples", reopen: nil, bookmark: nil)
 settle(s)
 check(s.takeReleased().isEmpty, "the folder's page holds its grant")
 s.openPath(path: "\(root)/samples/data.json")
 settle(s)
 check(s.takeReleased() == [g], "released with its page")
-let bad = s.openGranted(picked: "\(root)/samples/missing.bin", reopen: nil)
+let bad = s.openGranted(picked: "\(root)/samples/missing.bin", reopen: nil, bookmark: nil)
 settle(s)
 check(s.error() != nil && s.takeReleased() == [bad], "a failed open's grant goes at once")
 check(humanBytes(bytes: 1536) == "1.5 KiB", humanBytes(bytes: 1536))
@@ -125,12 +125,39 @@ do {
     canvas.pointerMoved(x: 100, y: 100)
     canvas.wheel(dx: 0, dy: -40, precise: true)
     canvas.pinch(delta: 0.2)
+    // Keys: AppKit's key codes and UIKit's HID usages (Page Down both).
+    check(canvas.keyMac(code: 0x79, pressed: true, repeat: false), "Page Down from AppKit")
+    _ = canvas.keyMac(code: 0x79, pressed: false, repeat: false)
+    check(canvas.keyHid(usage: 0x4E, pressed: true, repeat: false), "Page Down from UIKit")
+    _ = canvas.keyHid(usage: 0x4E, pressed: false, repeat: false)
+    check(!canvas.keyMac(code: 0x7F, pressed: true, repeat: false), "an unknown key is left to AppKit")
+    canvas.text(text: "a")
     _ = canvas.draw()
     // Back through the pages: each view's state is kept, and closed ones freed.
     while s.back() {}
     _ = canvas.draw()
 } catch {
     check(false, "a canvas on the layer: \(error)")
+}
+
+// Recent files, kept in a file and read back by the next session.
+let recentsFile = NSTemporaryDirectory() + "viewer-recents-\(getpid()).txt"
+do {
+    let a = ViewerSession(waker: Wakes())
+    a.useRecentsFile(file: recentsFile)
+    _ = a.openGranted(picked: "\(root)/samples/data.json", reopen: nil, bookmark: Data([1, 2, 3]))
+    settle(a)
+    a.openPath(path: "\(root)/samples/table.csv")
+    settle(a)
+    check(a.recents().map(\.name) == ["table.csv", "data.json"], "recents newest first: \(a.recents().map(\.name))")
+    check(a.saveRecents() == nil, "recents saved")
+    let b = ViewerSession(waker: Wakes())
+    b.useRecentsFile(file: recentsFile)
+    check(b.recents() == a.recents(), "recents read back")
+    check(b.recents().last?.bookmark == Data([1, 2, 3]), "with the bookmark")
+    b.forgetRecent(path: "\(root)/samples/table.csv")
+    check(b.recents().count == 1, "one forgotten")
+    try? FileManager.default.removeItem(atPath: recentsFile)
 }
 
 if failures > 0 { print("\(failures) failed"); exit(1) }

@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use libgui::{Cursor, InputEvent, Modifiers, PointerButton, Vec2, WheelUnit};
+use libgui::{Cursor, InputEvent, Key, Modifiers, PointerButton, TouchPhase as Phase, Vec2, WheelUnit};
 use viewer_surface::views::Action;
 use viewer_surface::{Canvas, Wake};
 
@@ -80,6 +80,16 @@ pub struct Frame {
     pub opened: bool,
 }
 
+/// Where a finger is in its touch.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TouchPhase {
+    Start,
+    Move,
+    End,
+    /// The system took the touch (a gesture of its own): no tap.
+    Cancel,
+}
+
 /// A mouse button.
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum MouseButton {
@@ -124,9 +134,22 @@ impl ViewerCanvas {
     pub fn draw(&self) -> Frame {
         let mut action = None;
         let frame = with(self.id, |c| {
-            let session = self.session.session();
+            let mut session = self.session.session();
+            // A file opened again goes back to where the reader was.
+            let id = session.current().map(|p| p.id);
+            if let Some(id) = id
+                && !c.has_view(id)
+                && let Some(p) = session.place(id)
+            {
+                c.restore(id, libviewer::PagesPlace { page: p.page as usize, offset: p.offset, zoom: p.zoom });
+            }
             let drawn = c.draw(session.pages(), session.current());
             action = drawn.action;
+            if let Some(id) = id
+                && let Some(p) = c.place(id)
+            {
+                session.set_place(id, viewer_core::Place { page: p.page.min(u32::MAX as usize) as u32, offset: p.offset, zoom: p.zoom });
+            }
             Frame { repaint_after: drawn.repaint_after.map(f64::from), cursor: cursor(drawn.cursor), opened: false }
         });
         let mut frame = frame.unwrap_or(Frame { repaint_after: None, cursor: CursorShape::Arrow, opened: false });
@@ -179,6 +202,18 @@ impl ViewerCanvas {
         self.push(InputEvent::Wheel { delta: Vec2::new(dx, dy), unit });
     }
 
+    /// A finger, by a number that stays its own from `Start` to `End` or `Cancel`.
+    /// libgui makes taps, drags, flings and two-finger pinches of them.
+    pub fn touch_point(&self, id: u64, phase: TouchPhase, x: f32, y: f32) {
+        let phase = match phase {
+            TouchPhase::Start => Phase::Start,
+            TouchPhase::Move => Phase::Move,
+            TouchPhase::End => Phase::End,
+            TouchPhase::Cancel => Phase::Cancel,
+        };
+        self.push(InputEvent::Touch { id, phase, pos: Vec2::new(x, y) });
+    }
+
     /// A trackpad pinch, as AppKit's magnification (0.1 is 10% bigger).
     pub fn pinch(&self, delta: f32) {
         with(self.id, |c| c.pinch(delta));
@@ -188,6 +223,24 @@ impl ViewerCanvas {
         self.push(InputEvent::ModifiersChanged(Modifiers { shift, ctrl, alt, logo: command }));
     }
 
+    /// A key, by AppKit's `NSEvent.keyCode` (a virtual key code). Keys it doesn't
+    /// know are ignored. Returns whether it was one.
+    pub fn key_mac(&self, code: u16, pressed: bool, repeat: bool) -> bool {
+        self.key(mac_key(code), pressed, repeat)
+    }
+
+    /// A key, by USB HID usage (UIKit's `UIKey.keyCode`).
+    pub fn key_hid(&self, usage: u16, pressed: bool, repeat: bool) -> bool {
+        self.key(Key::from_hid_usage(usage), pressed, repeat)
+    }
+
+    /// Typed text (characters, not shortcuts).
+    pub fn text(&self, text: String) {
+        if !text.is_empty() {
+            self.push(InputEvent::Text(text));
+        }
+    }
+
     /// The view lost focus: every button and key is released.
     pub fn focus_lost(&self) {
         self.push(InputEvent::FocusLost);
@@ -195,6 +248,12 @@ impl ViewerCanvas {
 }
 
 impl ViewerCanvas {
+    fn key(&self, key: Option<Key>, pressed: bool, repeat: bool) -> bool {
+        let Some(key) = key else { return false };
+        self.push(InputEvent::Key { key, pressed, repeat });
+        true
+    }
+
     fn push(&self, event: InputEvent) {
         with(self.id, |c| {
             c.push(event);
@@ -224,5 +283,52 @@ fn cursor(c: Cursor) -> CursorShape {
         Cursor::Grabbing => CursorShape::Grabbing,
         Cursor::Text => CursorShape::Text,
         Cursor::Crosshair => CursorShape::Crosshair,
+    }
+}
+
+/// AppKit's virtual key codes (Carbon's `kVK_*`, ANSI layout positions).
+fn mac_key(code: u16) -> Option<Key> {
+    use Key::*;
+    Some(match code {
+        0x00 => A, 0x0B => B, 0x08 => C, 0x02 => D, 0x0E => E, 0x03 => F, 0x05 => G,
+        0x04 => H, 0x22 => I, 0x26 => J, 0x28 => K, 0x25 => L, 0x2E => M, 0x2D => N,
+        0x1F => O, 0x23 => P, 0x0C => Q, 0x0F => R, 0x01 => S, 0x11 => T, 0x20 => U,
+        0x09 => V, 0x0D => W, 0x07 => X, 0x10 => Y, 0x06 => Z,
+        0x1D => Num0, 0x12 => Num1, 0x13 => Num2, 0x14 => Num3, 0x15 => Num4,
+        0x17 => Num5, 0x16 => Num6, 0x1A => Num7, 0x1C => Num8, 0x19 => Num9,
+        0x7A => F1, 0x78 => F2, 0x63 => F3, 0x76 => F4, 0x60 => F5, 0x61 => F6,
+        0x62 => F7, 0x64 => F8, 0x65 => F9, 0x6D => F10, 0x67 => F11, 0x6F => F12,
+        0x24 => Enter, 0x35 => Escape, 0x33 => Backspace, 0x30 => Tab, 0x31 => Space,
+        0x1B => Minus, 0x18 => Equal, 0x21 => BracketLeft, 0x1E => BracketRight,
+        0x2A => Backslash, 0x29 => Semicolon, 0x27 => Quote, 0x32 => Backquote,
+        0x2B => Comma, 0x2F => Period, 0x2C => Slash,
+        0x39 => CapsLock, 0x75 => Delete, 0x73 => Home, 0x77 => End,
+        0x74 => PageUp, 0x79 => PageDown,
+        0x7C => ArrowRight, 0x7B => ArrowLeft, 0x7D => ArrowDown, 0x7E => ArrowUp,
+        0x4B => NumpadDivide, 0x43 => NumpadMultiply, 0x4E => NumpadSubtract,
+        0x45 => NumpadAdd, 0x4C => NumpadEnter, 0x41 => NumpadDecimal,
+        0x52 => Numpad0, 0x53 => Numpad1, 0x54 => Numpad2, 0x55 => Numpad3,
+        0x56 => Numpad4, 0x57 => Numpad5, 0x58 => Numpad6, 0x59 => Numpad7,
+        0x5B => Numpad8, 0x5C => Numpad9,
+        0x3B => ControlLeft, 0x38 => ShiftLeft, 0x3A => AltLeft, 0x37 => SuperLeft,
+        0x3E => ControlRight, 0x3C => ShiftRight, 0x3D => AltRight, 0x36 => SuperRight,
+        _ => return None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mac_keys_are_distinct() {
+        let mut seen = std::collections::HashSet::new();
+        for code in 0..=0x7F {
+            if let Some(k) = mac_key(code) {
+                assert!(seen.insert(k), "{k:?} twice");
+            }
+        }
+        assert_eq!(mac_key(0x79), Some(Key::PageDown));
+        assert_eq!(mac_key(0x31), Some(Key::Space));
     }
 }

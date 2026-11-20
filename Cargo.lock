@@ -5455,6 +5455,7 @@ dependencies = [
  "anyhow",
  "libfileparser-core",
  "libgui",
+ "libviewer",
  "uniffi",
  "viewer-core",
  "viewer-model",

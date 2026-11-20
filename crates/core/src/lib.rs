@@ -16,6 +16,7 @@
 //! [`Page::id`] and frees for the ids [`Session::take_closed`] returns.
 
 mod loading;
+pub mod recents;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -26,6 +27,7 @@ use viewer_formats::registry;
 use viewer_model::{Document, FileSource, Unreadable};
 
 use loading::{Job, Loaded, Target};
+pub use recents::{Place, Recent, Recents};
 
 /// Wakes the shell from a loader thread: it should call [`Session::poll`].
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
@@ -149,11 +151,14 @@ pub struct Session {
     hooks: Hooks,
     next_grant: GrantId,
     released: Arc<Mutex<Vec<GrantId>>>,
+    recents: Recents,
+    /// The shell's token for the root page being opened, for the recent list.
+    pending_bookmark: Option<Vec<u8>>,
 }
 
 impl Session {
     pub fn new(hooks: Hooks) -> Self {
-        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default() }
+        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default(), recents: Recents::in_memory(), pending_bookmark: None }
     }
 
     // ---------------------------------------------------------------- commands
@@ -169,18 +174,22 @@ impl Session {
     pub fn open_path_as(&mut self, path: PathBuf, view_as: Option<String>) {
         self.job = Some(Job::open_path(path, view_as, &self.hooks));
         self.pending = None;
+        self.pending_bookmark = None;
     }
 
     /// Opens what the user picked, `picked`. With `reopen` (the file
     /// [`Notice::Blocked`] named) inside it, that file opens again, its neighbours now
     /// readable; otherwise what was picked opens. Returns the grant's number: the shell
     /// keeps the platform's token under it until [`Self::take_released`] gives it back.
-    pub fn open_granted(&mut self, picked: &Path, reopen: Option<PathBuf>) -> GrantId {
+    /// `bookmark`, the shell's token for opening `picked` again later, goes with the
+    /// file into the recent list.
+    pub fn open_granted(&mut self, picked: &Path, reopen: Option<PathBuf>, bookmark: Option<Vec<u8>>) -> GrantId {
         let path = match reopen {
             Some(model) if inside(&model, picked) => model,
             _ => picked.to_path_buf(),
         };
         self.open_path(path);
+        self.pending_bookmark = bookmark;
         let id = self.next_grant;
         self.next_grant += 1;
         self.pending = Some(Grant { _token: Arc::new(GrantToken { id, released: self.released.clone() }) });
@@ -243,6 +252,7 @@ impl Session {
         self.job = None;
         // A root page owns what was picked for it; others read through the page they
         // were opened from (or replace).
+        let bookmark = self.pending_bookmark.take();
         let grant = match target {
             Target::Root => self.pending.take(),
             Target::Push | Target::ReplaceTop => self.pages.last().and_then(|p| p.grant.clone()),
@@ -255,6 +265,9 @@ impl Session {
                 self.next_page_id += 1;
                 match target {
                     Target::Root => {
+                        if let Some(path) = page.src.path() {
+                            self.recents.note(path, bookmark);
+                        }
                         let old = std::mem::take(&mut self.pages);
                         self.closed.extend(old.iter().map(|p| p.id));
                     }
@@ -271,6 +284,41 @@ impl Session {
             Err(e) => self.error = Some(e),
         }
         true
+    }
+
+    // ---------------------------------------------------------------- recent files
+
+    /// The recent list files are noted in as they open: kept in memory until a shell
+    /// sets one loaded from its file.
+    pub fn set_recents(&mut self, recents: Recents) {
+        self.recents = recents;
+    }
+
+    pub fn recents(&self) -> &Recents {
+        &self.recents
+    }
+
+    pub fn recents_mut(&mut self) -> &mut Recents {
+        &mut self.recents
+    }
+
+    /// The file a page's place is remembered under: a root page's own file. Entries
+    /// inside containers and other views aren't remembered.
+    fn place_key(&self, page_id: u64) -> Option<&Path> {
+        let root = self.pages.first().filter(|p| p.id == page_id && self.pages.len() == 1)?;
+        root.src.path()
+    }
+
+    /// Where the reader was in this page's file when it was last open.
+    pub fn place(&self, page_id: u64) -> Option<Place> {
+        self.recents.get(self.place_key(page_id)?)?.place
+    }
+
+    /// Where the reader is in this page now.
+    pub fn set_place(&mut self, page_id: u64, place: Place) {
+        if let Some(path) = self.place_key(page_id).map(Path::to_path_buf) {
+            self.recents.set_place(&path, place);
+        }
     }
 
     // ---------------------------------------------------------------- what's shown

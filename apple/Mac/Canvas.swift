@@ -67,6 +67,11 @@ final class CanvasView: NSView {
         layer?.contentsScale = scale
         if canvas == nil { start() }
         shell?.onWake = { [weak self] in self?.canvas?.touch(); self?.redraw() }
+        // Keys go to the page on screen without a click first.
+        DispatchQueue.main.async { [weak self] in
+            guard let self, let window = self.window else { return }
+            window.makeFirstResponder(self)
+        }
         redraw()
     }
 
@@ -213,7 +218,39 @@ final class CanvasView: NSView {
         redraw()
     }
 
-    override func flagsChanged(with event: NSEvent) { mods(event); redraw() }
+    override func flagsChanged(with event: NSEvent) {
+        // A modifier key itself: libviewer's views ask whether Shift is down.
+        let f = event.modifierFlags
+        let down: Bool? = switch event.keyCode {
+        case 0x38, 0x3C: f.contains(.shift)
+        case 0x3B, 0x3E: f.contains(.control)
+        case 0x3A, 0x3D: f.contains(.option)
+        case 0x37, 0x36: f.contains(.command)
+        default: nil
+        }
+        if let down { _ = canvas?.keyMac(code: event.keyCode, pressed: down, repeat: false) }
+        mods(event)
+        redraw()
+    }
+
+    override func keyDown(with event: NSEvent) {
+        guard let canvas else { return super.keyDown(with: event) }
+        mods(event)
+        let known = canvas.keyMac(code: event.keyCode, pressed: true, repeat: event.isARepeat)
+        let f = event.modifierFlags
+        if !f.contains(.command), !f.contains(.control), let text = event.characters,
+           let scalar = text.unicodeScalars.first, scalar.value >= 0x20, scalar.value < 0xF700, scalar.value != 0x7F {
+            canvas.text(text: text)
+        }
+        redraw()
+        if !known { super.keyDown(with: event) }
+    }
+
+    override func keyUp(with event: NSEvent) {
+        guard let canvas else { return super.keyUp(with: event) }
+        _ = canvas.keyMac(code: event.keyCode, pressed: false, repeat: false)
+        redraw()
+    }
 
     override func resignFirstResponder() -> Bool {
         canvas?.focusLost()

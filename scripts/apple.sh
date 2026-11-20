@@ -34,10 +34,15 @@ mkdir -p "$out/swift" "$out/headers"
 # Line tables only, for these targets: backtraces keep file and line, and the static
 # library is a fraction of full debug info's size (copied three times on the way to
 # the app). The host's own build is untouched: it's a different target directory.
+# Only what's used: the static library everywhere, and the Mac's dylib too, which the
+# bindings are read from (iOS would link a dylib nobody uses, a gigabyte a target).
 for t in $targets; do
   echo "building viewer-ffi for $t ($profile)"
+  kinds="--crate-type staticlib"
+  [ "$t" = aarch64-apple-darwin ] && kinds="$kinds --crate-type cdylib"
+  # shellcheck disable=SC2086
   CARGO_PROFILE_DEV_DEBUG=line-tables-only CARGO_PROFILE_RELEASE_DEBUG=line-tables-only \
-    nice cargo build -q -j2 -p viewer-ffi --lib --target "$t" $flag
+    nice cargo rustc -q -j2 -p viewer-ffi --lib --target "$t" $flag $kinds
 done
 
 # The bindings come from the library's own metadata (library mode), read from the
@@ -58,4 +63,16 @@ for t in $targets; do
 done
 # shellcheck disable=SC2086
 xcodebuild -create-xcframework $args -output "$out/ViewerFFI.xcframework" >/dev/null
+
+# xcodebuild copied each library in: link them instead, so a debug build doesn't
+# keep two copies of every one (hundreds of megabytes each).
+for lib in "$out"/ViewerFFI.xcframework/*/libviewer_ffi.a; do
+  case $(basename "$(dirname "$lib")") in
+    macos-arm64) t=aarch64-apple-darwin ;;
+    ios-arm64) t=aarch64-apple-ios ;;
+    ios-arm64-simulator) t=aarch64-apple-ios-sim ;;
+    *) continue ;;
+  esac
+  ln -f "target/$t/$profile/libviewer_ffi.a" "$lib"
+done
 echo "wrote $out/ViewerFFI.xcframework and $out/swift/ViewerFFI.swift"

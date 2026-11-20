@@ -125,7 +125,7 @@ fn a_fallback_says_why() {
 fn grants_are_released_when_no_page_reads_through_them() {
     let (mut s, _) = session();
     let folder = root().join("samples");
-    let g = s.open_granted(&folder, None);
+    let g = s.open_granted(&folder, None, None);
     settle(&mut s);
     assert!(s.current().unwrap().src.is_folder());
     assert!(s.take_released().is_empty(), "the folder's page reads through it");
@@ -134,7 +134,7 @@ fn grants_are_released_when_no_page_reads_through_them() {
     settle(&mut s);
     assert_eq!(s.take_released(), vec![g]);
     // A grant whose open fails is released at once, and the pages stay.
-    let bad = s.open_granted(&root().join("samples/missing.bin"), None);
+    let bad = s.open_granted(&root().join("samples/missing.bin"), None, None);
     settle(&mut s);
     assert!(s.error().is_some());
     assert_eq!(s.take_released(), vec![bad]);
@@ -146,11 +146,11 @@ fn reopening_from_a_granted_folder() {
     let (mut s, _) = session();
     let model = root().join("samples/data.json");
     // The folder picked for a blocked model reaches it: the model opens, not the folder.
-    s.open_granted(&root().join("samples"), Some(model.clone()));
+    s.open_granted(&root().join("samples"), Some(model.clone()), None);
     settle(&mut s);
     assert_eq!(s.current().unwrap().src.name(), "data.json");
     // A folder that doesn't: what was picked opens.
-    s.open_granted(&root().join("corpus"), Some(model));
+    s.open_granted(&root().join("corpus"), Some(model), None);
     settle(&mut s);
     assert!(s.current().unwrap().src.is_folder());
     assert_eq!(Session::open_folder_for(&root().join("samples/data.json")), Some(root().join("samples")));
@@ -161,4 +161,39 @@ fn reopening_from_a_granted_folder() {
 fn a_session_is_send() {
     fn send<T: Send>() {}
     send::<Session>();
+}
+
+#[test]
+fn opened_files_are_remembered_with_their_place() {
+    let (mut s, _) = session();
+    let pdf = root().join("corpus/files/docs/two-pages.pdf");
+    s.open_granted(&pdf, None, Some(vec![7, 7]));
+    settle(&mut s);
+    s.open_path(root().join("samples/data.json"));
+    settle(&mut s);
+    let names: Vec<_> = s.recents().items().iter().map(|r| r.name()).collect();
+    assert_eq!(names, ["data.json", "two-pages.pdf"]);
+    assert_eq!(s.recents().get(&pdf).unwrap().bookmark, [7, 7], "the shell's token stays with the file");
+    // Back to the PDF: no place yet, then one set and given back on the next open.
+    s.open_path(pdf.clone());
+    settle(&mut s);
+    let id = s.current().unwrap().id;
+    assert_eq!(s.place(id), None);
+    let place = viewer_core::Place { page: 1, offset: 30.0, zoom: Some(2.0) };
+    s.set_place(id, place);
+    s.open_path(pdf.clone());
+    settle(&mut s);
+    assert_eq!(s.place(s.current().unwrap().id), Some(place));
+    assert_eq!(s.recents().get(&pdf).unwrap().bookmark, [7, 7], "kept when reopened without one");
+    // Entries inside a container aren't remembered by themselves.
+    s.open_path(root().join("samples/bundle.zip"));
+    settle(&mut s);
+    let Content::Model(Model::Container(c)) = &s.current().unwrap().doc.content else { panic!() };
+    let c = c.clone();
+    s.open_entry(c, 0);
+    settle(&mut s);
+    assert_eq!(s.pages().len(), 2);
+    assert_eq!(s.recents().items().len(), 3, "the zip, not its entry");
+    s.set_place(s.current().unwrap().id, place);
+    assert_eq!(s.place(s.current().unwrap().id), None);
 }

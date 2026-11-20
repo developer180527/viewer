@@ -12,3 +12,4 @@ ios/Viewer.xcodeproj/
 /fuzz/coverage/
 /soak/
 apple/ViewerShell.xcodeproj/
+apple/Mobile/Info.plist

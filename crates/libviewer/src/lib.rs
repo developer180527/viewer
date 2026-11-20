@@ -41,7 +41,7 @@ use libgui::{TextureId, Ui};
 
 pub use host::{Frame3d, Host, ImageOpener, SceneGpu, Waker, draw_scene};
 pub use markdown::{FlowView, flow};
-pub use pages::{PagesView, pages};
+pub use pages::{PagesPlace, PagesView, pages};
 pub use raster::{RasterView, raster};
 pub use scene::{SceneView, scene};
 pub use table::{TableView, container, human_bytes, table};
@@ -80,6 +80,21 @@ impl View {
             Content::Pages(_) => Self::Pages(Box::default()),
             Content::Flow(f) => Self::Flow(Box::new(FlowView::new(f.clone()))),
             _ => Self::None,
+        }
+    }
+
+    /// Where the reader is, for views that can come back to it (paged documents).
+    pub fn place(&self) -> Option<PagesPlace> {
+        match self {
+            Self::Pages(st) => Some(st.place()),
+            _ => None,
+        }
+    }
+
+    /// Goes back to `place`; views without one ignore it.
+    pub fn restore(&mut self, place: PagesPlace) {
+        if let Self::Pages(st) = self {
+            st.restore(place);
         }
     }
 
