@@ -165,6 +165,7 @@ final class StressRunner {
             ("pdf-scroll", { await self.scroll("geotopo.pdf", seconds: 10, speed: 40) }),
             ("pdf-fling-touch", { await self.flingTouch("geotopo.pdf", seconds: 8) }),
             ("pdf-zoom", { await self.zoom("geotopo.pdf", seconds: 8) }),
+            ("pdf-zoom-total", { await self.zoom("geotopo.pdf", seconds: 8, rest: 4) }),
             ("pdf-page-keys", { await self.keys("geotopo.pdf", seconds: 8, usage: 0x4E) }),
             ("image-zoom-pan", { await self.zoomPan("huge.png", seconds: 8) }),
             ("photo-zoom-pan", { await self.zoomPan("photo.jpg", seconds: 6) }),
@@ -249,7 +250,9 @@ final class StressRunner {
     }
 
     /// Pinching in and out over the page, as a trackpad does.
-    private func zoom(_ file: String, seconds: Double) async {
+    /// `rest`: seconds after, measured too, so work the zoom only put off (tiles
+    /// queued, uploads) counts against it.
+    private func zoom(_ file: String, seconds: Double, rest: Double = 0) async {
         guard await open(file) else { return }
         let (x, y) = center
         let m = Measure()
@@ -257,6 +260,7 @@ final class StressRunner {
             self.canvas?.pointerMoved(x: x, y: y)
             self.canvas?.pinch(delta: Float(sin(t * 2.5)) * 0.04)
         }
+        if rest > 0 { await sleep(rest) }
         report(m, file)
     }
 

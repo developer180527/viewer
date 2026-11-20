@@ -39,7 +39,7 @@ use std::sync::Arc;
 use libfileparser_core::{Container, Content};
 use libgui::{TextureId, Ui};
 
-pub use host::{Frame3d, Host, ImageOpener, SceneGpu, Waker, draw_scene};
+pub use host::{Frame3d, Host, ImageOpener, SceneGpu, TileUploader, Uploaded, Waker, draw_scene};
 pub use markdown::{FlowView, flow};
 pub use pages::{PagesPlace, PagesView, pages};
 pub use raster::{RasterView, raster};

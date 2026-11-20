@@ -16,6 +16,18 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 /// can't. Called from the view's decoding thread, so it must be `Send + Sync`.
 pub type ImageOpener = Arc<dyn Fn(&libfileparser_core::FileSource) -> Option<libfileparser_core::Raster> + Send + Sync>;
 
+/// Puts rendered pixels on the GPU from a view's worker thread, so the main thread
+/// needn't copy them: it only adopts the result ([`Host::adopt`]). A page tile's 4 MB
+/// copy took a whole frame on a phone's main thread.
+pub trait TileUploader: Send + Sync {
+    /// `rgba` as for [`Host::upload`]. Called off the main thread.
+    fn upload(&self, width: u32, height: u32, rgba: &[u8]) -> Uploaded;
+}
+
+/// A texture a [`TileUploader`] put on the GPU, for [`Host::adopt`] to register on the
+/// main thread. What's inside is the host's; dropped unadopted, the host takes it back.
+pub struct Uploaded(pub Box<dyn std::any::Any + Send>);
+
 /// The app side of every view: images, 3D, waking.
 pub trait Host {
     fn max_side(&self) -> u32;
@@ -45,6 +57,17 @@ pub trait Host {
     /// A view finished uploading something big: after this frame's submit, wait for
     /// the GPU once, so wgpu frees the upload staging now.
     fn uploads_done(&mut self) {}
+    /// Uploads from views' worker threads, if the host can take them (a GPU host); views
+    /// fall back to [`Host::upload`] on the main thread without one.
+    fn tile_uploader(&self) -> Option<Arc<dyn TileUploader>> {
+        None
+    }
+    /// Registers what this host's [`TileUploader`] uploaded, `width`×`height` pixels,
+    /// as a texture views can draw. Only called with the host's own uploads.
+    fn adopt(&mut self, uploaded: Uploaded, width: u32, height: u32) -> TextureId {
+        let _ = (uploaded, width, height);
+        unreachable!("adopt without a tile_uploader")
+    }
     /// Frees a texture a view uploaded and no longer draws (from this frame on).
     fn free(&mut self, id: TextureId);
     /// Draws a 3D scene from `camera` into a `size`-pixel frame and returns the texture

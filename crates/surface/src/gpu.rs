@@ -2,11 +2,11 @@
 //! for 3D scenes with its pipelines compiled on a thread.
 
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context as _;
 use libgui::TextureId;
-use libviewer::{Frame3d, Host, SceneGpu, draw_scene};
+use libviewer::{Frame3d, Host, SceneGpu, TileUploader, Uploaded, draw_scene};
 use rendererx::Camera;
 use rendererx::scene_data::CpuScene;
 
@@ -67,36 +67,49 @@ impl Rx {
 /// Textures uploaded through the host, kept for reuse when freed: page tiles are all
 /// one size, and zooming frees and asks for them by the thousand. A freed texture of
 /// the size asked for is written over instead of a new one made, so zooming allocates
-/// nothing, and nothing waits on wgpu's deferred destruction to be given back.
+/// nothing, and nothing waits on wgpu's deferred destruction to be given back. The
+/// spares are shared with the [`GpuUploader`], which writes over them from views'
+/// worker threads.
 #[derive(Default)]
 pub struct TexturePool {
     /// Every texture the pool made, by its id: the texture and its size.
     made: HashMap<TextureId, (wgpu::Texture, u32, u32)>,
-    /// Freed ones, ready to be written over.
-    spare: Vec<TextureId>,
-    spare_bytes: usize,
+    spares: Arc<Mutex<Spares>>,
+}
+
+/// Freed textures, ready to be written over: their id (still registered with the
+/// renderer), the texture and its size.
+#[derive(Default)]
+struct Spares {
+    list: Vec<(TextureId, wgpu::Texture, u32, u32)>,
+    bytes: usize,
+}
+
+impl Spares {
+    fn take(&mut self, width: u32, height: u32) -> Option<(TextureId, wgpu::Texture)> {
+        let i = self.list.iter().position(|(_, _, w, h)| (*w, *h) == (width, height))?;
+        let (id, texture, _, _) = self.list.swap_remove(i);
+        self.bytes -= (width * height * 4) as usize;
+        Some((id, texture))
+    }
+}
+
+fn lock_spares(s: &Mutex<Spares>) -> std::sync::MutexGuard<'_, Spares> {
+    s.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 /// Freed textures kept for reuse, at most: about a screenful of tiles.
 const SPARE_BYTES: usize = if cfg!(any(target_os = "ios", target_os = "android")) { 32 << 20 } else { 64 << 20 };
 
 impl TexturePool {
-    fn take(&mut self, width: u32, height: u32) -> Option<(TextureId, &wgpu::Texture)> {
-        let i = self.spare.iter().position(|id| self.made.get(id).is_some_and(|(_, w, h)| (*w, *h) == (width, height)))?;
-        let id = self.spare.swap_remove(i);
-        self.spare_bytes -= (width * height * 4) as usize;
-        self.made.get(&id).map(|(t, _, _)| (id, t))
-    }
-
     /// A texture of a page that closed: given up (its sizes won't be asked for again,
     /// and a spare of them would only hold memory). Returns true when the caller should
     /// unregister it.
     pub fn forget(&mut self, id: TextureId) -> bool {
-        if let Some(i) = self.spare.iter().position(|s| *s == id) {
-            self.spare.swap_remove(i);
-            if let Some((_, w, h)) = self.made.get(&id) {
-                self.spare_bytes -= (*w * *h * 4) as usize;
-            }
+        let mut spares = lock_spares(&self.spares);
+        if let Some(i) = spares.list.iter().position(|(s, ..)| *s == id) {
+            let (_, _, w, h) = spares.list.swap_remove(i);
+            spares.bytes -= (w * h * 4) as usize;
         }
         self.made.remove(&id);
         true
@@ -105,29 +118,107 @@ impl TexturePool {
     /// The spares, given up: a page closed, and what it freed may not be asked for
     /// again. Returns them, for the caller to unregister.
     pub fn drop_spares(&mut self) -> Vec<TextureId> {
-        self.spare_bytes = 0;
-        let spare = std::mem::take(&mut self.spare);
-        for id in &spare {
+        let mut spares = lock_spares(&self.spares);
+        spares.bytes = 0;
+        let ids: Vec<TextureId> = spares.list.drain(..).map(|(id, ..)| id).collect();
+        for id in &ids {
             self.made.remove(id);
         }
-        spare
+        ids
     }
 
     /// A texture a view freed while it goes on (an evicted tile): kept for reuse if
-    /// there's room, else given up.
-    /// Returns true when the caller should unregister it from the renderer.
+    /// there's room, else given up. Returns true when the caller should unregister it.
     pub fn release(&mut self, id: TextureId) -> bool {
-        let Some((_, w, h)) = self.made.get(&id) else { return true };
+        let Some((texture, w, h)) = self.made.get(&id) else { return true };
         let bytes = (*w * *h * 4) as usize;
-        if self.spare_bytes + bytes <= SPARE_BYTES {
-            self.spare.push(id);
-            self.spare_bytes += bytes;
+        let mut spares = lock_spares(&self.spares);
+        if spares.bytes + bytes <= SPARE_BYTES {
+            spares.list.push((id, texture.clone(), *w, *h));
+            spares.bytes += bytes;
             false
         } else {
+            drop(spares);
             self.made.remove(&id);
             true
         }
     }
+
+    /// The uploader for views' worker threads, on `device` and `queue`, sharing this
+    /// pool's spares.
+    pub fn uploader(&self, device: &wgpu::Device, queue: &wgpu::Queue) -> Arc<GpuUploader> {
+        Arc::new(GpuUploader { device: device.clone(), queue: queue.clone(), spares: self.spares.clone() })
+    }
+}
+
+/// libviewer's [`TileUploader`] on a wgpu device: creates (or reuses a spare) texture
+/// and writes the pixels from the calling thread. wgpu's device and queue are safe to
+/// use from any thread; the write lands before the next submit, and the tile is only
+/// drawn once the main thread adopts it, after that.
+pub struct GpuUploader {
+    device: wgpu::Device,
+    queue: wgpu::Queue,
+    spares: Arc<Mutex<Spares>>,
+}
+
+/// What [`GpuUploader`] hands the main thread.
+struct Upload {
+    texture: Option<NewOrReused>,
+    spares: Arc<Mutex<Spares>>,
+    size: (u32, u32),
+}
+
+enum NewOrReused {
+    New(wgpu::Texture),
+    /// A spare, written over: its id and texture, still registered.
+    Reused(TextureId, wgpu::Texture),
+}
+
+impl Drop for Upload {
+    /// Never adopted (the view closed first): a reused spare goes back to the spares;
+    /// a new texture is simply dropped.
+    fn drop(&mut self) {
+        if let Some(NewOrReused::Reused(id, texture)) = self.texture.take() {
+            let mut spares = lock_spares(&self.spares);
+            spares.bytes += (self.size.0 * self.size.1 * 4) as usize;
+            spares.list.push((id, texture, self.size.0, self.size.1));
+        }
+    }
+}
+
+impl TileUploader for GpuUploader {
+    fn upload(&self, width: u32, height: u32, rgba: &[u8]) -> Uploaded {
+        let reused = lock_spares(&self.spares).take(width, height);
+        let texture = match &reused {
+            Some((_, t)) => t.clone(),
+            None => new_texture(&self.device, width, height),
+        };
+        write_pixels(&self.queue, &texture, width, height, rgba);
+        let texture = Some(match reused {
+            Some((id, _)) => NewOrReused::Reused(id, texture),
+            None => NewOrReused::New(texture),
+        });
+        Uploaded(Box::new(Upload { texture, spares: self.spares.clone(), size: (width, height) }))
+    }
+}
+
+fn new_texture(device: &wgpu::Device, width: u32, height: u32) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("image tile"),
+        size: wgpu::Extent3d { width, height, depth_or_array_layers: 1 },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: wgpu::TextureFormat::Rgba8Unorm,
+        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+        view_formats: &[],
+    })
+}
+
+fn write_pixels(queue: &wgpu::Queue, texture: &wgpu::Texture, width: u32, height: u32, rgba: &[u8]) {
+    let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
+    let layout = wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 4), rows_per_image: Some(height) };
+    queue.write_texture(texture.as_image_copy(), rgba, layout, size);
 }
 
 /// libviewer's host for one frame on a wgpu device.
@@ -145,11 +236,24 @@ pub struct Gpu<'a> {
     pub freed: &'a mut Vec<TextureId>,
     /// Uploaded textures, reused when freed.
     pub pool: &'a mut TexturePool,
+    /// Uploads from views' worker threads ([`TexturePool::uploader`]); `None` keeps
+    /// them on the main thread.
+    pub uploader: Option<Arc<GpuUploader>>,
     /// See `Host::trackpad_pinch`.
     pub pinch: f32,
     pub wake: &'a Wake,
     /// An iPhone or iPad: hints speak of taps and fingers.
     pub touch_screen: bool,
+}
+
+impl Gpu<'_> {
+    /// Registers a new texture with the renderer: the bind group keeps its view alive;
+    /// the pool keeps the texture, to write over when it's freed.
+    fn register(&mut self, texture: wgpu::Texture, width: u32, height: u32) -> TextureId {
+        let id = self.renderer.register_texture(&texture.create_view(&Default::default()));
+        self.pool.made.insert(id, (texture, width, height));
+        id
+    }
 }
 
 impl Host for Gpu<'_> {
@@ -175,28 +279,25 @@ impl Host for Gpu<'_> {
     }
 
     fn upload(&mut self, width: u32, height: u32, rgba: &[u8]) -> TextureId {
-        let size = wgpu::Extent3d { width, height, depth_or_array_layers: 1 };
-        let layout = wgpu::TexelCopyBufferLayout { offset: 0, bytes_per_row: Some(width * 4), rows_per_image: Some(height) };
-        if let Some((id, texture)) = self.pool.take(width, height) {
-            self.queue.write_texture(texture.as_image_copy(), rgba, layout, size);
+        if let Some((id, texture)) = lock_spares(&self.pool.spares).take(width, height) {
+            write_pixels(self.queue, &texture, width, height, rgba);
             return id;
         }
-        let texture = self.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("image tile"),
-            size,
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        });
-        self.queue.write_texture(texture.as_image_copy(), rgba, layout, size);
-        // The renderer's bind group keeps the view alive; the pool keeps the texture,
-        // to write over when it's freed.
-        let id = self.renderer.register_texture(&texture.create_view(&Default::default()));
-        self.pool.made.insert(id, (texture, width, height));
-        id
+        let texture = new_texture(self.device, width, height);
+        write_pixels(self.queue, &texture, width, height, rgba);
+        self.register(texture, width, height)
+    }
+
+    fn tile_uploader(&self) -> Option<Arc<dyn TileUploader>> {
+        self.uploader.clone().map(|u| u as Arc<dyn TileUploader>)
+    }
+
+    fn adopt(&mut self, uploaded: Uploaded, width: u32, height: u32) -> TextureId {
+        let mut up = uploaded.0.downcast::<Upload>().expect("adopt is given this host's uploads");
+        match up.texture.take().expect("adopted once") {
+            NewOrReused::Reused(id, _) => id,
+            NewOrReused::New(texture) => self.register(texture, width, height),
+        }
     }
 
     fn pixels_per_point(&self) -> f32 {

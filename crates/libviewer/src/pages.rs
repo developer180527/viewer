@@ -24,13 +24,25 @@ use std::time::{Duration, Instant};
 use libfileparser_core::{Cancel, PageRect, PageSize, PageSource};
 use libgui::*;
 
-use crate::{Host, Waker};
+use crate::{Host, TileUploader, Uploaded, Waker};
 
-/// One rendered tile: straight RGBA8.
+/// One rendered tile, straight RGBA8: its pixels, or already on the GPU (uploaded by
+/// the worker through the host's [`TileUploader`]).
 struct PageImage {
     width: u32,
     height: u32,
-    rgba: Vec<u8>,
+    pixels: Pixels,
+}
+
+enum Pixels {
+    Cpu(Vec<u8>),
+    Gpu(Uploaded),
+}
+
+impl PageImage {
+    fn bytes(&self) -> usize {
+        (self.width * self.height * 4) as usize
+    }
 }
 
 /// A tile's side in pixels.
@@ -69,6 +81,10 @@ const PREVIEW_STEPS: i16 = 8;
 const STEPS_PER_OCTAVE: f32 = 4.0;
 const MIN_ZOOM: f32 = 0.05;
 const MAX_ZOOM: f32 = 32.0;
+/// Tiles at a new scale wait until the zoom has held this long: a pinch passes a step a
+/// frame, and rendering and uploading every one cost an iPhone watts for tiles shown
+/// for a frame. Meanwhile the tiles at hand are drawn scaled.
+const ZOOM_SETTLE: Duration = Duration::from_millis(150);
 /// Page sizes the worker measures per turn in idle time.
 const SIZES_PER_TURN: usize = 32;
 
@@ -125,12 +141,12 @@ struct Worker {
 }
 
 impl Worker {
-    fn spawn(src: Arc<dyn PageSource>, wake: Waker) -> Self {
+    fn spawn(src: Arc<dyn PageSource>, wake: Waker, uploader: Option<Arc<dyn TileUploader>>) -> Self {
         let n = src.page_count().min(usize::MAX as u64) as usize;
         let shared = Arc::new((Mutex::new(Shared { sizes: vec![None; n], ..Default::default() }), Condvar::new()));
         let (theirs, cancel) = (shared.clone(), Cancel::new());
         let stop = cancel.clone();
-        let spawned = std::thread::Builder::new().name("page render".into()).spawn(move || work(&src, &theirs, &stop, &*wake));
+        let spawned = std::thread::Builder::new().name("page render".into()).spawn(move || work(&src, &theirs, &stop, &*wake, uploader.as_deref()));
         if spawned.is_err() {
             // No thread, no pages: say so on every page rather than spin.
             let mut s = lock(&shared.0);
@@ -162,7 +178,7 @@ enum Job {
     Measure(usize),
 }
 
-fn work(src: &Arc<dyn PageSource>, shared: &(Mutex<Shared>, Condvar), cancel: &Cancel, wake: &(dyn Fn() + Send + Sync)) {
+fn work(src: &Arc<dyn PageSource>, shared: &(Mutex<Shared>, Condvar), cancel: &Cancel, wake: &(dyn Fn() + Send + Sync), uploader: Option<&dyn TileUploader>) {
     let n = src.page_count().min(usize::MAX as u64) as usize;
     let mut buf = Vec::new();
     let mut next_size = 0;
@@ -186,14 +202,27 @@ fn work(src: &Arc<dyn PageSource>, shared: &(Mutex<Shared>, Condvar), cancel: &C
         };
         match job {
             Job::Tile(key) => {
-                let result = src
+                let rendered = src
                     .page_size(key.page as u64)
                     .and_then(|size| {
                         let region = tile_region(key, size).ok_or_else(|| libfileparser_core::ParseError::invalid("tile outside the page"))?;
-                        let (width, height) = src.render(key.page as u64, step_scale(key.step), region, &mut buf, cancel)?;
-                        Ok(PageImage { width, height, rgba: std::mem::take(&mut buf) })
+                        src.render(key.page as u64, step_scale(key.step), region, &mut buf, cancel)
                     })
                     .map_err(|e| e.to_string());
+                // Uploaded and cached even if the view has moved on meanwhile: dropping
+                // it would have it rendered again whenever it's wanted again, and a view
+                // whose wanted tiles change every frame (a window being resized) would
+                // render the same tiles over and over. Zooming's waste is cut at the
+                // source instead (ZOOM_SETTLE).
+                let result = rendered.map(|(width, height)| {
+                    // On the GPU from here when the host can take it (keeping the buffer
+                    // for the next tile); else the main thread uploads.
+                    let pixels = match uploader {
+                        Some(u) => Pixels::Gpu(u.upload(width, height, &buf)),
+                        None => Pixels::Cpu(std::mem::take(&mut buf)),
+                    };
+                    PageImage { width, height, pixels }
+                });
                 lock(&shared.0).results.push((key, result));
             }
             Job::Measure(first) => {
@@ -298,6 +327,10 @@ pub struct PagesView {
     error: Option<String>,
     /// Scroll speed left from a flung touch drag, in window points/s.
     fling: Vec2,
+    /// The scale step tiles are rendered at, and another the zoom has reached, since
+    /// when: see [`PagesView::steady_step`].
+    rendered_step: Option<i16>,
+    pending: Option<(i16, Instant)>,
 }
 
 impl Default for PagesView {
@@ -314,6 +347,8 @@ impl Default for PagesView {
             frame: 0,
             error: None,
             fling: Vec2::ZERO,
+            rendered_step: None,
+            pending: None,
         }
     }
 }
@@ -345,7 +380,38 @@ impl PagesView {
         self.tiles.values().map(|t| t.tex).collect()
     }
 
-    fn start(&mut self, src: &Arc<dyn PageSource>, wake: Waker) {
+    /// Renders at `step` from now on.
+    fn jump_to(&mut self, step: i16) -> i16 {
+        self.pending = None;
+        self.rendered_step = Some(step);
+        step
+    }
+
+    /// The step to render tiles at, for a zoom at step `live`: a new one once the zoom
+    /// has stayed there [`ZOOM_SETTLE`], the tiles at hand drawn scaled meanwhile
+    /// (`settle`: screenshots, which want the final tiles now). With it, how long until
+    /// a frame should look again.
+    fn steady_step(&mut self, live: i16, settle: bool, now: Instant) -> (i16, Option<Duration>) {
+        let rendered = match self.rendered_step {
+            Some(r) if !settle && live != r => r,
+            _ => return (self.jump_to(live), None),
+        };
+        let since = match self.pending {
+            Some((step, since)) if step == live => since,
+            _ => {
+                self.pending = Some((live, now));
+                now
+            }
+        };
+        let waited = now - since;
+        if waited >= ZOOM_SETTLE {
+            (self.jump_to(live), None)
+        } else {
+            (rendered, Some(ZOOM_SETTLE - waited))
+        }
+    }
+
+    fn start(&mut self, src: &Arc<dyn PageSource>, wake: Waker, uploader: Option<Arc<dyn TileUploader>>) {
         let n = src.page_count().min(usize::MAX as u64) as usize;
         if n == 0 {
             self.error = Some("This document has no pages.".into());
@@ -354,7 +420,7 @@ impl PagesView {
         // Page 1's size lays out everything until the worker measures the rest.
         let guess = src.page_size(0).unwrap_or(PageSize::new(612.0, 792.0));
         self.layout = Layout::new(n, guess);
-        self.worker = Some(Worker::spawn(src.clone(), wake));
+        self.worker = Some(Worker::spawn(src.clone(), wake, uploader));
     }
 
     /// The zoom when the user hasn't chosen one: the widest page fills the window's
@@ -407,8 +473,10 @@ impl PagesView {
         let mut s = w.lock();
         let mut take = 0;
         let mut bytes = 0;
+        // Pixels to copy cost the main thread; tiles already on the GPU only need
+        // registering, so they don't count against the frame's upload budget.
         while take < s.results.len() && (all || take == 0 || bytes < UPLOAD_BYTES) {
-            bytes += s.results[take].1.as_ref().map_or(0, |i| i.rgba.len());
+            bytes += s.results[take].1.as_ref().map_or(0, |i| if matches!(i.pixels, Pixels::Cpu(_)) { i.bytes() } else { 0 });
             take += 1;
         }
         let results: Vec<_> = s.results.drain(..take).collect();
@@ -417,8 +485,12 @@ impl PagesView {
         for (key, result) in results {
             match result {
                 Ok(img) => {
-                    let id = tex.upload(img.width, img.height, &img.rgba);
-                    if let Some(old) = self.tiles.insert(key, Tile { tex: id, bytes: img.rgba.len(), used: self.frame }) {
+                    let bytes = img.bytes();
+                    let id = match img.pixels {
+                        Pixels::Cpu(rgba) => tex.upload(img.width, img.height, &rgba),
+                        Pixels::Gpu(up) => tex.adopt(up, img.width, img.height),
+                    };
+                    if let Some(old) = self.tiles.insert(key, Tile { tex: id, bytes, used: self.frame }) {
                         tex.free(old.tex);
                     }
                 }
@@ -487,7 +559,7 @@ struct Placed {
 /// view's own, only where the window looks.
 pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mut dyn Host) {
     if st.worker.is_none() && st.error.is_none() {
-        st.start(src, tex.waker());
+        st.start(src, tex.waker(), tex.tile_uploader());
     }
     if let Some(e) = &st.error {
         ui.label(e.as_str());
@@ -631,10 +703,22 @@ pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &m
 
     // What to render: visible tiles nearest the middle first, then the pages just
     // above and below.
-    let step = step_for(zoom * ppp);
+    let live = step_for(zoom * ppp);
+    let (mut step, wait) = st.steady_step(live, settle, Instant::now());
     let mut visible = Vec::new();
     for p in &placed {
         tiles_in(p, st.layout.sizes[p.index], step, zoom, rect, &mut visible);
+    }
+    // Zoomed out far enough that the old scale's tiles on screen wouldn't fit the
+    // cache: the new scale now, rather than more tiles than it holds.
+    if step != live && visible.len() * TILE_BYTES > cache_budget(rect.w * ppp, rect.h * ppp) {
+        step = st.jump_to(live);
+        visible.clear();
+        for p in &placed {
+            tiles_in(p, st.layout.sizes[p.index], step, zoom, rect, &mut visible);
+        }
+    } else if let Some(wait) = wait {
+        ui.request_repaint_in(wait.as_secs_f32());
     }
     let middle = rect.center();
     let side = tile_points(step) * zoom;
@@ -800,6 +884,27 @@ mod tests {
         assert_eq!(v.top_y(1.0), 0.0);
         v.set_top_y(1e9, 1.0, 500.0);
         assert_eq!(v.top_y(1.0), v.layout.height(1.0) - 500.0);
+    }
+
+    #[test]
+    fn zooming_in_waits_for_the_zoom_to_hold() {
+        let mut v = PagesView::default();
+        let t0 = Instant::now();
+        let ms = |n| t0 + Duration::from_millis(n);
+        assert_eq!(v.steady_step(0, false, t0), (0, None), "the first step at once");
+        // A pinch in: each frame a finer step; tiles stay at the old one meanwhile.
+        assert_eq!(v.steady_step(1, false, ms(16)).0, 0);
+        assert_eq!(v.steady_step(2, false, ms(32)).0, 0);
+        let (step, wait) = v.steady_step(3, false, ms(48));
+        assert_eq!(step, 0);
+        assert_eq!(wait, Some(ZOOM_SETTLE));
+        // Held: then the new step.
+        assert_eq!(v.steady_step(3, false, ms(48) + ZOOM_SETTLE), (3, None));
+        // Out again: the same wait.
+        assert_eq!(v.steady_step(-2, false, ms(400)).0, 3);
+        assert_eq!(v.steady_step(-2, false, ms(400) + ZOOM_SETTLE), (-2, None));
+        // Screenshots don't wait.
+        assert_eq!(v.steady_step(5, true, ms(401)), (5, None));
     }
 
     #[test]

@@ -125,6 +125,35 @@ In order. Each step names the scenario that proves it and the target; re-run
    *Done when:* pdf-fling-touch on iPhone has draw p50 < 4 ms and no draws over budget;
    `Gpu::upload` drops out of the main thread's top functions.
 
+   ✅ **Done 2026-11-21**, with a third change the measurements called for. libviewer's
+   `TileUploader` lets the page worker put each tile on the GPU itself (viewer-surface's
+   `GpuUploader`, on clones of the device and queue, writing over the pool's spares);
+   the main thread only registers it (`Host::adopt`). That alone made zooming *cost
+   more* energy on iPhone (A/B in one build, alternating: 1.6–3.0 W against 0.4–0.7 W),
+   because uploads no longer throttled to 4 MB a frame meant every tile a pinch passed
+   was rendered and uploaded. So: **tiles at a new zoom wait until it has held for
+   150 ms** (`ZOOM_SETTLE`, both ways; the tiles at hand are drawn scaled meanwhile;
+   zooming out past what the cache holds switches at once). With that, both upload paths
+   cost the same over a zoom and the rest after it (`pdf-zoom-total`: ~29% CPU, 66–208
+   mW either way), and the worker path keeps less memory (230 MB against 236–277 MB at
+   the end) with smoother frames. A check that dropped tiles the view no longer wanted
+   was tried and removed: with wanted tiles changing every frame (resizing) it rendered
+   the same tiles endlessly. 512² tiles on touch weren't needed: the main thread no
+   longer copies tiles at all.
+
+   | iPhone 17 | Step 1 | Step 2 |
+   |---|---|---|
+   | pdf-zoom peak / end | 970 / 778 MB | 352 / 296 MB |
+   | pdf-zoom draw p95 | 4.4 ms | 1.6 ms |
+   | pdf-zoom + rest (CPU, power) | — | ~29%, 100–300 mW |
+   | pdf-scroll draw p50 / p95 | 1.33 / 2.33 ms | 0.98 / 1.70 ms |
+   | pdf-page-keys draw p95 | 2.14 ms | 1.39 ms |
+   | libgui PDF scroll peak / p95 | 645 MB / 3.4 ms | 315 MB / 1.6 ms |
+   | resize-churn CPU, power | 41%, 385 mW | 29–43%, 16–241 mW (p95 ~16 ms both) |
+
+   Mac: pdf-zoom CPU 35% → 24–29%, draw p95 2.1 → 1.1 ms; pdf-scroll draw p50 0.67 →
+   0.23 ms. Tables: [docs/perf/2026-11-21-step2-compare.md](../perf/2026-11-21-step2-compare.md).
+
 ### Step 3: lay out only what's on screen (finding 3)
 
 6. **Virtualize formatted text.** libgui_markdown builds and wraps every block each

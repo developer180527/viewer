@@ -36,7 +36,7 @@ const SIZE: (f32, f32) = (1100.0, 760.0);
 use libviewer::{Frame3d, Host as ViewHost, SceneGpu, draw_scene};
 use viewer_surface::fonts::new_ui;
 pub use viewer_surface::fonts::scan_system_fonts;
-use viewer_surface::{Gpu, Rx, TexturePool, Wake, open_device};
+use viewer_surface::{Gpu, GpuUploader, Rx, TexturePool, Wake, open_device};
 
 pub fn run(title: String, args: Args, session: viewer_core::Session) -> anyhow::Result<()> {
     if let Some(path) = &args.screenshot {
@@ -264,6 +264,8 @@ struct Live {
     dark: bool,
     /// Uploaded textures, reused when views free them.
     pool: TexturePool,
+    /// Uploads from views' worker threads, sharing the pool's spares.
+    uploader: Arc<GpuUploader>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
@@ -356,6 +358,8 @@ impl Host {
         let ui = new_ui(dark)?;
         startup::mark("  fonts");
         startup::mark("ui created");
+        let pool = TexturePool::default();
+        let uploader = pool.uploader(&device, &queue);
         self.live = Some(Live {
             window,
             surface,
@@ -365,7 +369,8 @@ impl Host {
             renderer,
             clear: ui.theme.palette.bg_app,
             dark,
-            pool: TexturePool::default(),
+            uploader,
+            pool,
             ui,
             platform: libgui_winit::PlatformState::default(),
             files: libgui_winit::FileDrop::default(),
@@ -423,7 +428,7 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pool: &mut w.pool, pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pool: &mut w.pool, uploader: Some(w.uploader.clone()), pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
             w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
             // Open… asked for this frame: the picker comes up now.

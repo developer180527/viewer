@@ -15,7 +15,7 @@ use viewer_core::Page;
 
 use crate::chrome::ViewerApp;
 use crate::views::{self, Action, ViewState};
-use crate::{Gpu, Rx, TexturePool, Wake, fonts, open_device};
+use crate::{Gpu, GpuUploader, Rx, TexturePool, Wake, fonts, open_device};
 
 /// What a frame asks of the shell.
 pub struct Drawn {
@@ -52,6 +52,8 @@ pub struct Canvas {
     relayout: u8,
     /// Uploaded textures, reused when views free them.
     pool: TexturePool,
+    /// Uploads from views' worker threads, sharing the pool's spares.
+    uploader: std::sync::Arc<GpuUploader>,
     last: Instant,
     /// Time since the last frame that was built.
     idle: f32,
@@ -119,6 +121,8 @@ impl Canvas {
         let renderer = libgui_wgpu::Renderer::new(&device, &queue, config.format);
         let ui = fonts::new_ui(dark)?;
         let offscreen = surface.is_none().then(|| target(&device, &config));
+        let pool = TexturePool::default();
+        let uploader = pool.uploader(&device, &queue);
         Ok(Self {
             clear: ui.theme.palette.bg_app,
             surface,
@@ -136,7 +140,8 @@ impl Canvas {
             dark,
             touch_screen: false,
             relayout: 0,
-            pool: TexturePool::default(),
+            uploader,
+            pool,
             last: Instant::now(),
             idle: 0.0,
             pinch: 1.0,
@@ -295,6 +300,7 @@ impl Canvas {
                 settle: &mut settle,
                 freed: &mut freed,
                 pool: &mut self.pool,
+                uploader: Some(self.uploader.clone()),
                 pinch: self.pinch - 1.0,
                 wake: &self.wake,
                 touch_screen: self.touch_screen,
