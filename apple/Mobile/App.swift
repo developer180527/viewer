@@ -14,6 +14,7 @@ struct ViewerApp: App {
     var body: some Scene {
         WindowGroup {
             Root().environmentObject(shell)
+                .preferredColorScheme(shell.colorScheme)
                 // Opened from Files, Share or another app: the system grants it.
                 .onOpenURL { url in if url.isFileURL { shell.open(url) } }
         }
@@ -30,6 +31,7 @@ struct Root: View {
     @EnvironmentObject var shell: Shell
     @Environment(\.horizontalSizeClass) private var width
     @State private var showInfo = false
+    @State private var showSettings = false
     /// The sidebar shows until the user hides it.
     @State private var columns = NavigationSplitViewVisibility.doubleColumn
 
@@ -37,15 +39,22 @@ struct Root: View {
         Group {
             if width == .regular {
                 NavigationSplitView(columnVisibility: $columns) {
-                    Sidebar()
+                    Sidebar(showSettings: $showSettings)
                         .navigationTitle("Viewer")
                         .navigationSplitViewColumnWidth(min: 240, ideal: 300, max: 380)
                 } detail: {
-                    Detail(showInfo: $showInfo, wide: true)
+                    Detail(showInfo: $showInfo, showSettings: $showSettings, wide: true)
                 }
                 .navigationSplitViewStyle(.balanced)
             } else {
-                NavigationStack { Detail(showInfo: $showInfo, wide: false) }
+                NavigationStack { Detail(showInfo: $showInfo, showSettings: $showSettings, wide: false) }
+            }
+        }
+        .sheet(isPresented: $showSettings) {
+            NavigationStack {
+                SettingsView()
+                    .navigationTitle("Settings").navigationBarTitleDisplayMode(.inline)
+                    .toolbar { Button("Done") { showSettings = false } }
             }
         }
         .fileImporter(isPresented: $shell.picking, allowedContentTypes: shell.allowing == nil ? [.item, .folder] : [.folder]) { result in
@@ -57,10 +66,12 @@ struct Root: View {
 /// The iPad's sidebar: Open, and the recent files, the one on screen marked.
 struct Sidebar: View {
     @EnvironmentObject var shell: Shell
+    @Binding var showSettings: Bool
     var body: some View {
         List {
             Section {
                 Button { shell.openPanel() } label: { Label("Open…", systemImage: "folder") }
+                Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
             }
             if !shell.recents.isEmpty {
                 Section("Recent") {
@@ -89,6 +100,7 @@ struct Sidebar: View {
 struct Detail: View {
     @EnvironmentObject var shell: Shell
     @Binding var showInfo: Bool
+    @Binding var showSettings: Bool
     /// iPad width: view-as as a segmented control, the path in the title.
     let wide: Bool
 
@@ -143,6 +155,8 @@ struct Detail: View {
                                 }
                             }
                         }
+                        Divider()
+                        Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
                     } label: { Label("Open", systemImage: "folder") } primaryAction: { shell.openPanel() }
                 }
             }

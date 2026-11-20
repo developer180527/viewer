@@ -112,9 +112,7 @@ impl Recents {
             std::fs::create_dir_all(dir)?;
         }
         let text: String = self.items.iter().map(|r| format!("{}\n", line(r))).collect();
-        let tmp = file.with_extension("tmp");
-        std::fs::write(&tmp, text)?;
-        std::fs::rename(&tmp, file)?;
+        crate::settings::write_atomically(file, &text)?;
         self.dirty = false;
         Ok(())
     }

@@ -31,6 +31,8 @@ OPTIONS:
     --screenshot <PNG>      Save a screenshot once the file is shown, then exit
     --info                  Open with the info panel shown
     --size <WxH>            Window size in points for --screenshot (default 1100x760)
+    --data-dir <DIR>        Keep the recent files and settings in DIR (with
+                            --screenshot, which otherwise uses none)
     --list-loaders          Print the available loaders
     -h, --help              Show this help
     -V, --version           Show version
@@ -44,6 +46,7 @@ pub struct Args {
     pub screenshot: Option<PathBuf>,
     pub size: Option<(f32, f32)>,
     pub info: bool,
+    pub data_dir: Option<PathBuf>,
 }
 
 fn parse_args() -> Result<Args, String> {
@@ -79,6 +82,9 @@ fn parse_args() -> Result<Args, String> {
                 args.screenshot = Some(it.next().ok_or("--screenshot needs a path")?.into());
             }
             Some("--info") => args.info = true,
+            Some("--data-dir") => {
+                args.data_dir = Some(it.next().ok_or("--data-dir needs a folder")?.into());
+            }
             Some("--size") => {
                 let v = it.next().ok_or("--size needs WxH")?;
                 let v = v.to_string_lossy();
@@ -122,14 +128,35 @@ fn main() {
     }))
     .with_trace(startup::mark);
     let mut session = viewer_core::Session::new(hooks);
+    // The recent list and the settings; for --screenshot only when named, since its
+    // pictures must not depend on what was opened before.
+    let dir = args.data_dir.clone().or_else(|| if args.screenshot.is_none() { data_dir() } else { None });
+    if let Some(dir) = &dir {
+        session.use_data_dir(dir);
+    }
     // Kick off decoding before the window exists; it overlaps GPU initialisation.
     if let Some(p) = args.path.clone() {
         session.open_path_as(p, args.view_as.clone());
+    } else if dir.is_some() {
+        session.open_last();
     }
 
     if let Err(e) = run(args, session) {
         eprintln!("viewer: {e}");
         std::process::exit(1);
+    }
+}
+
+/// Where the recent list and the settings are kept: the platform's place for an app's
+/// own files.
+fn data_dir() -> Option<PathBuf> {
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    if cfg!(any(target_os = "macos", target_os = "ios")) {
+        home.map(|h| h.join("Library/Application Support/Viewer"))
+    } else if cfg!(windows) {
+        std::env::var_os("APPDATA").map(|d| PathBuf::from(d).join("Viewer"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME").map(PathBuf::from).or_else(|| home.map(|h| h.join(".config"))).map(|d| d.join("viewer"))
     }
 }
 

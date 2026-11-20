@@ -95,6 +95,23 @@ pub struct RecentItem {
     pub bookmark: Vec<u8>,
 }
 
+/// Light or dark.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ThemeChoice {
+    /// As the system is.
+    System,
+    Light,
+    Dark,
+}
+
+/// The user's settings, the same in every shell (viewer-core's).
+#[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
+pub struct AppSettings {
+    pub theme: ThemeChoice,
+    /// At launch with no file named, open the last one again.
+    pub reopen_last: bool,
+}
+
 /// The app's session: what's open, and what can be done with it. Thread-safe; its
 /// calls are quick (opening runs on loader threads).
 #[derive(uniffi::Object)]
@@ -142,9 +159,30 @@ impl ViewerSession {
 
     // ---------------------------------------------------------------- recent files
 
-    /// Keeps the recent list in `file` (in the app's support folder), loading it now.
-    pub fn use_recents_file(&self, file: String) {
-        self.session().set_recents(viewer_core::Recents::load(PathBuf::from(file)));
+    /// Keeps the recent list and the settings in `dir` (the app's Application Support
+    /// folder), loading them now.
+    pub fn use_data_dir(&self, dir: String) {
+        self.session().use_data_dir(&PathBuf::from(dir));
+    }
+
+    pub fn settings(&self) -> AppSettings {
+        let s = self.session().settings().clone();
+        let theme = match s.theme {
+            viewer_core::Theme::System => ThemeChoice::System,
+            viewer_core::Theme::Light => ThemeChoice::Light,
+            viewer_core::Theme::Dark => ThemeChoice::Dark,
+        };
+        AppSettings { theme, reopen_last: s.reopen_last }
+    }
+
+    /// Changes the settings (saved by [`Self::save`]).
+    pub fn set_settings(&self, settings: AppSettings) {
+        let theme = match settings.theme {
+            ThemeChoice::System => viewer_core::Theme::System,
+            ThemeChoice::Light => viewer_core::Theme::Light,
+            ThemeChoice::Dark => viewer_core::Theme::Dark,
+        };
+        self.session().set_settings(viewer_core::Settings { theme, reopen_last: settings.reopen_last });
     }
 
     pub fn recents(&self) -> Vec<RecentItem> {
@@ -164,9 +202,10 @@ impl ViewerSession {
         self.session().recents_mut().clear();
     }
 
-    /// Writes the recent list (and the places in it) if it changed. Returns why not.
-    pub fn save_recents(&self) -> Option<String> {
-        self.session().recents_mut().save().err().map(|e| e.to_string())
+    /// Writes what changed: the recent list (and the places in it) and the settings.
+    /// Returns why not.
+    pub fn save(&self) -> Option<String> {
+        self.session().save().err().map(|e| e.to_string())
     }
 
     /// Grants no page reads through any more: stop accessing them.

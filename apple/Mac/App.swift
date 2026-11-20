@@ -13,6 +13,7 @@ struct ViewerApp: App {
     var body: some Scene {
         WindowGroup {
             Root().environmentObject(shell)
+                .preferredColorScheme(shell.colorScheme)
         }
         .commands {
             CommandGroup(replacing: .newItem) {
@@ -28,6 +29,10 @@ struct ViewerApp: App {
             CommandGroup(after: .toolbar) {
                 Button("Back") { shell.back() }.keyboardShortcut("[").disabled(!shell.canGoBack)
             }
+        }
+        Settings {
+            SettingsView().environmentObject(shell)
+                .preferredColorScheme(shell.colorScheme)
         }
     }
 }

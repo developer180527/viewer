@@ -11,7 +11,7 @@ use std::rc::Rc;
 use libgui::*;
 use libgui_keymap::{Chord, Keymap};
 use libfilepicker::{PickOptions, Picked};
-use viewer_core::{GrantId, Info, Notice, Session, Status, human_bytes};
+use viewer_core::{GrantId, Info, Notice, Place, Session, Settings, Status, Theme, human_bytes};
 
 use libviewer::Host;
 use viewer_surface::views::{self, Action, ViewState};
@@ -22,6 +22,17 @@ struct Pick {
     /// Open Folder… on a model whose neighbours were blocked: reopen this model
     /// from inside the picked folder, if it is in there.
     reopen: Option<PathBuf>,
+}
+
+/// What Open Recent asked for.
+enum RecentPick {
+    Open(PathBuf),
+    Clear,
+}
+
+/// Dark, as the settings say against the system's.
+fn session_dark(session: &Session, system_dark: bool) -> bool {
+    session.settings().theme.dark(system_dark)
 }
 
 /// How wide the window is, which decides where the chrome goes
@@ -81,7 +92,10 @@ pub struct ViewerApp {
     session: Session,
     /// Each open page's view state (scroll, zoom, textures), by its id.
     views: HashMap<u64, ViewState>,
+    /// Dark, as drawn: the settings' theme against the system's.
     pub dark: bool,
+    /// Whether the system is dark (the window's theme).
+    pub system_dark: bool,
     pub show_info: bool,
     /// Kept clear of the notch, status bar and home indicator (zero on desktops).
     pub safe_area: Insets,
@@ -97,10 +111,14 @@ pub struct ViewerApp {
     /// holds the platform's access (see [`Picked`]), dropped here, on this thread.
     grants: HashMap<GrantId, Picked>,
     keys: Keymap<Command>,
+    /// The page whose file was current when the recent list was last saved.
+    saved_for: Option<u64>,
 }
 
 impl ViewerApp {
     pub fn new(session: Session, dark: bool) -> Self {
+        let system_dark = dark;
+        let dark = session_dark(&session, system_dark);
         Self {
             width_class: None,
             session,
@@ -109,11 +127,42 @@ impl ViewerApp {
             safe_area: Insets::all(0.0),
             stable: false,
             dark,
+            system_dark,
             title: None,
             retired: Vec::new(),
             picked: Rc::default(),
             grants: HashMap::new(),
             keys: Self::keymap(),
+            saved_for: None,
+        }
+    }
+
+    /// The window's theme changed (or is first known).
+    pub fn set_system_dark(&mut self, dark: bool) {
+        self.system_dark = dark;
+        self.dark = self.session.settings().theme.dark(dark);
+    }
+
+    /// Writes the recent list, the places in it and the settings.
+    pub fn save(&mut self) {
+        if let Err(e) = self.session.save() {
+            eprintln!("viewer: saving the recent files and settings: {e}");
+        }
+    }
+
+    fn set_settings(&mut self, settings: Settings) {
+        self.session.set_settings(settings);
+        self.dark = self.session.settings().theme.dark(self.system_dark);
+        self.save();
+    }
+
+    /// Opens a recent file again; one that's gone leaves the list.
+    fn open_recent(&mut self, path: PathBuf) {
+        if path.exists() {
+            self.session.open_path(path);
+        } else {
+            self.session.recents_mut().remove(&path);
+            self.save();
         }
     }
 
@@ -161,7 +210,21 @@ impl ViewerApp {
             }
         }
         for page in self.session.pages() {
-            self.views.entry(page.id).or_insert_with(|| ViewState::new(&page.doc.content));
+            let place = self.session.place(page.id);
+            self.views.entry(page.id).or_insert_with(|| {
+                let mut view = ViewState::new(&page.doc.content);
+                // A file opened again goes back to where the reader was.
+                if let Some(p) = place {
+                    view.restore(libviewer::PagesPlace { page: p.page as usize, offset: p.offset, zoom: p.zoom });
+                }
+                view
+            });
+        }
+        // Another page: keep where the reader was in the last one.
+        let current = self.session.current().map(|p| p.id);
+        if current != self.saved_for {
+            self.saved_for = current;
+            self.save();
         }
         if let Some(t) = self.session.take_title() {
             self.title = Some(t);
@@ -256,6 +319,12 @@ impl ViewerApp {
         if let Some(Action::OpenEntry(container, index)) = action {
             self.session.open_entry(container, index);
         }
+        // Where the reader is, kept with the file for next time.
+        if let Some(id) = self.session.current().map(|p| p.id)
+            && let Some(p) = self.views.get(&id).and_then(ViewState::place)
+        {
+            self.session.set_place(id, Place { page: p.page.min(u32::MAX as usize) as u32, offset: p.offset, zoom: p.zoom });
+        }
 
         // Global shortcuts last, so focused widgets get the first chance at a chord.
         if self.keys.triggered(ui, Command::Open) {
@@ -283,10 +352,14 @@ impl ViewerApp {
             ui.flex();
             let mut pick = None;
             // Middle dots, not "⋯": Inter lacks that, and drawing it would load a system font.
+            let mut recent = None;
+            let mut settings = None;
             ui.menu_button("···", |ui| {
                 if ui.menu_item("Open…").clicked {
                     self.open_dialog();
                 }
+                recent = self.recent_menu(ui, true);
+                settings = self.settings_menu(ui, true);
                 if self.session.current().is_some() {
                     if ui.menu_item(if self.show_info { "Hide info" } else { "Show info" }).clicked {
                         self.show_info = !self.show_info;
@@ -306,7 +379,66 @@ impl ViewerApp {
             if let Some(choice) = pick {
                 self.session.view(choice);
             }
+            self.take_menu_picks(recent.flatten(), settings.flatten());
         });
+    }
+
+    /// Open Recent: the recent files, and Clear. In a submenu of `nested`'s menu, or a
+    /// button of its own. Returns the file picked.
+    fn recent_menu(&self, ui: &mut Ui, nested: bool) -> Option<Option<RecentPick>> {
+        if self.session.recents().items().is_empty() {
+            return None;
+        }
+        let body = |ui: &mut Ui| {
+            let mut pick = None;
+            for r in self.session.recents().items().iter().take(12) {
+                if ui.menu_item(&r.name()).clicked {
+                    pick = Some(RecentPick::Open(r.path.clone()));
+                }
+            }
+            ui.menu_separator();
+            if ui.menu_item("Clear Menu").clicked {
+                pick = Some(RecentPick::Clear);
+            }
+            pick
+        };
+        Some(if nested { ui.submenu("Open Recent", body).flatten() } else { ui.menu_button("Recent", body).flatten() })
+    }
+
+    /// The settings: the theme, and whether the last file opens at launch. Returns the
+    /// new settings when one changed.
+    fn settings_menu(&self, ui: &mut Ui, nested: bool) -> Option<Option<Settings>> {
+        let now = self.session.settings().clone();
+        let body = |ui: &mut Ui| {
+            let mut new = None;
+            for (theme, name) in [(Theme::System, "Theme: as the system"), (Theme::Light, "Theme: light"), (Theme::Dark, "Theme: dark")] {
+                // The current one is shown, not offered.
+                if ui.menu_item_ex(name, None, theme != now.theme).clicked {
+                    new = Some(Settings { theme, ..now.clone() });
+                }
+            }
+            ui.menu_separator();
+            let reopen = if now.reopen_last { "Reopen last file at launch: on" } else { "Reopen last file at launch: off" };
+            if ui.menu_item(reopen).clicked {
+                new = Some(Settings { reopen_last: !now.reopen_last, ..now.clone() });
+            }
+            new
+        };
+        Some(if nested { ui.submenu("Settings", body).flatten() } else { ui.menu_button("Settings", body).flatten() })
+    }
+
+    fn take_menu_picks(&mut self, recent: Option<RecentPick>, settings: Option<Settings>) {
+        match recent {
+            Some(RecentPick::Open(path)) => self.open_recent(path),
+            Some(RecentPick::Clear) => {
+                self.session.recents_mut().clear();
+                self.save();
+            }
+            None => {}
+        }
+        if let Some(s) = settings {
+            self.set_settings(s);
+        }
     }
 
     fn toolbar(&mut self, ui: &mut Ui, class: WidthClass) {
@@ -319,6 +451,8 @@ impl ViewerApp {
             if open.clicked {
                 self.open_dialog();
             }
+            let recent = self.recent_menu(ui, false).flatten();
+            self.take_menu_picks(recent, None);
             if self.session.can_go_back() {
                 let back = ui.button("Back");
                 ui.tooltip(&back, "Backspace");
@@ -356,6 +490,8 @@ impl ViewerApp {
                 let info = ui.toggle("Info", &mut self.show_info);
                 ui.tooltip(&info, "I");
             });
+            let settings = self.settings_menu(ui, false).flatten();
+            self.take_menu_picks(None, settings);
         });
     }
 
@@ -429,12 +565,26 @@ impl ViewerApp {
         match page.and_then(|p| self.views.get_mut(&p.id).map(|v| (p, v))) {
             Some((page, view)) => views::show(ui, page, view, tex, dark),
             None => {
+                let mut open = None;
                 if !self.loading() {
                     let muted = ui.theme.palette.text_muted;
-                    ui.container(Layout::column().align(Align::Center, Align::Center), Frame::none(), |ui| {
+                    ui.container(Layout::column().gap(8.0).align(Align::Center, Align::Center), Frame::none(), |ui| {
                         let hint = format!("Drop a file here, or press {}", self.keys.label(Command::Open));
                         ui.text_with(&hint, 18.0, muted);
+                        let recents = self.session.recents().items();
+                        if !recents.is_empty() {
+                            ui.space(12.0);
+                            ui.label_muted("Recent");
+                            for r in recents.iter().take(8) {
+                                if ui.button(&r.name()).clicked {
+                                    open = Some(r.path.clone());
+                                }
+                            }
+                        }
                     });
+                }
+                if let Some(path) = open {
+                    self.open_recent(path);
                 }
                 None
             }

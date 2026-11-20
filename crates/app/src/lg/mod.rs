@@ -259,6 +259,8 @@ fn headless(path: &Path, size: (f32, f32), info: bool, session: viewer_core::Ses
 
 struct Live {
     window: Arc<Window>,
+    /// The theme the ui has: dark or light.
+    dark: bool,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
@@ -338,12 +340,16 @@ impl Host {
         let renderer = libgui_wgpu::Renderer::new(&device, &queue, config.format);
         startup::mark("GPU ready");
 
-        let dark = window.theme().is_none_or(|t| t == winit::window::Theme::Dark);
+        let system_dark = window.theme().is_none_or(|t| t == winit::window::Theme::Dark);
+        let dark = match self.app.as_mut() {
+            Some(app) => {
+                app.set_system_dark(system_dark);
+                app.dark
+            }
+            None => system_dark,
+        };
         let ui = new_ui(dark)?;
         startup::mark("  fonts");
-        if let Some(app) = self.app.as_mut() {
-            app.dark = dark;
-        }
         startup::mark("ui created");
         self.live = Some(Live {
             window,
@@ -353,6 +359,7 @@ impl Host {
             queue,
             renderer,
             clear: ui.theme.palette.bg_app,
+            dark,
             ui,
             platform: libgui_winit::PlatformState::default(),
             files: libgui_winit::FileDrop::default(),
@@ -397,6 +404,12 @@ impl Host {
         if app.poll_job() {
             w.stale = true;
         }
+        // The theme: the settings' against the system's, either of which can change.
+        if app.dark != w.dark {
+            w.dark = app.dark;
+            w.ui.theme = if app.dark { libgui::Theme::dark() } else { libgui::Theme::light() };
+            w.stale = true;
+        }
         let mut platform = PlatformOutput::default();
         let mut settle = false;
         let mut freed = Vec::new();
@@ -404,7 +417,7 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: false };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
             w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
             let out = w.ui.end_frame();
@@ -500,6 +513,14 @@ impl ApplicationHandler for Host {
         }
     }
 
+    /// Sent to the background (phones): the app may not be woken again, so keep where
+    /// the reader is now.
+    fn suspended(&mut self, _el: &ActiveEventLoop) {
+        if let Some(app) = self.app.as_mut() {
+            app.save();
+        }
+    }
+
     fn resumed(&mut self, el: &ActiveEventLoop) {
         if self.live.is_none() {
             if let Err(e) = self.start(el) {
@@ -555,7 +576,18 @@ impl ApplicationHandler for Host {
             libgui_winit::push_window_event(&mut w.ui, &event, w.window.scale_factor());
         }
         match event {
-            WindowEvent::CloseRequested => el.exit(),
+            WindowEvent::CloseRequested => {
+                if let Some(app) = self.app.as_mut() {
+                    app.save();
+                }
+                el.exit();
+            }
+            WindowEvent::ThemeChanged(theme) => {
+                if let Some(app) = self.app.as_mut() {
+                    app.set_system_dark(theme == winit::window::Theme::Dark);
+                }
+                self.again = true;
+            }
             WindowEvent::RedrawRequested => self.draw(el),
             // Anything else may have changed what the UI shows; `draw` asks libgui.
             _ => self.again = true,

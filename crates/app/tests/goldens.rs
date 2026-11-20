@@ -22,6 +22,8 @@ const CASES: &[(&str, &str, (u32, u32), bool)] = &[
     ("tree-medium", "data.json", (800, 600), false),
     ("image-compact", "gradient.png", (390, 844), false),
     ("archive-expanded", "bundle.zip", (1100, 760), false),
+    // No file: the empty screen, with recent files from a data folder (see `shoot`).
+    ("recent-expanded", "", (1100, 760), false),
 ];
 
 /// A pixel counts as changed when a channel moves more than this: font
@@ -42,7 +44,18 @@ fn shoot(sample: &str, (w, h): (u32, u32), info: bool, out: &Path) -> image::Rgb
     if info {
         cmd.arg("--info");
     }
-    let run = cmd.arg(format!("samples/{sample}")).output().expect("running viewer");
+    if sample.is_empty() {
+        // Three recent files, and no reopening at launch.
+        let data = out.with_extension("data");
+        std::fs::create_dir_all(&data).unwrap();
+        let recents: String = ["README.md", "table.csv", "bundle.zip"].iter().map(|f| format!("{}\t1\t-\t\n", root().join("samples").join(f).display())).collect();
+        std::fs::write(data.join("recents.txt"), recents).unwrap();
+        std::fs::write(data.join("settings.txt"), "reopen_last = false\n").unwrap();
+        cmd.arg("--data-dir").arg(&data);
+    } else {
+        cmd.arg(format!("samples/{sample}"));
+    }
+    let run = cmd.output().expect("running viewer");
     assert!(run.status.success(), "viewer failed on {sample}: {}", String::from_utf8_lossy(&run.stderr));
     image::open(out).expect("reading the screenshot").to_rgba8()
 }

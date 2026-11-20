@@ -141,23 +141,25 @@ do {
 }
 
 // Recent files, kept in a file and read back by the next session.
-let recentsFile = NSTemporaryDirectory() + "viewer-recents-\(getpid()).txt"
+let recentsDir = NSTemporaryDirectory() + "viewer-data-\(getpid())"
 do {
     let a = ViewerSession(waker: Wakes())
-    a.useRecentsFile(file: recentsFile)
+    a.useDataDir(dir: recentsDir)
     _ = a.openGranted(picked: "\(root)/samples/data.json", reopen: nil, bookmark: Data([1, 2, 3]))
     settle(a)
     a.openPath(path: "\(root)/samples/table.csv")
     settle(a)
     check(a.recents().map(\.name) == ["table.csv", "data.json"], "recents newest first: \(a.recents().map(\.name))")
-    check(a.saveRecents() == nil, "recents saved")
+    a.setSettings(settings: AppSettings(theme: .dark, reopenLast: false))
+    check(a.save() == nil, "recents and settings saved")
     let b = ViewerSession(waker: Wakes())
-    b.useRecentsFile(file: recentsFile)
+    b.useDataDir(dir: recentsDir)
     check(b.recents() == a.recents(), "recents read back")
+    check(b.settings() == AppSettings(theme: .dark, reopenLast: false), "settings read back")
     check(b.recents().last?.bookmark == Data([1, 2, 3]), "with the bookmark")
     b.forgetRecent(path: "\(root)/samples/table.csv")
     check(b.recents().count == 1, "one forgotten")
-    try? FileManager.default.removeItem(atPath: recentsFile)
+    try? FileManager.default.removeItem(atPath: recentsDir)
 }
 
 if failures > 0 { print("\(failures) failed"); exit(1) }

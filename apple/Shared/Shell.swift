@@ -34,6 +34,14 @@ final class Shell: ObservableObject {
     @Published private(set) var canvasError: String?
     /// Recently opened files, newest first (viewer-core's list).
     @Published private(set) var recents: [RecentItem] = []
+    /// The user's settings (viewer-core's): set through `settings`, saved at once.
+    @Published var settings = AppSettings(theme: .system, reopenLast: true) {
+        didSet {
+            guard settings != oldValue else { return }
+            session.setSettings(settings: settings)
+            save()
+        }
+    }
     /// The Metal view's: a wake may mean a decoded texture or a compiled shader.
     var onWake: (() -> Void)?
 
@@ -42,13 +50,18 @@ final class Shell: ObservableObject {
         session = ViewerSession(waker: wake)
         wake.shell = self
         if let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) {
-            session.useRecentsFile(file: dir.appendingPathComponent("recents.txt").path)
+            session.useDataDir(dir: dir.path)
         }
         recents = session.recents()
+        settings = session.settings()
         // For testing: `-open <path>` at launch (simctl launch, Xcode's scheme).
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-open"), i + 1 < args.count {
             open(URL(fileURLWithPath: args[i + 1]))
+        } else if settings.reopenLast, let last = recents.first {
+            // The last file again, at its place (a file opened from Finder or Files
+            // arrives after this and replaces it).
+            openRecent(last)
         }
     }
 
@@ -129,7 +142,7 @@ final class Shell: ObservableObject {
 
     /// Writes the recent list and the places in it.
     func save() {
-        if let why = session.saveRecents() { NSLog("Viewer: recent files not saved: %@", why) }
+        if let why = session.save() { NSLog("Viewer: recent files and settings not saved: %@", why) }
     }
 
     #if os(macOS)
@@ -176,6 +189,15 @@ final class Shell: ObservableObject {
         if page != was { save() }
         for id in session.takeReleased() {
             grants.removeValue(forKey: id)?.stopAccessingSecurityScopedResource()
+        }
+    }
+
+    /// The theme the settings ask for; `nil` follows the system.
+    var colorScheme: ColorScheme? {
+        switch settings.theme {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
         }
     }
 

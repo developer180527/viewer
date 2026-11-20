@@ -17,6 +17,7 @@
 
 mod loading;
 pub mod recents;
+pub mod settings;
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -28,6 +29,7 @@ use viewer_model::{Document, FileSource, Unreadable};
 
 use loading::{Job, Loaded, Target};
 pub use recents::{Place, Recent, Recents};
+pub use settings::{Settings, SettingsFile, Theme};
 
 /// Wakes the shell from a loader thread: it should call [`Session::poll`].
 pub type Waker = Arc<dyn Fn() + Send + Sync>;
@@ -152,13 +154,14 @@ pub struct Session {
     next_grant: GrantId,
     released: Arc<Mutex<Vec<GrantId>>>,
     recents: Recents,
+    settings: SettingsFile,
     /// The shell's token for the root page being opened, for the recent list.
     pending_bookmark: Option<Vec<u8>>,
 }
 
 impl Session {
     pub fn new(hooks: Hooks) -> Self {
-        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default(), recents: Recents::in_memory(), pending_bookmark: None }
+        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default(), recents: Recents::in_memory(), settings: SettingsFile::in_memory(), pending_bookmark: None }
     }
 
     // ---------------------------------------------------------------- commands
@@ -286,7 +289,41 @@ impl Session {
         true
     }
 
-    // ---------------------------------------------------------------- recent files
+    // ---------------------------------------------------------------- what's kept
+
+    /// Keeps the recent list and the settings in `dir` (the app's data folder: its
+    /// Application Support on Apple platforms), loading them now. Without it they
+    /// live in memory only.
+    pub fn use_data_dir(&mut self, dir: &Path) {
+        self.recents = Recents::load(dir.join("recents.txt"));
+        self.settings = SettingsFile::load(dir.join("settings.txt"));
+    }
+
+    /// Writes what changed: the recent list (and the places in it) and the settings.
+    pub fn save(&mut self) -> std::io::Result<()> {
+        let recents = self.recents.save();
+        self.settings.save()?;
+        recents
+    }
+
+    pub fn settings(&self) -> &Settings {
+        self.settings.get()
+    }
+
+    pub fn set_settings(&mut self, settings: Settings) {
+        self.settings.set(settings);
+    }
+
+    /// At launch with nothing named: the last file again, if the settings say so and
+    /// there is one. Returns whether it started opening. Shells that read through a
+    /// bookmark open the newest recent themselves.
+    pub fn open_last(&mut self) -> bool {
+        let Some(path) = self.settings().reopen_last.then(|| self.recents.items().first().map(|r| r.path.clone())).flatten() else {
+            return false;
+        };
+        self.open_path(path);
+        true
+    }
 
     /// The recent list files are noted in as they open: kept in memory until a shell
     /// sets one loaded from its file.

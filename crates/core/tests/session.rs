@@ -197,3 +197,25 @@ fn opened_files_are_remembered_with_their_place() {
     s.set_place(s.current().unwrap().id, place);
     assert_eq!(s.place(s.current().unwrap().id), None);
 }
+
+#[test]
+fn the_data_dir_keeps_settings_and_the_last_file() {
+    let dir = std::env::temp_dir().join(format!("viewer-data-{}", std::process::id()));
+    let (mut s, _) = session();
+    s.use_data_dir(&dir);
+    assert!(!s.open_last(), "nothing opened yet");
+    s.open_path(root().join("samples/data.json"));
+    settle(&mut s);
+    s.set_settings(viewer_core::Settings { theme: viewer_core::Theme::Dark, ..s.settings().clone() });
+    s.save().unwrap();
+    // The next launch.
+    let (mut next, _) = session();
+    next.use_data_dir(&dir);
+    assert_eq!(next.settings().theme, viewer_core::Theme::Dark);
+    assert!(next.open_last());
+    settle(&mut next);
+    assert_eq!(next.current().unwrap().src.name(), "data.json");
+    next.set_settings(viewer_core::Settings { reopen_last: false, ..next.settings().clone() });
+    assert!(!next.open_last(), "not when the settings say no");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
