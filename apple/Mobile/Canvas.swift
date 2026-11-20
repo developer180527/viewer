@@ -135,6 +135,7 @@ final class CanvasView: UIView {
     @objc private func tick() {
         guard let canvas else { link?.isPaused = true; return }
         let frame = canvas.draw()
+        Metrics.firstFrame()
         if frame.opened { shell?.refresh() }
         if let request = frame.request {
             // After this frame: a picker shouldn't come up inside the display link.
@@ -157,6 +158,31 @@ final class CanvasView: UIView {
         case .none:
             link?.isPaused = true
         }
+    }
+
+    // MARK: accessibility
+
+    // One element: VoiceOver reads what's shown, and lets the fingers through (direct
+    // interaction), so a page can still be dragged and pinched.
+    override var isAccessibilityElement: Bool {
+        get { true }
+        set {}
+    }
+    override var accessibilityLabel: String? {
+        get { whole ? Shell.libguiAccessibilityLabel : shell?.drawnLabel }
+        set {}
+    }
+    override var accessibilityTraits: UIAccessibilityTraits {
+        get { whole ? [.allowsDirectInteraction] : [.image, .allowsDirectInteraction] }
+        set {}
+    }
+    override var accessibilityValue: String? {
+        get { whole ? nil : shell?.drawnValue }
+        set {}
+    }
+    override var accessibilityHint: String? {
+        get { whole ? nil : "Drag to move, pinch to zoom." }
+        set {}
     }
 
     // MARK: touches

@@ -138,6 +138,7 @@ final class CanvasView: NSView {
     @objc private func tick() {
         guard let canvas else { link?.isPaused = true; return }
         let frame = canvas.draw()
+        Metrics.firstFrame()
         if frame.opened { shell?.refresh() }
         if let request = frame.request {
             // After this frame: a picker shouldn't come up inside the display link.
@@ -166,6 +167,14 @@ final class CanvasView: NSView {
             link?.isPaused = true
         }
     }
+
+    // MARK: accessibility
+
+    // One element VoiceOver reads: the file and its kind (libgui draws the rest).
+    override func isAccessibilityElement() -> Bool { true }
+    override func accessibilityRole() -> NSAccessibility.Role? { whole ? .group : .image }
+    override func accessibilityLabel() -> String? { whole ? Shell.libguiAccessibilityLabel : shell?.drawnLabel }
+    override func accessibilityValue() -> Any? { whole ? nil : shell?.drawnValue }
 
     // MARK: input
 

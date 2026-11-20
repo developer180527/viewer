@@ -58,6 +58,8 @@ targets:
       groups: [common]
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.venugopal.viewer.mobile
+        # Signs device builds (Apple Development); the simulator needs none.
+        DEVELOPMENT_TEAM: 7PF6KT3R5Q
         TARGETED_DEVICE_FAMILY: "1,2"
         # The simulator build is the arm64 one the xcframework has.
         ARCHS: arm64

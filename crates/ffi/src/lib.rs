@@ -95,6 +95,13 @@ pub struct RecentItem {
     pub bookmark: Vec<u8>,
 }
 
+/// A page of a paged document, from 1, of `count`.
+#[derive(uniffi::Record, Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PagePosition {
+    pub page: u64,
+    pub count: u64,
+}
+
 /// Light or dark.
 #[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ThemeChoice {
@@ -173,6 +180,17 @@ impl ViewerSession {
     /// folder), loading them now.
     pub fn use_data_dir(&self, dir: String) {
         self.session().use_data_dir(&PathBuf::from(dir));
+    }
+
+    /// Where the reader is in a paged document, for VoiceOver: the page at the top
+    /// (from 1) and how many there are. `None` for other content.
+    pub fn page_position(&self) -> Option<PagePosition> {
+        let s = self.session();
+        let page = s.current()?;
+        let Content::Model(Model::Pages(src)) = &page.doc.content else { return None };
+        let count = src.page_count();
+        let at = s.place(page.id).map_or(0, |p| u64::from(p.page));
+        Some(PagePosition { page: (at + 1).min(count.max(1)), count })
     }
 
     pub fn settings(&self) -> AppSettings {

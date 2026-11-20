@@ -165,6 +165,14 @@ do {
     check(false, "libgui's interface on the layer: \(error)")
 }
 
+// VoiceOver's page: a paged document has one, other content none.
+s.openPath(path: "\(root)/corpus/files/docs/two-pages.pdf")
+settle(s)
+check(s.pagePosition() == PagePosition(page: 1, count: 2), "page 1 of 2: \(String(describing: s.pagePosition()))")
+s.openPath(path: "\(root)/samples/data.json")
+settle(s)
+check(s.pagePosition() == nil, "no page for a tree")
+
 // Recent files, kept in a file and read back by the next session.
 let recentsDir = NSTemporaryDirectory() + "viewer-data-\(getpid())"
 do {

@@ -46,6 +46,7 @@ final class Shell: ObservableObject {
     var onWake: (() -> Void)?
 
     init() {
+        Metrics.start()
         let wake = Wake()
         session = ViewerSession(waker: wake)
         wake.shell = self
@@ -57,7 +58,11 @@ final class Shell: ObservableObject {
         // For testing: `-open <path>` at launch (simctl launch, Xcode's scheme).
         let args = ProcessInfo.processInfo.arguments
         if let i = args.firstIndex(of: "-open"), i + 1 < args.count {
-            open(URL(fileURLWithPath: args[i + 1]))
+            // A relative path is in the app's Documents (where `devicectl device copy
+            // to` puts test files on a device).
+            let path = args[i + 1]
+            let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            open(path.hasPrefix("/") ? URL(fileURLWithPath: path) : docs.appendingPathComponent(path))
         } else if settings.reopenLast, let last = recents.first {
             // The last file again, at its place (a file opened from Finder or Files
             // arrives after this and replaces it).
@@ -175,7 +180,9 @@ final class Shell: ObservableObject {
 
     func refresh() {
         crumbs = session.breadcrumbs()
+        let before = status
         status = session.status()
+        if case let .shown(_, _, _, ms) = status, status != before { Metrics.shown(crumbs.last ?? "?", loadMs: ms) }
         kind = session.contentKind()
         choices = session.viewChoices()
         notices = session.notices()
@@ -203,6 +210,21 @@ final class Shell: ObservableObject {
         case .dark: return .dark
         }
     }
+
+    /// What VoiceOver says for the drawn view: the file, and what kind it is.
+    var drawnLabel: String {
+        var parts = [crumbs.last ?? "No file"]
+        if case let .shown(format, _, model, _) = status { parts.append(format); parts.append(model) }
+        return parts.joined(separator: ", ")
+    }
+
+    /// The page VoiceOver reads as the drawn view's value ("page 2 of 3").
+    var drawnValue: String? {
+        session.pagePosition().map { "page \($0.page) of \($0.count)" }
+    }
+
+    /// libgui's interface, which VoiceOver can't read inside: say so, and the way out.
+    static let libguiAccessibilityLabel = "libgui interface. VoiceOver can't read it. Switch Interface to Native in Settings."
 
     var title: String { crumbs.isEmpty ? "Viewer" : crumbs.joined(separator: " › ") }
 

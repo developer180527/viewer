@@ -5,6 +5,8 @@
 #   scripts/apple.sh            macOS only, debug: what the Mac app needs day to day
 #   scripts/apple.sh all        macOS, iOS and the iOS simulator
 #   scripts/apple.sh all release
+#   scripts/apple.sh ios release   iPhone and iPad only (a device build to measure);
+#                                  the xcframework then has only that slice
 #
 # Writes target/apple/ViewerFFI.xcframework and target/apple/swift/ViewerFFI.swift.
 # Gentle on the machine: nice, -j2.
@@ -21,7 +23,8 @@ esac
 case $platforms in
   mac) targets="aarch64-apple-darwin" ;;
   all) targets="aarch64-apple-darwin aarch64-apple-ios aarch64-apple-ios-sim" ;;
-  *) echo "platforms is mac or all" >&2; exit 2 ;;
+  ios) targets="aarch64-apple-ios" ;;
+  *) echo "platforms is mac, ios or all" >&2; exit 2 ;;
 esac
 
 # C dependencies (built by the cc crate) target what the apps support, not this Mac.
@@ -46,9 +49,14 @@ for t in $targets; do
 done
 
 # The bindings come from the library's own metadata (library mode), read from the
-# Mac target's dylib.
+# Mac target's dylib: this profile's, or for `ios` the debug one (the same API).
+bindings_from="target/aarch64-apple-darwin/$profile/libviewer_ffi.dylib"
+if [ ! -f "$bindings_from" ]; then
+  bindings_from=target/aarch64-apple-darwin/debug/libviewer_ffi.dylib
+  [ -f "$bindings_from" ] || nice cargo rustc -q -j2 -p viewer-ffi --lib --target aarch64-apple-darwin --crate-type cdylib
+fi
 nice cargo run -q -j2 -p viewer-ffi --features cli --bin uniffi-bindgen -- \
-  generate --library "target/aarch64-apple-darwin/$profile/libviewer_ffi.dylib" --language swift \
+  generate --library "$bindings_from" --language swift \
   --out-dir "$out/gen" >/dev/null
 
 mv "$out/gen/"*.swift "$out/swift/ViewerFFI.swift"
