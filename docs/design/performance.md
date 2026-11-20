@@ -166,6 +166,28 @@ In order. Each step names the scenario that proves it and the target; re-run
    *Done when:* markdown-scroll at 60 fps on iPhone, draw p95 < 8 ms, power < 300 mW
    (from 3.4 W); docx and pptx scrolls unchanged or better.
 
+   ✅ **Done 2026-11-21, in libviewer, without changing libgui.** `FlowView` cuts the
+   document into chunks of whole blocks (`CHUNK_CHARS`, 1200 bytes of Markdown), each
+   its own widget, in libgui's `virtual_rows`: only the chunks in view, and one either
+   side, are built. A chunk's height is measured when it's built, at the column's width,
+   and estimated from its length until then. Screenshots are unchanged (DOCX byte for
+   byte; the changelog within half a point, from rows placing a fractional height).
+
+   | markdown-scroll (1.3 MB changelog) | Before | After |
+   |---|---|---|
+   | iPhone fps / draw p50 / p95 | 9.5 / 95 / 100 ms | 56 (the 60 Hz cap) / 5.9 / 8.2 ms |
+   | iPhone draws over 16 ms | 81 | 0–1 |
+   | iPhone CPU / power | 92% / 4.9–5.1 W | 43% / 290 mW |
+   | Mac fps / draw p50 / CPU | 10 / 96 ms / 95% | 100 / 4.2 ms / 45% |
+
+   DOCX and PPTX scrolls unchanged. **Left for libgui:** what remains of the 4–6 ms is
+   libgui laying out the visible rich text each frame: it hashes each run's string to
+   find it in the text cache (7.5%), looks glyph advances up in a hash map (5–7%), and
+   finds a paragraph's line-break opportunities three times a frame (min width, layout,
+   end-of-frame layout). Caching the break opportunities and the layout per paragraph and
+   width, and keying runs by paragraph rather than by string, would take most of it; a
+   libgui change and a new pin.
+
 ### Step 4: only do work that changed something (findings 6, 7, 12)
 
 7. **Split the wakes.** Rust wakes the shell for two reasons: the session changed (a

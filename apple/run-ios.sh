@@ -16,13 +16,14 @@ if [ "$where" = device ]; then
   [ "$profile" = release ] && config=Release
   scripts/apple.sh ios "$profile"
   xcodegen --quiet --spec apple/project.yml --project apple
-  # Twice if need be: right after the xcframework changes platforms, Xcode's build
-  # service can still see the old ones ("Supported platforms … is empty") once.
+  # Again if need be, after a pause: right after the xcframework changes platforms,
+  # Xcode's build service can still see the old ones for a few seconds ("Supported
+  # platforms … is empty").
   build() {
     nice xcodebuild -quiet -project apple/ViewerShell.xcodeproj -scheme ViewerMobile -configuration "$config" \
       -destination 'generic/platform=iOS' -derivedDataPath target/apple/xcode -jobs 2 -allowProvisioningUpdates build
   }
-  build || build
+  build || { sleep 5; build; } || { sleep 10; build; }
   app="target/apple/xcode/Build/Products/$config-iphoneos/Viewer.app"
   # The device named, or the first connected, paired iPhone or iPad.
   id=${3:-}

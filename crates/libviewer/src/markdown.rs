@@ -2,6 +2,13 @@
 //! are written out as Markdown, which the widget lays out (headings, lists, tables,
 //! code, quotes, emphasis, links).
 //!
+//! **Only what's on screen is laid out.** The widget lays out everything it holds
+//! every frame, so a long document is cut into chunks of whole blocks
+//! ([`CHUNK_CHARS`]), each its own widget, in a virtual list: only the chunks in view
+//! (and one or two either side) are built. A chunk's height is measured when it's
+//! built, at the column's width; until then it's estimated from its length. (A 1.3 MB
+//! changelog scrolled at 8 frames a second on an iPhone, laying out all of itself.)
+//!
 //! **Images.** An image that is a paragraph of its own is drawn: its file comes from
 //! the flow ([`FlowSource::resource`]), is opened by the host's
 //! [`Host::image_opener`], decoded and scaled on a thread of the view's own (to
@@ -37,7 +44,8 @@ type Decoded = (String, u32, u32, Vec<u8>);
 
 /// A document's formatted text, prepared once for its view, and its images.
 pub struct FlowView {
-    md: libgui_markdown::Markdown,
+    /// The document in chunks of whole blocks, each laid out only when in view.
+    chunks: Vec<Chunk>,
     source: Arc<dyn FlowSource>,
     /// Each image's URL in the Markdown, and the flow's reference it stands for.
     refs: Vec<(String, String)>,
@@ -48,9 +56,42 @@ pub struct FlowView {
     started: bool,
 }
 
-/// More blocks than this show as the first part, with a note: the widget lays out the
-/// whole document every frame.
+/// More blocks than this show as the first part, with a note (they are all parsed up
+/// front).
 const MAX_BLOCKS: u64 = 20_000;
+/// A chunk ends after the block that takes its Markdown past this many bytes: small
+/// enough that a screen builds only a few, big enough that estimates even out.
+const CHUNK_CHARS: usize = 1200;
+
+/// Some of the document's blocks, as one Markdown widget.
+struct Chunk {
+    md: libgui_markdown::Markdown,
+    /// Its Markdown's length and its blocks, for a height until it's measured.
+    bytes: usize,
+    blocks: usize,
+    /// Its height as last laid out, and the column width that was at.
+    measured: Option<(f32, f32)>,
+}
+
+impl Chunk {
+    fn new(text: &str, blocks: usize) -> Self {
+        Self { md: libgui_markdown::Markdown::parse(text), bytes: text.len(), blocks, measured: None }
+    }
+
+    /// Its height in a `column` points wide, in text of `size`: as measured at that
+    /// width, else estimated (about half the size a character, lines 1.5 the size,
+    /// a gap between blocks).
+    fn height(&self, column: f32, size: f32, gap: f32) -> f32 {
+        match self.measured {
+            Some((w, h)) if (w - column).abs() < 0.5 => h,
+            _ => {
+                let per_line = (column / (size * 0.5)).max(8.0);
+                let lines = (self.bytes as f32 / per_line).ceil() + self.blocks as f32;
+                lines * size * 1.5 + self.blocks.saturating_sub(1) as f32 * gap
+            }
+        }
+    }
+}
 
 impl FlowView {
     pub fn new(src: Arc<dyn FlowSource>) -> Self {
@@ -59,18 +100,31 @@ impl FlowView {
             Ok(b) => (b, None),
             Err(e) => (Vec::new(), Some(e.to_string())),
         };
+        let mut chunks = Vec::new();
         let mut text = String::new();
+        let mut count = 0;
         let mut refs = Vec::new();
         for b in &blocks {
             block(b, "", &mut text, &mut refs);
+            count += 1;
+            if text.len() >= CHUNK_CHARS {
+                chunks.push(Chunk::new(&text, count));
+                text.clear();
+                count = 0;
+            }
         }
         if let Some(e) = error {
             text.push_str(&format!("*This document couldn't be read: {e}*\n"));
+            count += 1;
         } else if total > MAX_BLOCKS {
             text.push_str(&format!("\n---\n\n*Shown up to block {MAX_BLOCKS} of {total}.*\n"));
+            count += 2;
+        }
+        if !text.is_empty() {
+            chunks.push(Chunk::new(&text, count));
         }
         refs.truncate(MAX_IMAGES);
-        Self { md: libgui_markdown::Markdown::parse(&text), source: src, refs, textures: HashMap::new(), stream: None, started: false }
+        Self { chunks, source: src, refs, textures: HashMap::new(), stream: None, started: false }
     }
 
     /// GPU textures this view owns, to free when its page closes.
@@ -174,9 +228,9 @@ const PADDING: Insets = Insets::xy(24.0, 16.0);
 pub fn flow(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host) {
     v.load_images(host);
     // The column's width, from the last frame's layout (the window's, at first): an
-    // image wider than it is drawn at its width.
-    let id = ui.make_id("flow-column");
-    let column = ui.rect_of(id).map_or(ui.screen_size().x, |r| r.w) - PADDING.left - PADDING.right;
+    // image wider than it is drawn at its width. The list's own id, as it makes it.
+    let list = ui.make_id(("scroll", "flow"));
+    let column = ui.rect_of(list).map_or(ui.screen_size().x, |r| r.w) - PADDING.left - PADDING.right;
     let ppp = host.pixels_per_point().max(1.0);
     let textures = &v.textures;
     let image = |url: &str| -> Option<(TextureId, Vec2)> {
@@ -188,11 +242,40 @@ pub fn flow(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host) {
         Some((tex, natural * k))
     };
     let opts = libgui_markdown::MarkdownOptions { image: Some(&image), ..Default::default() };
-    ui.scroll_area("flow", |ui| {
-        ui.container_id(id, Layout::column().height(Size::Fit).padding(PADDING), Frame::none(), |ui| {
-            v.md.show_with(ui, "flow", &opts);
-        });
-    });
+    // The widget's own spacing between blocks, between chunks too.
+    let size = ui.theme.metrics.font_size;
+    let gap = (size * 0.75).round();
+    let list_opts = ListOptions { gap, padding: PADDING, overscan: 1, ..ListOptions::new(0.0) };
+    let chunks = &v.chunks;
+    let mut built = Vec::new();
+    ui.virtual_rows_with(
+        "flow",
+        chunks.len(),
+        list_opts,
+        |i| chunks[i].height(column, size, gap),
+        |ui, i| {
+            let id = ui.make_id(("flow-chunk", i));
+            ui.container_id(id, Layout::column().width(Size::Grow(1.0)).height(Size::Fit), Frame::none(), |ui| {
+                chunks[i].md.show_with(ui, &format!("flow-{i}"), &opts);
+            });
+            built.push((i, id));
+        },
+    );
+    // What the chunks built took, measured at the last layout: their heights from now
+    // on, at this width; a frame more if any changed, to place them by it.
+    let mut changed = false;
+    for (i, id) in built {
+        if let Some(r) = ui.rect_of(id) {
+            let now = Some((column, r.h));
+            if v.chunks[i].measured != now {
+                v.chunks[i].measured = now;
+                changed = true;
+            }
+        }
+    }
+    if changed {
+        ui.request_repaint();
+    }
 }
 
 /// An image `reference` as a Markdown URL, kept in `refs` (once) to be loaded.
@@ -382,6 +465,24 @@ mod tests {
         assert!(out.contains("## Hi \\*there\\*"), "{out}");
         assert!(out.contains("3. a\n4. b"), "{out}");
         assert!(out.contains("| x | y |\n| --- | --- |\n| 1 | 2\\|3 |"), "{out}");
+    }
+
+    /// A long document is cut into chunks of whole blocks, each laid out only when in
+    /// view; a short one stays whole (the golden renders cover its look).
+    #[test]
+    fn long_documents_are_cut_into_chunks() {
+        use libfileparser_core::OwnedFlow;
+        let para = |i: usize| Block::Paragraph(vec![Inline::Text(format!("Paragraph {i}: {}", "word ".repeat(40)))]);
+        let short = FlowView::new(Arc::new(OwnedFlow::new((0..3).map(para).collect())));
+        assert_eq!(short.chunks.len(), 1);
+        let long = FlowView::new(Arc::new(OwnedFlow::new((0..500).map(para).collect())));
+        assert!(long.chunks.len() > 50, "{} chunks", long.chunks.len());
+        assert_eq!(long.chunks.iter().map(|c| c.blocks).sum::<usize>(), 500, "every block, once");
+        assert!(long.chunks.iter().all(|c| c.bytes >= CHUNK_CHARS || std::ptr::eq(c, long.chunks.last().unwrap())));
+        // Unmeasured, a chunk's height is a guess from its length: more text, taller.
+        let (c, size) = (&long.chunks[0], 14.0);
+        assert!(c.height(400.0, size, 10.0) > c.height(800.0, size, 10.0));
+        assert!(c.height(800.0, size, 10.0) > size);
     }
 
     /// Word splits a bold phrase into runs anywhere: they read as one, with no
