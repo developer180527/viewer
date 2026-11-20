@@ -15,7 +15,7 @@ use viewer_core::Page;
 
 use crate::chrome::ViewerApp;
 use crate::views::{self, Action, ViewState};
-use crate::{Gpu, Rx, Wake, fonts, open_device};
+use crate::{Gpu, Rx, TexturePool, Wake, fonts, open_device};
 
 /// What a frame asks of the shell.
 pub struct Drawn {
@@ -50,6 +50,8 @@ pub struct Canvas {
     touch_screen: bool,
     /// Frames still to draw after a resize, so layout catches up with the size.
     relayout: u8,
+    /// Uploaded textures, reused when views free them.
+    pool: TexturePool,
     last: Instant,
     /// Time since the last frame that was built.
     idle: f32,
@@ -134,6 +136,7 @@ impl Canvas {
             dark,
             touch_screen: false,
             relayout: 0,
+            pool: TexturePool::default(),
             last: Instant::now(),
             idle: 0.0,
             pinch: 1.0,
@@ -291,6 +294,7 @@ impl Canvas {
                 scale,
                 settle: &mut settle,
                 freed: &mut freed,
+                pool: &mut self.pool,
                 pinch: self.pinch - 1.0,
                 wake: &self.wake,
                 touch_screen: self.touch_screen,
@@ -311,8 +315,20 @@ impl Canvas {
             self.batches.clear();
             self.batches.extend_from_slice(&out.draw.batches);
         }
-        for id in retired.into_iter().chain(freed) {
-            self.renderer.unregister_texture(id);
+        if !retired.is_empty() {
+            for id in self.pool.drop_spares() {
+                self.renderer.unregister_texture(id);
+            }
+        }
+        for id in retired {
+            if self.pool.forget(id) {
+                self.renderer.unregister_texture(id);
+            }
+        }
+        for id in freed {
+            if self.pool.release(id) {
+                self.renderer.unregister_texture(id);
+            }
         }
 
         let frame = match &self.surface {
@@ -356,6 +372,9 @@ impl Canvas {
             self.renderer.render_batches(&mut pass, &self.batches);
         }
         self.queue.submit([encoder.finish()]);
+        // Without waiting: lets wgpu give back what finished frames no longer use
+        // (textures freed, upload staging), which it does only when polled.
+        let _ = self.device.poll(wgpu::PollType::Poll);
         if let Some(frame) = frame {
             self.queue.present(frame);
         }

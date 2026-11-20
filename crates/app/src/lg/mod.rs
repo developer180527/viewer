@@ -36,7 +36,7 @@ const SIZE: (f32, f32) = (1100.0, 760.0);
 use libviewer::{Frame3d, Host as ViewHost, SceneGpu, draw_scene};
 use viewer_surface::fonts::new_ui;
 pub use viewer_surface::fonts::scan_system_fonts;
-use viewer_surface::{Gpu, Rx, Wake, open_device};
+use viewer_surface::{Gpu, Rx, TexturePool, Wake, open_device};
 
 pub fn run(title: String, args: Args, session: viewer_core::Session) -> anyhow::Result<()> {
     if let Some(path) = &args.screenshot {
@@ -262,6 +262,8 @@ struct Live {
     window: Arc<Window>,
     /// The theme the ui has: dark or light.
     dark: bool,
+    /// Uploaded textures, reused when views free them.
+    pool: TexturePool,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
@@ -363,6 +365,7 @@ impl Host {
             renderer,
             clear: ui.theme.palette.bg_app,
             dark,
+            pool: TexturePool::default(),
             ui,
             platform: libgui_winit::PlatformState::default(),
             files: libgui_winit::FileDrop::default(),
@@ -420,7 +423,7 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pool: &mut w.pool, pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
             w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
             // Open… asked for this frame: the picker comes up now.
@@ -435,8 +438,20 @@ impl Host {
             if self.content_frames == 0 { startup::mark("  prepared"); }
             w.batches.clear();
             w.batches.extend_from_slice(&out.draw.batches);
-            for id in app.retired.drain(..).chain(freed) {
-                w.renderer.unregister_texture(id);
+            if !app.retired.is_empty() {
+                for id in w.pool.drop_spares() {
+                    w.renderer.unregister_texture(id);
+                }
+            }
+            for id in app.retired.drain(..) {
+                if w.pool.forget(id) {
+                    w.renderer.unregister_texture(id);
+                }
+            }
+            for id in freed {
+                if w.pool.release(id) {
+                    w.renderer.unregister_texture(id);
+                }
             }
             if let Some(title) = app.title.take() {
                 w.window.set_title(&title);
@@ -480,6 +495,9 @@ impl Host {
         w.window.pre_present_notify();
         w.queue.present(frame);
         w.platform.apply(&w.window, &platform);
+        // Without waiting: wgpu gives back what finished frames no longer use only
+        // when polled.
+        let _ = w.device.poll(wgpu::PollType::Poll);
         if settle {
             let _ = w.device.poll(wgpu::PollType::Wait { submission_index: None, timeout: Some(Duration::from_millis(500)) });
         }

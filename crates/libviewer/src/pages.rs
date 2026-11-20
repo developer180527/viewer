@@ -13,7 +13,8 @@
 //!   the window first, then the pages just above and below. A new request replaces
 //!   the old, so tiles scrolled past are never rendered. In idle time it measures
 //!   the remaining pages.
-//! - **The cache** keeps rendered tiles on the GPU within `CACHE_BYTES`, dropping
+//! - **The cache** keeps rendered tiles on the GPU within a budget sized to the view
+//!   ([`cache_budget`]: some screenfuls, between `MIN_CACHE_BYTES` and `CACHE_BYTES`), dropping
 //!   the ones drawn longest ago.
 
 use std::collections::{HashMap, HashSet};
@@ -38,8 +39,22 @@ const TILE: u32 = 1024;
 const GAP: f32 = 12.0;
 /// Room left and right of the widest page at fit width.
 const MARGIN: f32 = 16.0;
-/// Rendered tiles kept on the GPU (RGBA8).
+/// A whole tile's bytes, RGBA8: what the cache counts a wanted tile as.
+const TILE_BYTES: usize = (TILE * TILE * 4) as usize;
+/// Rendered tiles kept on the GPU (RGBA8), at most however big the view.
 const CACHE_BYTES: usize = if cfg!(any(target_os = "ios", target_os = "android")) { 96 << 20 } else { 256 << 20 };
+/// And at least: the screen's tiles, its previews and the next page's, in whole tiles.
+const MIN_CACHE_BYTES: usize = 64 << 20;
+/// Screenfuls of pixels the cache holds: what's on screen (in whole tiles, so more than
+/// one screen), the previews under it, and the pages above and below.
+const SCREENS_CACHED: usize = 8;
+
+/// The tile budget for a view `width`×`height` pixels: a small window doesn't fill
+/// the desktop's whole budget at rest.
+fn cache_budget(width: f32, height: f32) -> usize {
+    let screen = (width.max(0.0) * height.max(0.0) * 4.0) as usize;
+    (screen * SCREENS_CACHED).clamp(MIN_CACHE_BYTES, CACHE_BYTES)
+}
 /// Bytes uploaded per frame (at least one tile); the rest wait, so scrolling stays smooth.
 const UPLOAD_BYTES: usize = if TOUCH { 4 << 20 } else { 16 << 20 };
 /// Touch platforms: a released drag keeps going. (Trackpads send their own momentum.)
@@ -416,18 +431,21 @@ impl PagesView {
     }
 
     /// Frees tiles until the cache fits its budget, before this frame draws: first
-    /// those at scales no longer in use, then those drawn longest ago.
-    fn evict(&mut self, tex: &mut dyn Host, step: i16) {
+    /// those at scales no longer in use, then those drawn longest ago. Never a tile the
+    /// worker is asked for (on screen or about to be): freeing one would have it
+    /// rendered again, and the cache would churn without end.
+    fn evict(&mut self, tex: &mut dyn Host, step: i16, budget: usize) {
         let mut total: usize = self.tiles.values().map(|t| t.bytes).sum();
-        if total <= CACHE_BYTES {
+        if total <= budget {
             return;
         }
+        let wanted: HashSet<TileKey> = self.wanted.iter().copied().collect();
         let current = |k: &TileKey| k.step == step || k.step <= step - PREVIEW_STEPS;
-        let mut old: Vec<_> = self.tiles.iter().map(|(k, t)| ((current(k), t.used), *k)).collect();
+        let mut old: Vec<_> = self.tiles.iter().filter(|(k, _)| !wanted.contains(k)).map(|(k, t)| ((current(k), t.used), *k)).collect();
         old.sort_unstable_by_key(|(rank, _)| *rank);
         let mut forgotten = Vec::new();
         for (_, key) in old {
-            if total <= CACHE_BYTES {
+            if total <= budget {
                 break;
             }
             let t = self.tiles.remove(&key).unwrap();
@@ -655,6 +673,12 @@ pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &m
         }
     }
     let visible: Vec<TileKey> = visible.into_iter().map(|(k, _)| k).collect();
+    // No more than the cache holds: what's on screen always, the neighbours while they
+    // fit. Asking for more than fits would evict wanted tiles and render them again,
+    // over and over (a 3x phone with its previews and the next page's tiles).
+    let budget = cache_budget(rect.w * ppp, rect.h * ppp);
+    let keep = (budget / TILE_BYTES).max(placed.len() + visible.len());
+    wanted.truncate(keep);
     if wanted != st.wanted {
         if let Some(w) = &st.worker {
             w.lock().wanted = wanted.clone();
@@ -669,7 +693,7 @@ pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &m
         ui.request_repaint();
     }
 
-    st.evict(tex, step);
+    st.evict(tex, step, budget);
 
     // Draw: each page white, then its tiles, coarser scales under finer, the wanted
     // scale on top.
@@ -776,6 +800,53 @@ mod tests {
         assert_eq!(v.top_y(1.0), 0.0);
         v.set_top_y(1e9, 1.0, 500.0);
         assert_eq!(v.top_y(1.0), v.layout.height(1.0) - 500.0);
+    }
+
+    #[test]
+    fn the_cache_budget_follows_the_view() {
+        // A phone at 3x and a laptop window: some screenfuls, never past the old caps.
+        assert_eq!(cache_budget(0.0, 0.0), MIN_CACHE_BYTES);
+        let phone = cache_budget(1206.0, 2622.0);
+        assert!(phone > MIN_CACHE_BYTES && phone <= CACHE_BYTES, "{phone}");
+        assert_eq!(cache_budget(100_000.0, 100_000.0), CACHE_BYTES);
+        assert!(cache_budget(2200.0, 1520.0) < 256 << 20);
+    }
+
+    #[test]
+    fn eviction_spares_the_tiles_the_worker_is_asked_for() {
+        // Freeing a wanted tile would have it rendered again, freed again, forever
+        // (an iPhone's libgui interface redrew at 30 fps while nothing moved).
+        struct Host(libgui_soft::SoftRenderer, usize);
+        impl crate::Host for Host {
+            fn max_side(&self) -> u32 {
+                8192
+            }
+            fn upload(&mut self, width: u32, height: u32, _: &[u8]) -> TextureId {
+                self.0.register_texture(libgui_soft::Texture { width, height, data: vec![0; (width * height * 4) as usize] })
+            }
+            fn pixels_per_point(&self) -> f32 {
+                1.0
+            }
+            fn free(&mut self, _: TextureId) {
+                self.1 += 1;
+            }
+            fn render_scene(&mut self, _: &mut crate::SceneGpu, _: &rendererx::scene_data::CpuScene, _: (u32, u32), _: &rendererx::Camera, _: [f32; 4]) -> crate::Frame3d {
+                crate::Frame3d::failed("no 3D here")
+            }
+        }
+        let mut host = Host(libgui_soft::SoftRenderer::new(), 0);
+        let mut v = PagesView { layout: Layout::new(40, letter()), ..Default::default() };
+        let keys: Vec<TileKey> = (0..40).map(|page| TileKey { page, step: 0, tx: 0, ty: 0 }).collect();
+        for (i, k) in keys.iter().enumerate() {
+            let tex = crate::Host::upload(&mut host, 4, 4, &[]);
+            v.tiles.insert(*k, Tile { tex, bytes: TILE_BYTES, used: i as u64 });
+        }
+        // More wanted than the budget holds: all of it stays, everything else goes.
+        v.wanted = keys[..30].to_vec();
+        v.evict(&mut host, 0, MIN_CACHE_BYTES);
+        assert!(keys[..30].iter().all(|k| v.tiles.contains_key(k)), "a wanted tile was freed");
+        assert_eq!(v.tiles.len(), 30);
+        assert_eq!(host.1, 10);
     }
 
     #[test]

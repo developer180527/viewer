@@ -87,6 +87,32 @@ In order. Each step names the scenario that proves it and the target; re-run
    and resize-churn end within 100 MB of where they started; libgui-idle is 0 fps;
    Mac idle-pdf under 300 MB.
 
+   ✅ **Done 2026-11-21.** What did it was the third change: libviewer's page view now
+   caps the tiles it asks for to its budget (what's on screen always, the neighbours
+   while they fit), never evicts a tile it is asking for, and sizes the budget to the
+   view (`cache_budget`: eight screenfuls of pixels, 64 MB to the old caps). The
+   evict-and-render-again loop was findings 1, 2 and 5 all at once. The per-frame poll
+   and the texture pool (`viewer_surface::TexturePool`, spares from evicted tiles only,
+   given up when a page closes) measured neutral for memory; the pool cuts zooming's
+   power on iPhone from ~330 to ~220 mW. Measured (tables in
+   [docs/perf/2026-11-21-step1-compare.md](../perf/2026-11-21-step1-compare.md)):
+
+   | | Before | After |
+   |---|---|---|
+   | iPhone pdf-zoom | killed at 2.9 GB | completes, peak 834 MB |
+   | iPhone pdf-page-keys peak | 2,488 MB | 345 MB |
+   | iPhone pdf-fling-touch | peak 1,419 MB, draw p50 16.3 ms, 41 draws over budget, 341 mW | 336 MB, 1.8 ms, none, 24 mW |
+   | iPhone libgui-idle | 30 fps, 24% CPU | 0 fps, 0.1% |
+   | iPhone libgui PDF scroll CPU | 67% | 35% |
+   | iPhone resize-churn end | 1,771 MB | 763 MB |
+   | Mac pdf-zoom peak / end | 7,286 / 3,580 MB | 580 / 540 MB |
+   | Mac pdf-fling-touch CPU | 83% | 11% |
+   | Mac PDF at rest (footprint) | 577–625 MB | 294 MB |
+
+   Left over: iPhone pdf-zoom still peaks at 834 MB (target 400; the Mac's MuPDF path
+   peaks at 550, so PDFKit's own caching at deep zoom is the suspect), and the Mac keeps
+   ~1.2 GB after file churn (the iPhone ~520 MB), heap the allocator doesn't return.
+
 ### Step 2: take the main thread off tile uploads (finding 4)
 
 4. **Upload on the render worker.** wgpu's `Device` and `Queue` are `Send + Sync`: create
