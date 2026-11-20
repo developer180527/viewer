@@ -92,6 +92,7 @@ final class CanvasView: NSView {
             failed = true
             shell.canvasFailed("\(error)")
         }
+        shell.stressTarget = self
         let link = displayLink(target: self, selector: #selector(tick))
         link.isPaused = true
         link.add(to: .main, forMode: .common)
@@ -137,7 +138,9 @@ final class CanvasView: NSView {
 
     @objc private func tick() {
         guard let canvas else { link?.isPaused = true; return }
+        let t0 = CACurrentMediaTime()
         let frame = canvas.draw()
+        Stress.frame((CACurrentMediaTime() - t0) * 1000)
         Metrics.firstFrame()
         if frame.opened { shell?.refresh() }
         if let request = frame.request {
@@ -297,4 +300,9 @@ private func nsCursor(_ shape: CursorShape) -> NSCursor {
     case .text: return .iBeam
     case .crosshair: return .crosshair
     }
+}
+
+extension CanvasView: StressTarget {
+    var stressCanvas: ViewerCanvas? { canvas }
+    var stressSize: CGSize { bounds.size }
 }

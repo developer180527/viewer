@@ -42,6 +42,8 @@ final class Shell: ObservableObject {
             save()
         }
     }
+    /// The view the stress runner drives (the canvas on screen).
+    weak var stressTarget: StressTarget?
     /// The Metal view's: a wake may mean a decoded texture or a compiled shader.
     var onWake: (() -> Void)?
 
@@ -57,7 +59,20 @@ final class Shell: ObservableObject {
         settings = session.settings()
         // For testing: `-open <path>` at launch (simctl launch, Xcode's scheme).
         let args = ProcessInfo.processInfo.arguments
-        if let i = args.firstIndex(of: "-open"), i + 1 < args.count {
+        // The stress runner (Stress.swift), once the window is up: `-stress a,b`, or
+        // VIEWER_STRESS=a,b in the environment (what Instruments passes through).
+        let stress = args.firstIndex(of: "-stress").flatMap { $0 + 1 < args.count ? args[$0 + 1] : nil }
+            ?? ProcessInfo.processInfo.environment["VIEWER_STRESS"]
+        if let stress {
+            let names = stress.split(separator: ",").map(String.init)
+            // `-stress-delay 4`: time for a profiler to attach first.
+            let delay = args.firstIndex(of: "-stress-delay").flatMap { $0 + 1 < args.count ? Double(args[$0 + 1]) : nil } ?? 1.5
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1e9))
+                guard let self else { return }
+                await StressRunner(shell: self, names: names).run()
+            }
+        } else if let i = args.firstIndex(of: "-open"), i + 1 < args.count {
             // A relative path is in the app's Documents (where `devicectl device copy
             // to` puts test files on a device).
             let path = args[i + 1]

@@ -95,6 +95,7 @@ final class CanvasView: UIView {
             shell.canvasFailed("\(error)")
             return
         }
+        shell.stressTarget = self
         let link = CADisplayLink(target: self, selector: #selector(tick))
         link.isPaused = true
         link.add(to: .main, forMode: .common)
@@ -134,7 +135,9 @@ final class CanvasView: UIView {
 
     @objc private func tick() {
         guard let canvas else { link?.isPaused = true; return }
+        let t0 = CACurrentMediaTime()
         let frame = canvas.draw()
+        Stress.frame((CACurrentMediaTime() - t0) * 1000)
         Metrics.firstFrame()
         if frame.opened { shell?.refresh() }
         if let request = frame.request {
@@ -273,4 +276,9 @@ final class CanvasView: UIView {
         canvas?.focusLost()
         super.pressesCancelled(presses, with: event)
     }
+}
+
+extension CanvasView: StressTarget {
+    var stressCanvas: ViewerCanvas? { canvas }
+    var stressSize: CGSize { bounds.size }
 }
