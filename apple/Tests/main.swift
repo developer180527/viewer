@@ -140,6 +140,31 @@ do {
     check(false, "a canvas on the layer: \(error)")
 }
 
+// libgui's whole interface on the same session: it sees what's open, and what it
+// opens the session sees.
+do {
+    let layer = CAMetalLayer()
+    let address = UInt64(UInt(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
+    let app = try ViewerCanvas.app(session: s, layer: address, width: 1200, height: 900, scale: 2, dark: false)
+    s.openPath(path: "\(root)/samples/bundle.zip")
+    settle(s)
+    let first = app.draw()
+    check(first.request == nil, "no picker asked for")
+    let page = s.pageId()
+    // Back and forth through the session from outside: the interface keeps up.
+    s.openEntry(index: 0)
+    settle(s)
+    _ = app.draw()
+    check(s.pageId() != page, "an entry opened under the libgui interface")
+    _ = s.back()
+    _ = app.draw()
+    check(s.pageId() == page, "back to the zip")
+    app.setSafeArea(top: 47, left: 0, bottom: 34, right: 0)
+    _ = app.draw()
+} catch {
+    check(false, "libgui's interface on the layer: \(error)")
+}
+
 // Recent files, kept in a file and read back by the next session.
 let recentsDir = NSTemporaryDirectory() + "viewer-data-\(getpid())"
 do {
@@ -150,12 +175,12 @@ do {
     a.openPath(path: "\(root)/samples/table.csv")
     settle(a)
     check(a.recents().map(\.name) == ["table.csv", "data.json"], "recents newest first: \(a.recents().map(\.name))")
-    a.setSettings(settings: AppSettings(theme: .dark, reopenLast: false))
+    a.setSettings(settings: AppSettings(theme: .dark, reopenLast: false, interface: .libgui))
     check(a.save() == nil, "recents and settings saved")
     let b = ViewerSession(waker: Wakes())
     b.useDataDir(dir: recentsDir)
     check(b.recents() == a.recents(), "recents read back")
-    check(b.settings() == AppSettings(theme: .dark, reopenLast: false), "settings read back")
+    check(b.settings() == AppSettings(theme: .dark, reopenLast: false, interface: .libgui), "settings read back")
     check(b.recents().last?.bookmark == Data([1, 2, 3]), "with the bookmark")
     b.forgetRecent(path: "\(root)/samples/table.csv")
     check(b.recents().count == 1, "one forgotten")

@@ -18,7 +18,7 @@ use viewer_core::{Hooks, Info, Notice, Session, Status};
 use viewer_model::Content;
 
 mod canvas;
-pub use canvas::{CanvasError, CursorShape, Frame, MouseButton, TouchPhase, ViewerCanvas};
+pub use canvas::{AppRequest, CanvasError, CursorShape, Frame, MouseButton, TouchPhase, ViewerCanvas};
 
 uniffi::setup_scaffolding!();
 
@@ -104,12 +104,22 @@ pub enum ThemeChoice {
     Dark,
 }
 
+/// Which interface the Apple apps draw.
+#[derive(uniffi::Enum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InterfaceChoice {
+    /// SwiftUI's.
+    Native,
+    /// libgui's, the libgui app's interface in the same window.
+    Libgui,
+}
+
 /// The user's settings, the same in every shell (viewer-core's).
 #[derive(uniffi::Record, Clone, Debug, PartialEq, Eq)]
 pub struct AppSettings {
     pub theme: ThemeChoice,
     /// At launch with no file named, open the last one again.
     pub reopen_last: bool,
+    pub interface: InterfaceChoice,
 }
 
 /// The app's session: what's open, and what can be done with it. Thread-safe; its
@@ -172,7 +182,11 @@ impl ViewerSession {
             viewer_core::Theme::Light => ThemeChoice::Light,
             viewer_core::Theme::Dark => ThemeChoice::Dark,
         };
-        AppSettings { theme, reopen_last: s.reopen_last }
+        let interface = match s.interface {
+            viewer_core::Interface::Native => InterfaceChoice::Native,
+            viewer_core::Interface::Libgui => InterfaceChoice::Libgui,
+        };
+        AppSettings { theme, reopen_last: s.reopen_last, interface }
     }
 
     /// Changes the settings (saved by [`Self::save`]).
@@ -182,7 +196,11 @@ impl ViewerSession {
             ThemeChoice::Light => viewer_core::Theme::Light,
             ThemeChoice::Dark => viewer_core::Theme::Dark,
         };
-        self.session().set_settings(viewer_core::Settings { theme, reopen_last: settings.reopen_last });
+        let interface = match settings.interface {
+            InterfaceChoice::Native => viewer_core::Interface::Native,
+            InterfaceChoice::Libgui => viewer_core::Interface::Libgui,
+        };
+        self.session().set_settings(viewer_core::Settings { theme, reopen_last: settings.reopen_last, interface });
     }
 
     pub fn recents(&self) -> Vec<RecentItem> {

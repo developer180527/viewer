@@ -37,7 +37,23 @@ struct ViewerApp: App {
     }
 }
 
+/// The window: SwiftUI's interface, or libgui's (the Interface setting), both on the
+/// same session, so switching keeps what's open and where.
 struct Root: View {
+    @EnvironmentObject var shell: Shell
+    var body: some View {
+        if shell.settings.interface == .libgui {
+            DrawnView(whole: true)
+                .frame(minWidth: 640, minHeight: 420)
+                .navigationTitle(shell.title)
+                .onOpenURL { url in if url.isFileURL { shell.open(url) } }
+        } else {
+            NativeRoot()
+        }
+    }
+}
+
+struct NativeRoot: View {
     @EnvironmentObject var shell: Shell
     @State private var showInfo = false
 

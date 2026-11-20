@@ -10,6 +10,7 @@
 //! - [`Canvas`]: one page drawn into a surface another UI owns (a `CAMetalLayer` in the
 //!   SwiftUI shell), with its input pushed in by that UI.
 
+pub mod chrome;
 pub mod fonts;
 mod gpu;
 pub mod views;

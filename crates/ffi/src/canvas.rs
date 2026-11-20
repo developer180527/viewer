@@ -14,13 +14,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use libgui::{Cursor, InputEvent, Key, Modifiers, PointerButton, TouchPhase as Phase, Vec2, WheelUnit};
+use viewer_surface::chrome::{Request, ViewerApp};
 use viewer_surface::views::Action;
 use viewer_surface::{Canvas, Wake};
 
 use crate::ViewerSession;
 
+/// A canvas, and for one showing libgui's whole interface, that interface.
+struct Slot {
+    canvas: Canvas,
+    app: Option<ViewerApp>,
+}
+
 thread_local! {
-    static CANVASES: RefCell<HashMap<u64, Canvas>> = RefCell::new(HashMap::new());
+    static CANVASES: RefCell<HashMap<u64, Slot>> = RefCell::new(HashMap::new());
 }
 static NEXT: AtomicU64 = AtomicU64::new(1);
 /// Canvases whose object was dropped on another thread: dropped on the main thread
@@ -28,6 +35,10 @@ static NEXT: AtomicU64 = AtomicU64::new(1);
 static ORPHANS: Mutex<Vec<u64>> = Mutex::new(Vec::new());
 
 fn with<R>(id: u64, f: impl FnOnce(&mut Canvas) -> R) -> Option<R> {
+    with_slot(id, |s| f(&mut s.canvas))
+}
+
+fn with_slot<R>(id: u64, f: impl FnOnce(&mut Slot) -> R) -> Option<R> {
     let orphans = std::mem::take(&mut *ORPHANS.lock().unwrap_or_else(|e| e.into_inner()));
     CANVASES.with(|c| {
         let mut c = c.borrow_mut();
@@ -69,6 +80,16 @@ pub enum CursorShape {
     Crosshair,
 }
 
+/// What libgui's interface asks the shell to do: its picker.
+#[derive(uniffi::Enum, Clone, Debug, PartialEq, Eq)]
+pub enum AppRequest {
+    /// Open…: a file or folder to open (`open_granted` it).
+    Open,
+    /// Open Folder… on a blocked model: ask for `folder`, then reopen `reopen` from
+    /// inside it.
+    AllowFolder { reopen: String, folder: Option<String> },
+}
+
 /// What a frame asks of the shell.
 #[derive(uniffi::Record, Clone, Debug, PartialEq)]
 pub struct Frame {
@@ -76,8 +97,11 @@ pub struct Frame {
     /// only after input or a wake.
     pub repaint_after: Option<f64>,
     pub cursor: CursorShape,
-    /// The view opened something (an entry of a container): refresh the chrome.
+    /// What's open (or the settings) changed in this frame: an entry opened, Back,
+    /// a setting. Refresh what's shown from the session.
     pub opened: bool,
+    /// libgui's interface asked for the picker.
+    pub request: Option<AppRequest>,
 }
 
 /// Where a finger is in its touch.
@@ -126,12 +150,48 @@ impl ViewerCanvas {
         };
         let canvas = canvas.map_err(|e| CanvasError::Gpu(format!("{e:#}")))?;
         let id = NEXT.fetch_add(1, Ordering::Relaxed);
-        CANVASES.with(|c| c.borrow_mut().insert(id, canvas));
+        CANVASES.with(|c| c.borrow_mut().insert(id, Slot { canvas, app: None }));
         Ok(Arc::new(Self { id, session, thread: std::thread::current().id() }))
     }
 
-    /// Draws the current page if anything changed. Returns what the frame asks for.
+    /// A canvas showing libgui's whole interface for the session (the libgui app's
+    /// window: toolbar, menus, info, the page), the Interface setting's libgui. It
+    /// reads and changes the same session as the native interface, so switching keeps
+    /// what's open and where. Main thread only.
+    #[uniffi::constructor]
+    pub fn app(session: Arc<ViewerSession>, layer: u64, width: u32, height: u32, scale: f32, dark: bool) -> Result<Arc<Self>, CanvasError> {
+        let this = Self::new(session.clone(), layer, width, height, scale, dark)?;
+        // The interface lends its session to the shared one each frame (see `draw`);
+        // between frames it holds this empty one.
+        let waker = session.waker.clone();
+        let hooks = viewer_core::Hooks::new(Arc::new(move || waker.wake()));
+        let mut app = ViewerApp::new(viewer_core::Session::new(hooks), dark);
+        app.set_system_dark(dark);
+        app.offers_native = true;
+        with_slot(this.id, |s| {
+            s.canvas.set_touch_screen(cfg!(any(target_os = "ios", target_os = "visionos")));
+            s.app = Some(app);
+        });
+        Ok(this)
+    }
+
+    /// The edges of the canvas the system covers (the notch, the home indicator), in
+    /// points: libgui's interface keeps its controls inside them.
+    pub fn set_safe_area(&self, top: f32, left: f32, bottom: f32, right: f32) {
+        with_slot(self.id, |s| {
+            if let Some(app) = s.app.as_mut() {
+                app.safe_area = libgui::Insets { top, left, bottom, right };
+            }
+            s.canvas.touch();
+        });
+    }
+
+    /// Draws the current page (or libgui's interface) if anything changed. Returns
+    /// what the frame asks for.
     pub fn draw(&self) -> Frame {
+        if let Some(frame) = with_slot(self.id, |s| s.app.is_some().then(|| self.draw_app(s))).flatten() {
+            return frame;
+        }
         let mut action = None;
         let frame = with(self.id, |c| {
             let mut session = self.session.session();
@@ -150,9 +210,9 @@ impl ViewerCanvas {
             {
                 session.set_place(id, viewer_core::Place { page: p.page.min(u32::MAX as usize) as u32, offset: p.offset, zoom: p.zoom });
             }
-            Frame { repaint_after: drawn.repaint_after.map(f64::from), cursor: cursor(drawn.cursor), opened: false }
+            Frame { repaint_after: drawn.repaint_after.map(f64::from), cursor: cursor(drawn.cursor), opened: false, request: None }
         });
-        let mut frame = frame.unwrap_or(Frame { repaint_after: None, cursor: CursorShape::Arrow, opened: false });
+        let mut frame = frame.unwrap_or(Frame { repaint_after: None, cursor: CursorShape::Arrow, opened: false, request: None });
         if let Some(Action::OpenEntry(container, index)) = action {
             self.session.session().open_entry(container, index);
             frame.opened = true;
@@ -171,8 +231,16 @@ impl ViewerCanvas {
         with(self.id, |c| c.set_touch_screen(touch));
     }
 
+    /// Whether the view is dark (its appearance). libgui's interface takes it as the
+    /// system's, which its Theme setting can override.
     pub fn set_dark(&self, dark: bool) {
-        with(self.id, |c| c.set_dark(dark));
+        with_slot(self.id, |s| match s.app.as_mut() {
+            Some(app) => {
+                app.set_system_dark(dark);
+                s.canvas.touch();
+            }
+            None => s.canvas.set_dark(dark),
+        });
     }
 
     /// Something outside changed what's shown (the shell was woken): build the next
@@ -254,6 +322,26 @@ impl ViewerCanvas {
 }
 
 impl ViewerCanvas {
+    /// A frame of libgui's interface, on the shared session: lent to it for the
+    /// frame, under the lock, and taken back.
+    fn draw_app(&self, s: &mut Slot) -> Frame {
+        let app = s.app.as_mut().expect("an app canvas");
+        let mut session = self.session.session();
+        let before = Snapshot::of(&session);
+        app.swap_session(&mut session);
+        let drawn = s.canvas.draw_app(app);
+        app.swap_session(&mut session);
+        let opened = Snapshot::of(&session) != before;
+        let request = app.requests.drain(..).next().map(|r| match r {
+            Request::Open => AppRequest::Open,
+            Request::AllowFolder { reopen } => AppRequest::AllowFolder {
+                folder: viewer_core::Session::open_folder_for(&reopen).map(|f| f.display().to_string()),
+                reopen: reopen.display().to_string(),
+            },
+        });
+        Frame { repaint_after: drawn.repaint_after.map(f64::from), cursor: cursor(drawn.cursor), opened, request }
+    }
+
     fn key(&self, key: Option<Key>, pressed: bool, repeat: bool) -> bool {
         let Some(key) = key else { return false };
         self.push(InputEvent::Key { key, pressed, repeat });
@@ -336,5 +424,28 @@ mod tests {
         }
         assert_eq!(mac_key(0x79), Some(Key::PageDown));
         assert_eq!(mac_key(0x31), Some(Key::Space));
+    }
+}
+
+/// What the native interface shows from the session, to tell whether a frame of
+/// libgui's changed it.
+#[derive(PartialEq)]
+struct Snapshot {
+    page: Option<u64>,
+    pages: usize,
+    loading: Option<String>,
+    error: Option<String>,
+    settings: viewer_core::Settings,
+}
+
+impl Snapshot {
+    fn of(s: &viewer_core::Session) -> Self {
+        Self {
+            page: s.current().map(|p| p.id),
+            pages: s.pages().len(),
+            loading: s.loading().map(str::to_owned),
+            error: s.error().map(str::to_owned),
+            settings: s.settings().clone(),
+        }
     }
 }

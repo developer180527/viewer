@@ -37,7 +37,11 @@ struct Root: View {
 
     var body: some View {
         Group {
-            if width == .regular {
+            if shell.settings.interface == .libgui {
+                // libgui's whole interface, edge to edge; it keeps clear of the notch
+                // and home indicator itself.
+                DrawnView(whole: true).ignoresSafeArea()
+            } else if width == .regular {
                 NavigationSplitView(columnVisibility: $columns) {
                     Sidebar(showSettings: $showSettings)
                         .navigationTitle("Viewer")

@@ -5,7 +5,7 @@
 //! winit events into libgui input, sleeps until something needs a frame, and
 //! applies what the UI asks for (cursor, title, textures to free).
 
-mod app;
+mod picking;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -25,7 +25,8 @@ use rendererx::scene_data::CpuScene;
 /// finished, a picker answered, a texture arrived).
 pub static WAKE: std::sync::OnceLock<Box<dyn Fn() + Send + Sync>> = std::sync::OnceLock::new();
 use crate::{Args, startup};
-use app::ViewerApp;
+use picking::Picking;
+use viewer_surface::chrome::ViewerApp;
 
 /// Window size in logical px, for the window and for headless screenshots.
 const SIZE: (f32, f32) = (1100.0, 760.0);
@@ -289,6 +290,8 @@ struct Host {
     title: String,
     live: Option<Live>,
     app: Option<ViewerApp>,
+    /// The file picker, for the interface's Open… and Open Folder….
+    picking: Picking,
     benchmark: bool,
     content_frames: u32,
     first_frame_done: bool,
@@ -401,7 +404,7 @@ impl Host {
             dt: w.idle,
         };
 
-        if app.poll_job() {
+        if self.picking.handle(app) | app.poll_job() {
             w.stale = true;
         }
         // The theme: the settings' against the system's, either of which can change.
@@ -420,6 +423,10 @@ impl Host {
             let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
             w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
+            // Open… asked for this frame: the picker comes up now.
+            if !app.requests.is_empty() {
+                self.picking.handle(app);
+            }
             let out = w.ui.end_frame();
             if self.content_frames == 0 { startup::mark(&format!("  frame built in {:.2} ms", t.elapsed().as_secs_f64() * 1000.0)); }
             platform = out.platform.clone();

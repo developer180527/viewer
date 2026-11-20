@@ -13,6 +13,7 @@ use anyhow::{Context as _, anyhow};
 use libgui::*;
 use viewer_core::Page;
 
+use crate::chrome::ViewerApp;
 use crate::views::{self, Action, ViewState};
 use crate::{Gpu, Rx, Wake, fonts, open_device};
 
@@ -234,6 +235,38 @@ impl Canvas {
         }
         self.saved.retain(|id, _| pages.iter().any(|p| p.id == *id));
 
+        let mut views = std::mem::take(&mut self.views);
+        let drawn = self.frame(retired, |ui, gpu, dark| {
+            let fill = ui.theme.palette.bg_app;
+            let mut action = None;
+            ui.container_id(Id::from_name("canvas"), Layout::column(), Frame { fill, clip: true, ..Frame::none() }, |ui| {
+                if let Some((page, view)) = current.and_then(|p| views.get_mut(&p.id).map(|v| (p, v))) {
+                    action = views::show(ui, page, view, gpu, dark);
+                }
+            });
+            action
+        });
+        self.views = views;
+        drawn
+    }
+
+    /// Draws libgui's whole interface for Viewer ([`ViewerApp`]: toolbar, menus, info,
+    /// the page), the Apple apps' libgui interface. Its views and their textures are
+    /// its own; the canvas's page views stay as they were for when it draws a page
+    /// again.
+    pub fn draw_app(&mut self, app: &mut ViewerApp) -> Drawn {
+        self.set_dark(app.dark);
+        // Textures of pages it closed in the last frame.
+        let retired = std::mem::take(&mut app.retired);
+        self.frame(retired, |ui, gpu, _| {
+            app.ui(ui, gpu);
+            None
+        })
+    }
+
+    /// Builds a frame with `build` if anything changed, frees `retired` textures, and
+    /// presents.
+    fn frame(&mut self, retired: Vec<TextureId>, build: impl FnOnce(&mut Ui, &mut Gpu, bool) -> Option<Action>) -> Drawn {
         let now = Instant::now();
         self.idle += (now - self.last).as_secs_f32();
         self.last = now;
@@ -263,14 +296,7 @@ impl Canvas {
                 touch_screen: self.touch_screen,
             };
             self.pinch = 1.0;
-            let (dark, views) = (self.dark, &mut self.views);
-            let fill = self.ui.theme.palette.bg_app;
-            let mut action = None;
-            self.ui.container_id(Id::from_name("canvas"), Layout::column(), Frame { fill, clip: true, ..Frame::none() }, |ui| {
-                if let Some((page, view)) = current.and_then(|p| views.get_mut(&p.id).map(|v| (p, v))) {
-                    action = views::show(ui, page, view, &mut gpu, dark);
-                }
-            });
+            let action = build(&mut self.ui, &mut gpu, self.dark);
             let out = self.ui.end_frame();
             drawn.action = action;
             drawn.repaint_after = out.platform.repaint_after;

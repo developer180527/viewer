@@ -35,7 +35,7 @@ final class Shell: ObservableObject {
     /// Recently opened files, newest first (viewer-core's list).
     @Published private(set) var recents: [RecentItem] = []
     /// The user's settings (viewer-core's): set through `settings`, saved at once.
-    @Published var settings = AppSettings(theme: .system, reopenLast: true) {
+    @Published var settings = AppSettings(theme: .system, reopenLast: true, interface: .native) {
         didSet {
             guard settings != oldValue else { return }
             session.setSettings(settings: settings)
@@ -182,6 +182,9 @@ final class Shell: ObservableObject {
         info = session.info()
         error = session.error()
         canGoBack = session.canGoBack()
+        // libgui's interface can change them too (its Settings menu).
+        let now = session.settings()
+        if now != settings { settings = now }
         let was = page
         page = session.pageId()
         recents = session.recents()

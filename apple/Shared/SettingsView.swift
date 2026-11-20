@@ -14,6 +14,10 @@ struct SettingsView: View {
                 Text("Dark").tag(ThemeChoice.dark)
             }
             Toggle("Reopen the last file at launch", isOn: $shell.settings.reopenLast)
+            Picker("Interface", selection: $shell.settings.interface) {
+                Text("Native").tag(InterfaceChoice.native)
+                Text("libgui").tag(InterfaceChoice.libgui)
+            }
             Section {
                 Button("Clear Recent Files", role: .destructive) { shell.clearRecents() }
                     .disabled(shell.recents.isEmpty)

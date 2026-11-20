@@ -8,10 +8,13 @@ import SwiftUI
 
 struct DrawnView: NSViewRepresentable {
     @EnvironmentObject var shell: Shell
+    /// libgui's whole interface (the Interface setting), not just the page.
+    var whole = false
 
     func makeNSView(context: Context) -> CanvasView {
         let view = CanvasView()
         view.shell = shell
+        view.whole = whole
         return view
     }
 
@@ -27,6 +30,8 @@ struct DrawnView: NSViewRepresentable {
 
 final class CanvasView: NSView {
     weak var shell: Shell?
+    /// Draws libgui's whole interface on the shared session, not just the page.
+    var whole = false
     private var canvas: ViewerCanvas?
     private var failed = false
     private var link: CADisplayLink?
@@ -80,7 +85,9 @@ final class CanvasView: NSView {
         let address = UInt64(UInt(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
         let (w, h) = pixels
         do {
-            canvas = try ViewerCanvas(session: shell.session, layer: address, width: w, height: h, scale: Float(scale), dark: dark)
+            canvas = whole
+                ? try ViewerCanvas.app(session: shell.session, layer: address, width: w, height: h, scale: Float(scale), dark: dark)
+                : try ViewerCanvas(session: shell.session, layer: address, width: w, height: h, scale: Float(scale), dark: dark)
         } catch {
             failed = true
             shell.canvasFailed("\(error)")
@@ -132,6 +139,16 @@ final class CanvasView: NSView {
         guard let canvas else { link?.isPaused = true; return }
         let frame = canvas.draw()
         if frame.opened { shell?.refresh() }
+        if let request = frame.request {
+            // After this frame: a picker shouldn't come up inside the display link.
+            DispatchQueue.main.async { [weak self] in
+                guard let shell = self?.shell else { return }
+                switch request {
+                case .open: shell.openPanel()
+                case let .allowFolder(reopen, folder): shell.allow(reopen: reopen, folder: folder)
+                }
+            }
+        }
         if frame.cursor != cursor {
             cursor = frame.cursor
             window?.invalidateCursorRects(for: self)

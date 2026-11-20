@@ -43,16 +43,27 @@ impl Theme {
     }
 }
 
+/// Which interface an app with two draws (the Apple apps): its own platform's, or
+/// libgui's, the libgui app's interface in the same window. The libgui app has only
+/// libgui's and ignores it.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Interface {
+    #[default]
+    Native,
+    Libgui,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Settings {
     pub theme: Theme,
     /// At launch with no file named, open the last file again (at its place).
     pub reopen_last: bool,
+    pub interface: Interface,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { theme: Theme::System, reopen_last: true }
+        Self { theme: Theme::System, reopen_last: true, interface: Interface::Native }
     }
 }
 
@@ -81,6 +92,7 @@ impl SettingsFile {
             match (key.trim(), value.trim()) {
                 ("theme", v) => values.theme = Theme::from_name(v).unwrap_or_default(),
                 ("reopen_last", v) => values.reopen_last = v != "false",
+                ("interface", v) => values.interface = if v == "libgui" { Interface::Libgui } else { Interface::Native },
                 _ => unknown.push(line.to_owned()),
             }
         }
@@ -105,7 +117,11 @@ impl SettingsFile {
         if let Some(dir) = file.parent() {
             std::fs::create_dir_all(dir)?;
         }
-        let mut text = format!("theme = {}\nreopen_last = {}\n", self.values.theme.name(), self.values.reopen_last);
+        let interface = match self.values.interface {
+            Interface::Native => "native",
+            Interface::Libgui => "libgui",
+        };
+        let mut text = format!("theme = {}\nreopen_last = {}\ninterface = {interface}\n", self.values.theme.name(), self.values.reopen_last);
         for line in &self.unknown {
             text.push_str(line);
             text.push('\n');
@@ -132,14 +148,14 @@ mod tests {
         let file = dir.join("settings.txt");
         let mut s = SettingsFile::load(file.clone());
         assert_eq!(s.get(), &Settings::default());
-        s.set(Settings { theme: Theme::Dark, reopen_last: false });
+        s.set(Settings { theme: Theme::Dark, reopen_last: false, interface: Interface::Libgui });
         s.save().unwrap();
         // A newer build's setting, and a value this one can't read.
         let text = std::fs::read_to_string(&file).unwrap();
         std::fs::write(&file, format!("{text}future = 7\n")).unwrap();
         let mut back = SettingsFile::load(file.clone());
-        assert_eq!(back.get(), &Settings { theme: Theme::Dark, reopen_last: false });
-        back.set(Settings { theme: Theme::Light, reopen_last: false });
+        assert_eq!(back.get(), &Settings { theme: Theme::Dark, reopen_last: false, interface: Interface::Libgui });
+        back.set(Settings { theme: Theme::Light, reopen_last: false, interface: Interface::Native });
         back.save().unwrap();
         assert!(std::fs::read_to_string(&file).unwrap().contains("future = 7"));
         std::fs::write(&file, "theme = purple\n").unwrap();

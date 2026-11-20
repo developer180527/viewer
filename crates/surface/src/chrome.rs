@@ -1,28 +1,34 @@
-//! The window's contents: toolbar, the current page's view, info panel, status bar.
-//! Knows nothing about winit or the GPU; the host in `mod.rs` drives it. What's open
-//! and what can be done with it is `viewer-core`'s [`Session`]; this draws it, and
-//! maps buttons, keys and drops onto its commands.
+//! libgui's interface for Viewer: toolbar, the current page's view, info panel, status
+//! bar, menus. The libgui app's whole window, and the Apple apps' libgui interface (the
+//! Interface setting), drawn in a canvas a SwiftUI view owns. Knows nothing about
+//! winit, the GPU or the platform's file picker: what it can't do itself it asks its
+//! host for ([`Request`]). What's open and what can be done with it is `viewer-core`'s
+//! [`Session`]; this draws it, and maps buttons, keys and drops onto its commands.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use libgui::*;
 use libgui_keymap::{Chord, Keymap};
-use libfilepicker::{PickOptions, Picked};
-use viewer_core::{GrantId, Info, Notice, Place, Session, Settings, Status, Theme, human_bytes};
+use viewer_core::{Info, Interface, Notice, Place, Session, Settings, Status, Theme, human_bytes};
 
 use libviewer::Host;
-use viewer_surface::views::{self, Action, ViewState};
+use crate::views::{self, Action, ViewState};
 
-/// An answer from the file picker, and what it was for.
-struct Pick {
-    picked: Picked,
-    /// Open Folder… on a model whose neighbours were blocked: reopen this model
-    /// from inside the picked folder, if it is in there.
-    reopen: Option<PathBuf>,
+/// What the interface asks its host to do: the platform's file picker, which hands
+/// its answer to the session as a grant ([`Session::open_granted`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Request {
+    /// Open…: a file or folder to open.
+    Open,
+    /// Open Folder… on a model whose neighbours were blocked: ask for its folder
+    /// (starting there), then reopen `reopen` from inside it.
+    AllowFolder { reopen: PathBuf },
 }
+
+/// The payload kind of a file dragged in from the OS, carrying `Vec<PathBuf>`
+/// (libgui_winit's `FILES`; named here so this needn't depend on winit).
+pub const FILES: &str = "files";
 
 /// What Open Recent asked for.
 enum RecentPick {
@@ -105,11 +111,11 @@ pub struct ViewerApp {
     pub title: Option<String>,
     /// Textures of closed pages, for the host to free.
     pub retired: Vec<TextureId>,
-    /// Where the file picker leaves its answer, which can come after `pick` returns.
-    picked: Rc<RefCell<Option<Pick>>>,
-    /// What the user picked, kept while the session's pages read through it: each
-    /// holds the platform's access (see [`Picked`]), dropped here, on this thread.
-    grants: HashMap<GrantId, Picked>,
+    /// What the host is asked to do (taken by it after each frame).
+    pub requests: Vec<Request>,
+    /// Hosted by an app with an interface of its own (the Apple apps): Settings
+    /// offers the way back to it.
+    pub offers_native: bool,
     keys: Keymap<Command>,
     /// The page whose file was current when the recent list was last saved.
     saved_for: Option<u64>,
@@ -130,8 +136,8 @@ impl ViewerApp {
             system_dark,
             title: None,
             retired: Vec::new(),
-            picked: Rc::default(),
-            grants: HashMap::new(),
+            requests: Vec::new(),
+            offers_native: false,
             keys: Self::keymap(),
             saved_for: None,
         }
@@ -189,16 +195,13 @@ impl ViewerApp {
     }
 
     fn open_dialog(&mut self) {
-        let slot = Rc::clone(&self.picked);
-        libfilepicker::pick(move |picked| deliver(&slot, picked, None));
+        self.requests.push(Request::Open);
     }
 
     /// Open Folder…: asks for the folder `model` is in (the picker opens there, so it
     /// is one tap), then reopens the model from inside it.
     fn open_folder_for(&mut self, model: PathBuf) {
-        let slot = Rc::clone(&self.picked);
-        let opts = PickOptions { folders: true, start_in: Session::open_folder_for(&model) };
-        libfilepicker::pick_with(opts, move |picked| deliver(&slot, picked, Some(model)));
+        self.requests.push(Request::AllowFolder { reopen: model });
     }
 
     /// Frees the view state (and its textures) of pages the session closed, and
@@ -229,9 +232,6 @@ impl ViewerApp {
         if let Some(t) = self.session.take_title() {
             self.title = Some(t);
         }
-        for id in self.session.take_released() {
-            self.grants.remove(&id);
-        }
     }
 
     fn back(&mut self) {
@@ -240,15 +240,21 @@ impl ViewerApp {
         }
     }
 
-    /// Starts loading a file the picker chose, or takes in a finished load. Returns
-    /// true when a file started or finished loading (successfully or not).
+    /// The session, for the host: to hand it what the picker chose
+    /// ([`Session::open_granted`]) and take back the grants it released.
+    pub fn session_mut(&mut self) -> &mut Session {
+        &mut self.session
+    }
+
+    /// Trades sessions with `other`: a host that shares the session with another
+    /// interface (the Apple apps' native one) lends it for a frame and takes it back.
+    pub fn swap_session(&mut self, other: &mut Session) {
+        std::mem::swap(&mut self.session, other);
+    }
+
+    /// Takes in a finished load. Returns true when a file finished loading
+    /// (successfully or not).
     pub fn poll_job(&mut self) -> bool {
-        let pick = self.picked.borrow_mut().take();
-        if let Some(Pick { picked, reopen }) = pick {
-            let id = self.session.open_granted(picked.path(), reopen, None);
-            self.grants.insert(id, picked);
-            return true;
-        }
         let done = self.session.poll();
         if done {
             self.sync_views();
@@ -257,6 +263,9 @@ impl ViewerApp {
     }
 
     pub fn ui(&mut self, ui: &mut Ui, tex: &mut dyn Host) {
+        // Pages another interface or the host's own polling opened or closed since
+        // the last frame get their view state now.
+        self.sync_views();
         let pal = ui.theme.palette;
         let safe = self.safe_area;
         // Layout works in the safe rect; the backgrounds still fill the screen.
@@ -266,7 +275,7 @@ impl ViewerApp {
         let root = Id::from_name("root");
         let mut action = None;
         ui.container_id(root, Layout::column().padding(safe), Frame { fill: pal.bg_app, ..Frame::none() }, |ui| {
-            let drop = ui.drop_zone(&[libgui_winit::FILES]);
+            let drop = ui.drop_zone(&[FILES]);
             if let Some(payload) = drop.dropped
                 && let Some(path) = payload.take::<Vec<PathBuf>>().ok().and_then(|p| p.into_iter().next())
             {
@@ -421,6 +430,12 @@ impl ViewerApp {
             let reopen = if now.reopen_last { "Reopen last file at launch: on" } else { "Reopen last file at launch: off" };
             if ui.menu_item(reopen).clicked {
                 new = Some(Settings { reopen_last: !now.reopen_last, ..now.clone() });
+            }
+            if self.offers_native {
+                ui.menu_separator();
+                if ui.menu_item("Use the native interface").clicked {
+                    new = Some(Settings { interface: Interface::Native, ..now.clone() });
+                }
             }
             new
         };
@@ -621,16 +636,6 @@ impl ViewerApp {
             }
         }
         reopen
-    }
-}
-
-/// Hands a picker's answer to the app and wakes it (the answer can come after the
-/// frame that asked, on phones). A cancelled pick changes nothing.
-fn deliver(slot: &Rc<RefCell<Option<Pick>>>, picked: Option<Picked>, reopen: Option<PathBuf>) {
-    let Some(picked) = picked else { return };
-    *slot.borrow_mut() = Some(Pick { picked, reopen });
-    if let Some(wake) = super::WAKE.get() {
-        wake();
     }
 }
 

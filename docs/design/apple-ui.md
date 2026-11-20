@@ -84,6 +84,8 @@ Optional, and last in the build order. A setting, **Interface: Native / libgui**
 
 The cost is that every feature's UI exists twice on Apple platforms (editing tools, Info, settings): `viewer-core` keeps the behaviour single, but not the screens. If that cost isn't worth paying, the libgui mode can stay on the Mac only, for development and checking the two interfaces agree.
 
+✅ 2026-11-20, built: the libgui app's interface is `viewer_surface::chrome::ViewerApp`, shared. It asks its host for the picker (`Request::Open`, `Request::AllowFolder`) rather than calling one: the libgui app answers with libfilepicker (`crates/app/src/lg/picking.rs`), the Apple apps with their own. `Canvas::draw_app` draws it on the same canvas the Metal view uses, and viewer-ffi's `ViewerCanvas.app(...)` puts it on a `CAMetalLayer`, lending it the shared session for each frame under the lock, so both interfaces see one session. The setting is viewer-core's `Settings::interface`; the Apple apps swap their root view when it changes, and libgui's Settings menu has "Use the native interface" there. Checked on the iPhone simulator: switching both ways keeps the open PDF at its page and zoom. Not done: drag and drop into libgui's interface on the Mac, and VoiceOver (libgui has none), which is why native stays the default.
+
 ## 7. Accessibility
 
 On Apple platforms, the SwiftUI shell is where accessibility comes from: native views are accessible by default. Content drawn by Rust (pages, images, 3D) still needs a description and, where it has structure, accessible children, and those come from the same facets libgui's AccessKit tree will use (a PDF's tagged structure, an image's description, a scene's object list). The parsers supply that meaning once, for both shells.

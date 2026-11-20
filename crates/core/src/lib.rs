@@ -29,7 +29,7 @@ use viewer_model::{Document, FileSource, Unreadable};
 
 use loading::{Job, Loaded, Target};
 pub use recents::{Place, Recent, Recents};
-pub use settings::{Settings, SettingsFile, Theme};
+pub use settings::{Interface, Settings, SettingsFile, Theme};
 
 /// Wakes the shell from a loader thread: it should call [`Session::poll`].
 pub type Waker = Arc<dyn Fn() + Send + Sync>;

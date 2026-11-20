@@ -9,10 +9,13 @@ import UIKit
 
 struct DrawnView: UIViewRepresentable {
     @EnvironmentObject var shell: Shell
+    /// libgui's whole interface (the Interface setting), not just the page.
+    var whole = false
 
     func makeUIView(context: Context) -> CanvasView {
         let view = CanvasView()
         view.shell = shell
+        view.whole = whole
         return view
     }
 
@@ -27,6 +30,8 @@ struct DrawnView: UIViewRepresentable {
 
 final class CanvasView: UIView {
     weak var shell: Shell?
+    /// Draws libgui's whole interface on the shared session, not just the page.
+    var whole = false
     private var canvas: ViewerCanvas?
     private var failed = false
     private var link: CADisplayLink?
@@ -79,8 +84,12 @@ final class CanvasView: UIView {
         let address = UInt64(UInt(bitPattern: Unmanaged.passUnretained(layer).toOpaque()))
         let (w, h) = pixels
         do {
-            canvas = try ViewerCanvas(session: shell.session, layer: address, width: w, height: h, scale: Float(scale), dark: dark)
+            canvas = whole
+                ? try ViewerCanvas.app(session: shell.session, layer: address, width: w, height: h, scale: Float(scale), dark: dark)
+                : try ViewerCanvas(session: shell.session, layer: address, width: w, height: h, scale: Float(scale), dark: dark)
             canvas?.setTouchScreen(touch: true)
+            let s = safeAreaInsets
+            canvas?.setSafeArea(top: Float(s.top), left: Float(s.left), bottom: Float(s.bottom), right: Float(s.right))
         } catch {
             failed = true
             shell.canvasFailed("\(error)")
@@ -97,6 +106,13 @@ final class CanvasView: UIView {
         link = nil
         timer?.invalidate()
         canvas = nil
+    }
+
+    override func safeAreaInsetsDidChange() {
+        super.safeAreaInsetsDidChange()
+        let s = safeAreaInsets
+        canvas?.setSafeArea(top: Float(s.top), left: Float(s.left), bottom: Float(s.bottom), right: Float(s.right))
+        redraw()
     }
 
     override func layoutSubviews() {
@@ -120,6 +136,16 @@ final class CanvasView: UIView {
         guard let canvas else { link?.isPaused = true; return }
         let frame = canvas.draw()
         if frame.opened { shell?.refresh() }
+        if let request = frame.request {
+            // After this frame: a picker shouldn't come up inside the display link.
+            DispatchQueue.main.async { [weak self] in
+                guard let shell = self?.shell else { return }
+                switch request {
+                case .open: shell.openPanel()
+                case let .allowFolder(reopen, folder): shell.allow(reopen: reopen, folder: folder)
+                }
+            }
+        }
         switch frame.repaintAfter {
         case let .some(t) where t <= 0:
             break // an animation, a fling, a model loading: every refresh
