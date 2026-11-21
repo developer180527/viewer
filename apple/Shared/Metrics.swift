@@ -36,6 +36,18 @@ enum Metrics {
         String(format: "%.0f ms", Date().timeIntervalSince(t) * 1000)
     }
 
+    /// Hands memory the allocator holds free back to the system. Decoders free their
+    /// buffers, but the allocator keeps the pages (Sponza at rest: 107 MB live, 429 MB
+    /// counted against the app), and iOS ends apps by what's counted. Cheap; done when
+    /// a burst of work ends, at most once a second.
+    nonisolated(unsafe) private static var lastRelief: CFAbsoluteTime = 0
+    static func releaseFreeMemory() {
+        let now = CFAbsoluteTimeGetCurrent()
+        guard now - lastRelief > 1 else { return }
+        lastRelief = now
+        malloc_zone_pressure_relief(nil, 0)
+    }
+
     /// phys_footprint, in bytes (0 if unknown).
     static func footprintBytes() -> UInt64 {
         var info = task_vm_info_data_t()

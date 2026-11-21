@@ -171,6 +171,8 @@ final class CanvasView: NSView {
             }
         case .none:
             link?.isPaused = true
+            // The canvas is idle: what loading and decoding freed can go back.
+            Metrics.releaseFreeMemory()
         }
     }
 

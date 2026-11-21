@@ -215,7 +215,11 @@ final class Shell: ObservableObject {
         page = session.pageId()
         recents = session.recents()
         // Another file: keep where the reader was in the last one.
-        if page != was { save() }
+        if page != was {
+            save()
+            // The last file's memory, freed, back to the system.
+            Metrics.releaseFreeMemory()
+        }
         for id in session.takeReleased() {
             grants.removeValue(forKey: id)?.stopAccessingSecurityScopedResource()
         }

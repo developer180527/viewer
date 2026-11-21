@@ -245,6 +245,41 @@ In order. Each step names the scenario that proves it and the target; re-run
     heap blocks are MuPDF's resource store, then cap it (`fz_new_context` store size,
     ~64 MB).
 
+    ◐ **Images and the PDF store done 2026-11-21; 3D textures still to do.**
+
+    (10) An image too big to hold whole (over 128 MB of pixels on the Mac, 64 MB on
+    touch) is now decoded once into a box-filtered preview of at most 4096 px a side,
+    which is what fit and moderate zoom draw. Once the view zooms past the preview (more
+    than 1.25 image pixels per device pixel) *and holds still for 200 ms*, a second
+    decode pass crops the view plus a 25% margin out of the full image (up to 96 MB on
+    the Mac, 48 MB on touch) and draws it over the preview. Panning inside that region
+    costs nothing. Waiting for the view to hold matters: decoding on every pan out of the
+    region cost 910 mW on the iPhone, against 120 mW once it waited. Tile edges now snap
+    to device pixels, which also removed the faint seams between tiles that images
+    always had. The simulator check: an 8192² checkerboard of one-pixel squares shows
+    flat grey at fit and the squares at 100%.
+
+    (12) The Allocations trace said otherwise: the 225 MB of large heap blocks were pages
+    freed but not yet given back, not MuPDF's store. The shell now calls
+    `malloc_zone_pressure_relief` when the canvas goes idle and on each page change (at
+    most once a second, in `Metrics.releaseFreeMemory`). That gives the pages back, so no
+    store cap was needed.
+
+    | | Before | After |
+    |---|---|---|
+    | Mac huge.png at fit, total / GPU | 404 / 265 MB | 182 / 72 MB |
+    | Mac geotopo.pdf at rest | 577 MB (225 MB large heap) | 216 MB (13 MB) |
+    | iPhone image-zoom-pan peak | 454–503 MB | 250 MB |
+    | iPhone image-zoom-pan power | — | 120 mW |
+    | Mac Sponza | 842 MB | 842 MB (unchanged) |
+
+    (11) Still to do. Two thirds of it was already in place: libfileparser-3d caps the
+    base level at 2048 and builds mips, and scene-data frees each texture's CPU copy once
+    it's uploaded. What's left is compression. Sponza's 409 MB of GPU textures would be
+    about a quarter of that as ASTC 4×4 on iOS or BC7 on the Mac. That means encoding on
+    the load worker (or caching encoded textures beside the file), which is a task of its
+    own. The other ~377 MB of Sponza is malloc and wants its own Allocations pass.
+
 ### Step 6: the smaller ones (findings 10, 11)
 
 13. **Spreadsheet rows:** format each cell to text once (on load or per 256-row chunk) and
