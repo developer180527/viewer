@@ -128,6 +128,21 @@ impl TableSource for Sheet {
         Ok(out)
     }
 
+    /// A window of the sheet: a 126-column sheet costs what the view shows of it, not
+    /// every cell of each row.
+    fn cells(&self, rows: Range<u64>, columns: Range<usize>) -> Result<Vec<Vec<Cell>>> {
+        let end = rows.end.min(self.rows);
+        let (c0, c1) = (columns.start.min(self.columns.len()), columns.end.min(self.columns.len()));
+        let mut out = vec![vec![Cell::Null; c1.saturating_sub(c0)]; end.saturating_sub(rows.start) as usize];
+        let from = self.cells.partition_point(|c| (c.0 as u64) < rows.start);
+        for (r, c, v) in self.cells[from..].iter().take_while(|c| (c.0 as u64) < end) {
+            if (c0..c1).contains(&(*c as usize)) {
+                out[(*r as u64 - rows.start) as usize][*c as usize - c0] = v.clone();
+            }
+        }
+        Ok(out)
+    }
+
     fn memory(&self) -> MemoryUse {
         MemoryUse::heap(self.heap)
     }

@@ -391,6 +391,18 @@ impl ViewerSession {
         })
     }
 
+    /// Rows `start..start + count`, only columns `column..column + columns`: a window of
+    /// a wide table, as a view scrolled sideways shows it. Fewer past either end.
+    pub fn table_cells(&self, start: u64, count: u64, column: u64, columns: u64) -> Vec<Vec<String>> {
+        self.with_content(|c| match c {
+            Some(Content::Model(Model::Table(t))) => {
+                let cols = column as usize..column.saturating_add(columns) as usize;
+                t.cells(start..start + count, cols).map(|rows| rows.iter().map(|r| r.iter().map(|c| c.to_string()).collect()).collect()).unwrap_or_default()
+            }
+            _ => Vec::new(),
+        })
+    }
+
     pub fn entry_count(&self) -> u64 {
         self.with_content(|c| match c {
             Some(Content::Model(Model::Container(c))) => c.entry_count().known(),

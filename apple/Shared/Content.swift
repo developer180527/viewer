@@ -80,42 +80,89 @@ struct TextLines: View {
     }
 }
 
+/// A table's cells fetched a block at a time (128 rows by 16 columns), for one page:
+/// a sheet 126 columns wide costs what's on screen, not every cell of each row.
+final class CellBlocks {
+    private let rows: UInt64 = 128
+    private let columns: UInt64 = 16
+    private var cache: [Pair: [[String]]] = [:]
+    private let fetch: (UInt64, UInt64, UInt64, UInt64) -> [[String]]
+    private struct Pair: Hashable { let row: UInt64, column: UInt64 }
+    init(fetch: @escaping (UInt64, UInt64, UInt64, UInt64) -> [[String]]) { self.fetch = fetch }
+
+    func cell(_ row: UInt64, _ column: Int) -> String {
+        let key = Pair(row: row / rows * rows, column: UInt64(column) / columns * columns)
+        if cache[key] == nil {
+            if cache.count > 64 { cache.removeAll() }
+            cache[key] = fetch(key.row, rows, key.column, columns)
+        }
+        let block = cache[key]!
+        let r = Int(row - key.row), c = column - Int(key.column)
+        return r < block.count && c < block[r].count ? block[r][c] : ""
+    }
+}
+
 struct TableRows: View {
     let columns: [String]
     let count: UInt64
-    let rows: Chunks<[String]>
+    let cells: CellBlocks
     private let width: CGFloat = 160
+    private var pitch: CGFloat { width + 12 }
+    /// The leftmost column in view and how many fit across: only those are built, and one
+    /// either side. A 126-column sheet built every cell of every row that scrolled in.
+    /// Both whole numbers, so a scroll changes them only when a column edge passes.
+    @State private var left = 0
+    @State private var across = 0
+    private var shown: Range<Int> {
+        let first = min(max(0, left - 1), columns.count)
+        return first..<min(columns.count, max(first, left + across + 1))
+    }
     init(session: ViewerSession) {
         columns = session.tableColumns()
         count = session.tableRowCount()
-        rows = Chunks { session.tableRows(start: $0, count: $1) }
+        cells = CellBlocks { session.tableCells(start: $0, count: $1, column: $2, columns: $3) }
     }
     var body: some View {
-        ScrollView([.horizontal, .vertical]) {
-            LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
-                Section {
-                    ForEach(0..<Int(count), id: \.self) { i in
-                        let row = rows.row(UInt64(i)) ?? []
-                        HStack(spacing: 0) {
-                            ForEach(columns.indices, id: \.self) { c in
-                                Text(c < row.count ? row[c] : "").lineLimit(1)
-                                    .frame(width: width, alignment: .leading).padding(.horizontal, 6)
-                            }
+        let shown = shown
+        GeometryReader { outer in
+            ScrollView([.horizontal, .vertical]) {
+                LazyVStack(alignment: .leading, spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    Section {
+                        ForEach(0..<Int(count), id: \.self) { i in
+                            line(shown) { c in cells.cell(UInt64(i), c) }
+                            .padding(.vertical, 3)
+                            .background(i % 2 == 1 ? Color.primary.opacity(0.04) : .clear)
                         }
-                        .padding(.vertical, 3)
-                        .background(i % 2 == 1 ? Color.primary.opacity(0.04) : .clear)
+                    } header: {
+                        line(shown, bold: true) { c in columns[c] }
+                            .padding(.vertical, 4)
+                            .background(.bar)
                     }
-                } header: {
-                    HStack(spacing: 0) {
-                        ForEach(columns, id: \.self) { name in
-                            Text(name).bold().lineLimit(1).frame(width: width, alignment: .leading).padding(.horizontal, 6)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                    .background(.bar)
                 }
+                .background(GeometryReader { g in
+                    Color.clear.onChange(of: g.frame(in: .named("table")).minX, initial: true) { _, x in
+                        let l = max(0, Int(-x / pitch))
+                        if l != left { left = l }
+                    }
+                })
+            }
+            .coordinateSpace(name: "table")
+            .onChange(of: outer.size.width, initial: true) { _, w in
+                let n = Int((w / pitch).rounded(.up)) + 1
+                if n != across { across = n }
             }
         }
+    }
+
+    /// One row's cells for `range`, at their place in the full width.
+    private func line(_ range: Range<Int>, bold: Bool = false, _ text: @escaping (Int) -> String) -> some View {
+        HStack(spacing: 0) {
+            ForEach(range, id: \.self) { c in
+                Text(text(c)).bold(bold).lineLimit(1).frame(width: width, alignment: .leading).padding(.horizontal, 6)
+            }
+        }
+        .padding(.leading, CGFloat(range.lowerBound) * pitch)
+        .frame(width: CGFloat(columns.count) * pitch, alignment: .leading)
     }
 }
 

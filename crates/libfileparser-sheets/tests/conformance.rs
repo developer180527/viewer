@@ -61,6 +61,19 @@ fn a_tiny_file_claiming_the_last_cell_stays_tiny() {
 }
 
 #[test]
+fn a_window_of_a_sheet_holds_only_its_columns() {
+    let cx = ParseContext::new();
+    let bytes = xlsx(r#"<row r="1"><c r="A1"><v>1</v></c><c r="C1"><v>3</v></c><c r="E1"><v>5</v></c></row><row r="3"><c r="D3"><v>9</v></c></row>"#);
+    let doc = XlsxReader.open(&FileSource::from_bytes("a.xlsx", bytes), &cx).unwrap();
+    let Content::Table(t) = doc.facet(0, &cx).unwrap() else { panic!("a table") };
+    assert_eq!(t.cells(0..9, 2..4).unwrap(), [vec![Cell::Int(3), Cell::Null], vec![Cell::Null, Cell::Null], vec![Cell::Null, Cell::Int(9)]]);
+    // The same cells as the whole rows, cut.
+    let whole: Vec<Vec<Cell>> = t.rows(0..3).unwrap().into_iter().map(|r| r[1..5].to_vec()).collect();
+    assert_eq!(t.cells(0..3, 1..5).unwrap(), whole);
+    assert_eq!(t.cells(0..1, 5..9).unwrap(), [Vec::<Cell>::new()]);
+}
+
+#[test]
 fn whole_numbers_are_integers_and_errors_are_errors() {
     let (_, _, rows) = open(xlsx(r#"<row r="1"><c r="A1"><v>3</v></c><c r="B1" t="e"><v>#DIV/0!</v></c><c r="C1" t="b"><v>1</v></c></row>"#)).unwrap();
     assert_eq!(rows[0][0], Cell::Int(3));

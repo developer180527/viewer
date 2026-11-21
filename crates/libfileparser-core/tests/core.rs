@@ -122,6 +122,28 @@ fn sources_hand_out_ranges_and_reject_unknown_ids() {
     assert_eq!(table.rows(3..10).unwrap(), [vec![Cell::Int(3)], vec![Cell::Int(4)]]);
 }
 
+#[test]
+fn a_window_of_a_table_is_its_rows_cut_to_the_columns() {
+    let rows: Vec<Vec<Cell>> = (0..4).map(|r| (0..5).map(|c| Cell::Int(r * 10 + c)).collect()).collect();
+    let owned = OwnedTable::new((0..5).map(|c| format!("c{c}").into()).collect(), rows.clone());
+    // Only `rows`, so the trait's own `cells` is what's tested.
+    struct Plain(OwnedTable);
+    impl TableSource for Plain {
+        fn info(&self) -> TableInfo {
+            self.0.info()
+        }
+        fn rows(&self, range: std::ops::Range<u64>) -> libfileparser_core::Result<Vec<Vec<Cell>>> {
+            self.0.rows(range)
+        }
+    }
+    let plain = Plain(OwnedTable::new((0..5).map(|c| format!("c{c}").into()).collect(), rows));
+    for t in [&owned as &dyn TableSource, &plain] {
+        assert_eq!(t.cells(2..9, 1..3).unwrap(), [vec![Cell::Int(21), Cell::Int(22)], vec![Cell::Int(31), Cell::Int(32)]]);
+        assert_eq!(t.cells(0..1, 4..40).unwrap(), [vec![Cell::Int(4)]]);
+        assert_eq!(t.cells(0..2, 7..9).unwrap(), [Vec::<Cell>::new(), Vec::new()]);
+    }
+}
+
 
 #[test]
 fn a_lazy_facet_is_made_once_and_retried_after_failing() {

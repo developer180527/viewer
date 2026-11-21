@@ -329,6 +329,7 @@ final class StressRunner {
         var worst = 0.0
         let end = CACurrentMediaTime() + seconds
         var rng = SystemRandomNumberGenerator()
+        let w = UInt64(kind == .table ? s.tableColumns().count : 0)
         while CACurrentMediaTime() < end {
             let t0 = CACurrentMediaTime()
             switch kind {
@@ -337,7 +338,9 @@ final class StressRunner {
                 if n > 0 { _ = s.textLines(start: UInt64.random(in: 0..<n, using: &rng), count: 64) }
             case .table:
                 let n = s.tableRowCount()
-                if n > 0 { _ = s.tableRows(start: UInt64.random(in: 0..<n, using: &rng), count: 64) }
+                // A screenful as the table view asks for it: 64 rows of the 16 columns
+                // at some place across (all of a narrow table).
+                if n > 0 { _ = s.tableCells(start: UInt64.random(in: 0..<n, using: &rng), count: 64, column: UInt64.random(in: 0..<max(w, 1), using: &rng) / 16 * 16, columns: 16) }
             default:
                 break
             }

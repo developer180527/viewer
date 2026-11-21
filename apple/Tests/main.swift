@@ -43,6 +43,9 @@ check(!columns.isEmpty, "columns")
 let rows = s.tableRows(start: 0, count: 3)
 check(!rows.isEmpty && rows[0].count == columns.count, "rows as wide as the columns: \(rows)")
 check(s.tableRows(start: s.tableRowCount(), count: 5).isEmpty, "nothing past the end")
+let window = s.tableCells(start: 0, count: 3, column: 1, columns: 1)
+check(window.count == rows.count && window.allSatisfy { $0.count == 1 } && window[0][0] == rows[0][1], "a window of the table: \(window)")
+check(s.tableCells(start: 0, count: 3, column: UInt64(columns.count), columns: 4).allSatisfy(\.isEmpty), "no cells past the last column")
 if case let .shown(format, size, _, _) = s.status() {
     check(!format.isEmpty && size != nil, "status: \(format) \(String(describing: size))")
 } else { check(false, "shown") }

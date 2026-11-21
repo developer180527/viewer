@@ -580,9 +580,20 @@ pub trait TableSource: Send + Sync {
     fn info(&self) -> TableInfo;
     /// The cells of rows in `range`, one per column; fewer rows past the end.
     fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>>;
+    /// The cells of rows in `rows`, only those of columns in `columns`: what a view of a
+    /// wide table has on screen. Override it where a row's cells cost to make or copy.
+    fn cells(&self, rows: Range<u64>, columns: Range<usize>) -> Result<Vec<Vec<Cell>>> {
+        Ok(self.rows(rows)?.into_iter().map(|mut r| window(&mut r, &columns)).collect())
+    }
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }
+}
+
+/// `columns` of a row, moved out of it; fewer past its end.
+fn window(row: &mut Vec<Cell>, columns: &Range<usize>) -> Vec<Cell> {
+    let end = columns.end.min(row.len());
+    row.drain(columns.start.min(end)..end).collect()
 }
 
 /// A table built up front.
@@ -616,6 +627,10 @@ impl TableSource for OwnedTable {
 
     fn rows(&self, range: Range<u64>) -> Result<Vec<Vec<Cell>>> {
         Ok(self.rows[clamp(range, self.rows.len() as u64)].to_vec())
+    }
+
+    fn cells(&self, rows: Range<u64>, columns: Range<usize>) -> Result<Vec<Vec<Cell>>> {
+        Ok(self.rows[clamp(rows, self.rows.len() as u64)].iter().map(|r| r.get(columns.start.min(r.len())..columns.end.min(r.len())).unwrap_or_default().to_vec()).collect())
     }
 
     fn memory(&self) -> MemoryUse {

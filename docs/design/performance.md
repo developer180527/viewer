@@ -288,6 +288,39 @@ In order. Each step names the scenario that proves it and the target; re-run
 14. **libgui's interface:** after steps 1, 2 and 4, profile libgui-pdf-scroll again; the
     rest is the chrome's own per-frame layout (libgui), to be cached like step 3's.
 
+    ✅ **Done 2026-11-21, though not the way (13) planned it.**
+
+    (13) The finding was misread. Formatting a cell is cheap: per cell the XLSX already
+    cost less than the CSV (0.30 µs against 0.43 µs). It was 15× slower only because
+    sheet.xlsx is 126 columns wide and big.csv is 6, and every fetch took every column.
+    A screen shows about eight of them. The fix was a window in both directions:
+    `TableSource::cells(rows, columns)` (by default the rows cut to the columns, and
+    the workbook's sheet builds only the window) and `ViewerSession.tableCells`. The
+    native table now fetches blocks of 128 rows by 16 columns and builds only the
+    columns in view, plus one either side. Before, each row that scrolled in made 126
+    `Text`s. In the iPhone simulator, flings across and down sheet.xlsx keep the columns
+    in view filled and the header over its cells. The sheet-fetch scenario now asks for
+    what the view asks for: 64 rows of 16 columns.
+
+    | Mac | Before | After |
+    |---|---|---|
+    | sheet-fetch, per screenful | 2430 µs (64 rows × 126 columns) | 337 µs (64 × 16) |
+    | sheet.xlsx open, to shown | 431 ms | 223 ms |
+    | table-fetch (CSV, 6 columns) | 164 µs | 175 µs (unchanged) |
+
+    The XLSX open measured in Rust is 100 ms, 93 ms of it calamine reading 662,622
+    cells. That's the floor without a sheet that loads as it's shown.
+
+    (14) Steps 1, 2 and 4 already closed most of the gap. On the Mac, native against
+    libgui, PDF scroll now costs CPU 16–17% against 19–21% (it was 17% against 35%),
+    with draw p50 0.8 ms against 1.4–1.5 ms. libgui idles at 0.3% CPU and draws no
+    frames. What's left doesn't justify caching the chrome's layout now.
+
+    **Noticed on the way:** libgui's `table` builds every column of each visible row (its
+    callback runs for all of them), so the libgui interface on a 126-column sheet still
+    lays out 126 labels a row. Column virtualization belongs in libgui's table, next to
+    its rows'.
+
 ### After each step
 
 Re-run the stress suite on both devices and keep the summary in `docs/perf/` with the
