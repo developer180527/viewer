@@ -186,8 +186,12 @@ final class Shell: ObservableObject {
 
     /// Woken: take in what finished.
     func pump() {
-        while session.poll() {}
-        refresh()
+        var finished = false
+        while session.poll() { finished = true }
+        // Most wakes are a texture or a tile for the canvas: the chrome changes only
+        // when a load finished (re-reading it on every tile cost 2–3% CPU while a PDF
+        // or a model loaded, and SwiftUI's diffing on top).
+        if finished { refresh() }
         onWake?()
     }
 

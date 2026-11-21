@@ -35,6 +35,8 @@ final class CanvasView: UIView {
     private var canvas: ViewerCanvas?
     private var failed = false
     private var link: CADisplayLink?
+    /// 120 Hz while the user interacts, 60 otherwise.
+    private let pacing = Pacing()
     private var timer: Timer?
     /// Touches by the number libgui knows them by.
     private var fingers: [ObjectIdentifier: UInt64] = [:]
@@ -135,6 +137,7 @@ final class CanvasView: UIView {
 
     @objc private func tick() {
         guard let canvas else { link?.isPaused = true; return }
+        pacing.apply(to: link)
         let t0 = CACurrentMediaTime()
         let frame = canvas.draw()
         Stress.frame((CACurrentMediaTime() - t0) * 1000)
@@ -192,6 +195,7 @@ final class CanvasView: UIView {
 
     private func send(_ touches: Set<UITouch>, _ phase: TouchPhase) {
         guard let canvas else { return }
+        pacing.input()
         for t in touches {
             let key = ObjectIdentifier(t)
             let id: UInt64
@@ -233,6 +237,7 @@ final class CanvasView: UIView {
     private var lastScroll = CGPoint.zero
 
     @objc private func scrolled(_ g: UIPanGestureRecognizer) {
+        pacing.input()
         let t = g.translation(in: self)
         if g.state == .began { lastScroll = .zero }
         let p = g.location(in: self)
@@ -265,6 +270,7 @@ final class CanvasView: UIView {
     }
 
     override func pressesBegan(_ presses: Set<UIPress>, with event: UIPressesEvent?) {
+        pacing.input()
         if !keys(presses, true) { super.pressesBegan(presses, with: event) }
     }
 
@@ -279,6 +285,7 @@ final class CanvasView: UIView {
 }
 
 extension CanvasView: StressTarget {
+    func noteInput() { pacing.input() }
     var stressCanvas: ViewerCanvas? { canvas }
     var stressSize: CGSize { bounds.size }
 }

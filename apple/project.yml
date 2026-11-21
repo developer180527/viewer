@@ -76,6 +76,9 @@ targets:
     info:
       path: Mobile/Info.plist
       properties:
+        # ProMotion iPhones: let the canvas ask for 120 Hz while the user interacts
+        # (Shared/Pacing.swift); without this key iPhones cap apps at 60.
+        CADisableMinimumFrameDurationOnPhone: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Any file
             LSHandlerRank: Alternate

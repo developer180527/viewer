@@ -207,6 +207,32 @@ In order. Each step names the scenario that proves it and the target; re-run
    the Mac < 50 ms of CPU per return; iPhone flings at 120 fps with energy no worse
    than today's 60 fps flings.
 
+   ✅ **Done 2026-11-21.** (7) needed no Rust change: `Shell.pump` refreshes the chrome
+   only when `poll()` took in a finished load; tile and texture wakes go to the canvas
+   alone. (8) `Entries` is a lazy stack of rows (click selects and double-click opens on
+   the Mac, tap opens on touch; each row a button to VoiceOver). (9) `Pacing` asks the
+   display link for 80–120 Hz for a second after input and 30–60 Hz otherwise, and the
+   iPhone's Info.plist has `CADisableMinimumFrameDurationOnPhone` (in the plist itself:
+   Xcode's `INFOPLIST_KEY_` settings don't know it, and without it the app stayed at 60).
+
+   | | Before | After |
+   |---|---|---|
+   | iPhone pdf-scroll CPU | 40% | 30% |
+   | iPhone zip-entry-churn CPU / power | 77–98% / 2.3–3.3 W | 40% / ~1 W |
+   | Mac zip-entry-churn CPU per round (open an entry, Back) | 740 ms | 100 ms |
+   | Mac zip-entry-churn energy (60 rounds) | 294 J | 22 J |
+   | iPhone 3D orbit, while dragging | 60 fps, 10 mW | 120 fps, 20 mW |
+   | Idle | 0 frames | 0 frames |
+
+   The fast rate costs what it should, twice the frames for twice the GPU, and only
+   while the user's hands are on it.
+
+   **Noticed on the way:** now and then a scene's draws all take one refresh (8.2 ms at
+   120 Hz, on the Mac and the iPhone, in some runs of the same scenario and not others):
+   the main thread waiting in `get_current_texture` for a free drawable. Not yet
+   understood; a candidate for a Metal System Trace pass (the layer's drawable count,
+   the surface's frame latency, presenting with a transaction).
+
 ### Step 5: smaller memory at rest (findings 8, 9)
 
 10. **Images:** keep a downscaled copy for fit-to-window and tile from the full image only

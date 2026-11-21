@@ -119,6 +119,9 @@ struct TableRows: View {
     }
 }
 
+/// A container's entries (a zip's files, a folder's children), a row each, built as
+/// they scroll into view: a lazy stack, not a `List(selection:)`, which rebuilt all
+/// 5000 rows of a big archive each time Back returned to it (0.7 s on the Mac).
 struct Entries: View {
     @EnvironmentObject var shell: Shell
     let count: UInt64
@@ -129,19 +132,37 @@ struct Entries: View {
         entries = Chunks { session.entries(start: $0, count: $1) }
     }
     var body: some View {
-        List(0..<Int(count), id: \.self, selection: $selection) { i in
-            if let e = entries.row(UInt64(i)) {
-                HStack {
-                    Image(systemName: e.folder ? "folder" : "doc").foregroundStyle(.secondary)
-                    Text(e.path)
-                    Spacer()
-                    if !e.folder { Text(humanBytes(bytes: e.size)).foregroundStyle(.secondary).monospacedDigit() }
+        ScrollView {
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(0..<Int(count), id: \.self) { i in
+                    if let e = entries.row(UInt64(i)) { row(e, i) }
                 }
             }
         }
-        .contextMenu(forSelectionType: Int.self) { _ in } primaryAction: { picked in
-            if let i = picked.first { shell.openEntry(UInt64(i)) }
+    }
+
+    private func row(_ e: EntryItem, _ i: Int) -> some View {
+        HStack {
+            Image(systemName: e.folder ? "folder" : "doc").foregroundStyle(.secondary)
+            Text(e.path).lineLimit(1)
+            Spacer()
+            if !e.folder { Text(humanBytes(bytes: e.size)).foregroundStyle(.secondary).monospacedDigit() }
         }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
+        .background(selection == i ? Color.accentColor.opacity(0.18) : i % 2 == 1 ? Color.primary.opacity(0.03) : .clear)
+        .contentShape(Rectangle())
+        // The Mac selects with a click and opens with a double click; a touch screen
+        // opens with a tap.
+        #if os(macOS)
+        .onTapGesture(count: 2) { shell.openEntry(UInt64(i)) }
+        .onTapGesture { selection = i }
+        #else
+        .onTapGesture { shell.openEntry(UInt64(i)) }
+        #endif
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction { shell.openEntry(UInt64(i)) }
     }
 }
 

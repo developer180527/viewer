@@ -26,6 +26,8 @@ protocol StressTarget: AnyObject {
     /// The canvas's size in points.
     var stressSize: CGSize { get }
     func redraw()
+    /// The user is interacting (the frame rate goes up while they do).
+    func noteInput()
 }
 
 /// The kernel's counters for this process, at one moment.
@@ -452,6 +454,7 @@ final class StressRunner {
             let t = CACurrentMediaTime() - start
             if t >= seconds { break }
             step(t)
+            target?.noteInput()
             target?.redraw()
             await sleep(1.0 / 60)
         }

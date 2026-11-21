@@ -35,6 +35,8 @@ final class CanvasView: NSView {
     private var canvas: ViewerCanvas?
     private var failed = false
     private var link: CADisplayLink?
+    /// 120 Hz while the user interacts, 60 otherwise.
+    private let pacing = Pacing()
     private var timer: Timer?
     private var tracking: NSTrackingArea?
     private var cursor: CursorShape = .arrow
@@ -138,6 +140,7 @@ final class CanvasView: NSView {
 
     @objc private func tick() {
         guard let canvas else { link?.isPaused = true; return }
+        pacing.apply(to: link)
         let t0 = CACurrentMediaTime()
         let frame = canvas.draw()
         Stress.frame((CACurrentMediaTime() - t0) * 1000)
@@ -217,9 +220,9 @@ final class CanvasView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) { moved(event) }
-    override func mouseDragged(with event: NSEvent) { moved(event) }
-    override func rightMouseDragged(with event: NSEvent) { moved(event) }
-    override func otherMouseDragged(with event: NSEvent) { moved(event) }
+    override func mouseDragged(with event: NSEvent) { pacing.input(); moved(event) }
+    override func rightMouseDragged(with event: NSEvent) { pacing.input(); moved(event) }
+    override func otherMouseDragged(with event: NSEvent) { pacing.input(); moved(event) }
     override func mouseExited(with event: NSEvent) { canvas?.pointerLeft(); redraw() }
 
     override func mouseDown(with event: NSEvent) {
@@ -233,6 +236,7 @@ final class CanvasView: NSView {
     override func otherMouseUp(with event: NSEvent) { button(event, .middle, false) }
 
     override func scrollWheel(with event: NSEvent) {
+        pacing.input()
         mods(event)
         let (x, y) = point(event)
         canvas?.pointerMoved(x: x, y: y)
@@ -241,6 +245,7 @@ final class CanvasView: NSView {
     }
 
     override func magnify(with event: NSEvent) {
+        pacing.input()
         let (x, y) = point(event)
         canvas?.pointerMoved(x: x, y: y)
         canvas?.pinch(delta: Float(event.magnification))
@@ -263,6 +268,7 @@ final class CanvasView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
+        pacing.input()
         guard let canvas else { return super.keyDown(with: event) }
         mods(event)
         let known = canvas.keyMac(code: event.keyCode, pressed: true, repeat: event.isARepeat)
@@ -303,6 +309,7 @@ private func nsCursor(_ shape: CursorShape) -> NSCursor {
 }
 
 extension CanvasView: StressTarget {
+    func noteInput() { pacing.input() }
     var stressCanvas: ViewerCanvas? { canvas }
     var stressSize: CGSize { bounds.size }
 }
