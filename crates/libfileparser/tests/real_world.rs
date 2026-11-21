@@ -13,7 +13,8 @@
 //! ```
 //!
 //! `LFP_REAL_ONLY=xls,docx` checks only those reader folders; `LFP_REAL_VERBOSE=1` prints
-//! every file that didn't open, with its whole error.
+//! every file that didn't open, with its whole error; `LFP_REAL_TRACE=1` names each file
+//! before opening it, for a crash that ends the run.
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -84,6 +85,8 @@ fn real_world_files() {
         folders.retain(|f| only.contains(&&*f.file_name().unwrap().to_string_lossy()));
     }
     let verbose = std::env::var_os("LFP_REAL_VERBOSE").is_some();
+    // Each file named before it opens, so a crash that takes the run down says where.
+    let trace = std::env::var_os("LFP_REAL_TRACE").is_some();
     let mut broken = Vec::new();
     for folder in folders {
         let name = folder.file_name().unwrap().to_string_lossy().into_owned();
@@ -96,6 +99,11 @@ fn real_world_files() {
         let (mut ok, mut other, mut failed) = (0, BTreeMap::<String, Vec<String>>::new(), BTreeMap::<String, Vec<String>>::new());
         for path in &files {
             let file = path.file_name().unwrap().to_string_lossy().into_owned();
+            if trace {
+                use std::io::Write;
+                println!("  opening {name}/{file}");
+                let _ = std::io::stdout().flush();
+            }
             match open(path.clone()) {
                 Outcome::Opened(r, _) if r == expected => ok += 1,
                 Outcome::Opened(r, tried) => {
@@ -112,8 +120,16 @@ fn real_world_files() {
                     let key: String = e.split([':', '(']).take(2).collect::<Vec<_>>().join(":").chars().take(70).collect();
                     failed.entry(key).or_default().push(file);
                 }
-                Outcome::Panicked(p) => broken.push(format!("{name}/{file}: panicked: {p}")),
-                Outcome::Hung => broken.push(format!("{name}/{file}: hung")),
+                Outcome::Panicked(p) => {
+                    println!("  PANIC {name}/{file}: {p}");
+                    broken.push(format!("{name}/{file}: panicked: {p}"))
+                }
+                // Said now, not only at the end: a hung file's thread runs on, and if it
+                // then overflows its stack it takes the whole run down with it.
+                Outcome::Hung => {
+                    println!("  HUNG {name}/{file}");
+                    broken.push(format!("{name}/{file}: hung"))
+                }
             }
         }
         let n = files.len();

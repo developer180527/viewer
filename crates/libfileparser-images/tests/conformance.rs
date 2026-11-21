@@ -36,6 +36,27 @@ fn hostile_images_fail_cleanly() {
     }
 }
 
+/// Two filters whose `feImage` draw each other: resvg 0.49 followed the loop until the
+/// stack overflowed, which no `catch_unwind` stops, so one such SVG ended the app
+/// (found by resvg's own test suite in the real-world run, 2026-11-22).
+#[test]
+fn an_svg_whose_filters_draw_each_other_opens() {
+    let svg = br##"<svg viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <defs>
+    <filter id="filter1"><feImage xlink:href="#g1"/></filter>
+    <g id="g1" filter="url(#filter2)"><rect x="36" y="36" width="120" height="120" fill="green"/></g>
+    <filter id="filter2"><feImage xlink:href="#g2"/></filter>
+    <g id="g2" filter="url(#filter1)"><rect x="36" y="36" width="120" height="120" fill="green"/></g>
+  </defs>
+  <rect x="20" y="20" width="160" height="160" fill="red" filter="url(#filter1)"/>
+</svg>"##;
+    let cx = ParseContext::new();
+    let doc = libfileparser_images::open(&FileSource::from_bytes("loop.svg", svg.to_vec()), &cx).expect("opens");
+    if let Ok(Content::Raster(r)) = doc.facet(0, &cx) {
+        let _ = r.decode();
+    }
+}
+
 fn corpus_dir() -> std::path::PathBuf {
     std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files")
 }

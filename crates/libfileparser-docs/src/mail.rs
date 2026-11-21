@@ -29,17 +29,35 @@ pub struct MsgReader;
 /// Headers a message starts with, any of which marks it as one.
 const HEADERS: &[&str] = &["received:", "return-path:", "from:", "to:", "date:", "subject:", "message-id:", "mime-version:", "delivered-to:", "x-mailer:", "reply-to:", "content-type:", "x-original-to:", "dkim-signature:", "arc-seal:", "authentication-results:", "sender:", "cc:", "in-reply-to:", "references:", "thread-topic:", "x-received:", "x-google-smtp-source:", "list-id:", "user-agent:"];
 
-/// How many of a message's first lines are well-known headers (unfolded lines only).
-fn known_headers(header: &[u8]) -> usize {
+/// The well-known headers among a message's first lines (unfolded lines only), each
+/// by its lower-case name with the colon.
+fn known_headers_in(header: &[u8]) -> Vec<&'static str> {
     let head = String::from_utf8_lossy(&header[..header.len().min(4096)]);
     head.lines()
         .take_while(|l| !l.trim().is_empty())
         .filter(|l| !l.starts_with([' ', '\t']))
-        .filter(|l| {
+        .filter_map(|l| {
             let lower = l.to_ascii_lowercase();
-            HEADERS.iter().any(|h| lower.starts_with(h))
+            HEADERS.iter().find(|h| lower.starts_with(*h)).copied()
         })
-        .count()
+        .collect()
+}
+
+/// How many of a message's first lines are well-known headers.
+fn known_headers(header: &[u8]) -> usize {
+    known_headers_in(header).len()
+}
+
+/// Headers a message has and a list of `Name: value` lines doesn't: the trail of its
+/// delivery, or a sender with a date, subject or MIME header. A flat YAML file of
+/// translations (`Cc: …`, `To: …`) or settings (`from: markdown`, `to: html`) has two
+/// known names but neither.
+fn looks_like_mail(header: &[u8]) -> bool {
+    let found = known_headers_in(header);
+    let has = |h: &str| found.contains(&h);
+    let delivered = has("received:") || has("message-id:") || has("return-path:") || has("delivered-to:") || has("dkim-signature:");
+    let sent = has("from:") && (has("date:") || has("subject:") || has("mime-version:"));
+    found.len() >= 2 && (delivered || sent)
 }
 
 impl Reader for EmlReader {
@@ -47,12 +65,11 @@ impl Reader for EmlReader {
         &EML
     }
 
-    /// Two or more well-known headers at the start (`From:`, `Received:`,
-    /// `Message-ID:`…), or its extension.
+    /// Two or more well-known headers at the start, among them a delivery header
+    /// (`Received:`, `Message-ID:`…) or a sender with a date or subject; or its extension.
     fn detect(&self, header: &[u8], name: &str) -> Detection {
         // Not by being text: real mail carries raw 8-bit headers and UTF-16 parts.
-        let known = known_headers(header);
-        if known >= 2 && !header.starts_with(b"From ") {
+        if looks_like_mail(header) && !header.starts_with(b"From ") {
             Detection::new(Confidence::Content).with_language("email")
         } else if EML.matches_extension(name) {
             Detection::new(Confidence::Extension).with_language("email")

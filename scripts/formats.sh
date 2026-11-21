@@ -22,7 +22,12 @@ LFP_TESTED="$tmp/tested.tsv" nice cargo test -q -j2 \
 }
 real=""
 if [[ -d corpus/real && -z "${FORMATS_SKIP_REAL:-}" ]]; then
-  LFP_REAL_CORPUS="$PWD/corpus/real" nice cargo test -q -j2 -p libfileparser --test real_world -- --ignored --nocapture > "$tmp/real.log" 2>&1 || true
+  # With MuPDF, as the apps open PDFs: without it every PDF is refused as unsupported.
+  LFP_REAL_CORPUS="$PWD/corpus/real" nice cargo test -q -j2 --release -p libfileparser --features docs-mupdf --test real_world -- --ignored --nocapture > "$tmp/real.log" 2>&1 || true
+  # 3D models are whole repositories, read where they are (real_3d.rs).
+  if [[ -d corpus/real/3d ]]; then
+    LFP_REAL_3D="$PWD/corpus/real/3d" nice cargo test -q -j2 --release -p libfileparser --features docs-mupdf --test real_3d -- --ignored --nocapture >> "$tmp/real.log" 2>&1 || true
+  fi
   real="$tmp/real.log"
 fi
 python3 -I scripts/formats.py "$tmp/readers.tsv" "$tmp/tested.tsv" "$real" > docs/formats.md

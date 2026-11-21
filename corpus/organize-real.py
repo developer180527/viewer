@@ -32,7 +32,11 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
           "1": "man", "2": "man", "3": "man", "4": "man", "5": "man", "6": "man", "7": "man", "8": "man", "9": "man",
           # Spreadsheets.
           "xlsx": "xlsx", "xlsm": "xlsx", "xltx": "xlsx", "xltm": "xlsx", "xlam": "xlsx", "xlsb": "xlsb",
-          "xls": "xls", "xla": "xls", "xlt": "xls", "ods": "ods", "ots": "ods", "fods": "fods", "slk": "sylk", "dif": "dif", "numbers": "numbers"}
+          "xls": "xls", "xla": "xls", "xlt": "xls", "ods": "ods", "ots": "ods", "fods": "fods", "slk": "sylk", "dif": "dif", "numbers": "numbers",
+          # Images, archives (2026-11-22). Text is by repository (uchardet's), below.
+          **{e: "image" for e in ("png", "apng", "jpg", "jpeg", "jfif", "gif", "webp", "tif", "tiff", "bmp", "ico", "tga", "qoi",
+                                  "pbm", "pgm", "ppm", "pam", "pnm", "hdr", "exr", "dds", "ff")},
+          "svg": "svg", "svgz": "svg", "zip": "zip", "tar": "tar", "tgz": "tar", "gz": "gzip"}
 # Category folders, as corpus/real is laid out: data/, docs/, sheets/ (3d/ is
 # fetch-real-3d.sh's).
 DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odp", "odt", "org", "pdf", "ppt", "pptx", "rst", "rtf", "textile", "xps", "comic",
@@ -40,6 +44,8 @@ DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odp", "odt", "or
         "haddock", "docbook", "tei", "texinfo", "xwiki", "tikiwiki", "twiki", "zimwiki", "vimwiki", "eml", "mbox", "mhtml", "msg", "mobi", "fb2",
         "djvu", "hwp"}
 SHEETS = {"dif", "fods", "numbers", "ods", "sylk", "xls", "xlsb", "xlsx", "xmlss"}
+IMAGES = {"image", "svg"}
+ARCHIVES = {"zip", "tar", "gzip"}
 counts = {}
 for repo in [os.path.basename(clone)]:
     root = clone
@@ -76,6 +82,9 @@ for repo in [os.path.basename(clone)]:
                 reader = "turbomole"
             elif ext == "json" and (b'"qcschema_' in head or b'"qc_schema_' in head):
                 reader = "qcschema"
+            # Text in dozens of languages and encodings, each a real document.
+            if repo.startswith("BYVoid_uchardet"):
+                reader = "text" if ext == "txt" else None
             if repo.startswith("WoLpH_mt940") and ext not in ("sta", "txt"):
                 reader = None
             if reader is None:
@@ -83,9 +92,15 @@ for repo in [os.path.basename(clone)]:
             # Invalid on purpose: they must fail (or fall back), not crash.
             name = f.lower()
             invalid = ("/invalid/" in "/" + rel + "/" or (repo.startswith("nst_") and f.startswith("n_"))
-                       or ("-bad-" in name) or (reader == "rdfxml" and "error" in name) or "fail" in rel.lower())
+                       or ("-bad-" in name) or (reader == "rdfxml" and "error" in name) or "fail" in rel.lower()
+                       # Fuzzers' and CVEs' regression inputs: kept to prove nothing crashes,
+                       # not documents (LibreOffice keeps them among its "pass" files).
+                       or name.startswith(("ofz", "cve-"))
+                       # PngSuite's x-files are corrupt on purpose.
+                       or ("pngsuite" in rel.lower() and name.startswith("x")))
             folder = reader + ("-invalid" if invalid else "")
-            category = "docs" if reader in DOCS else "sheets" if reader in SHEETS else "data"
+            category = ("docs" if reader in DOCS else "sheets" if reader in SHEETS else "images" if reader in IMAGES
+                        else "archives" if reader in ARCHIVES else "text" if reader == "text" else "data")
             dst = os.path.join(out, category, folder, (repo.split("_", 1)[1] + "__" + rel.replace("/", "__"))[-150:])
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(path, dst)

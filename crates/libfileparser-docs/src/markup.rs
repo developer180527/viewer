@@ -42,6 +42,11 @@ impl From<markup_lite::Html> for Rendered {
 /// Result<Rendered>`). Shared by every plain-text markup in the crate.
 macro_rules! markup {
     ($(#[$doc:meta])* $reader:ident, $info:ident, $id:literal, $name:literal, $kind:literal, [$($ext:literal),*], [$($mime:literal),*], $render:path) => {
+        $crate::markup::markup!($(#[$doc])* $reader, $info, $id, $name, $kind, [$($ext),*], [$($mime),*], $render, guess = $crate::markup::no_guess);
+    };
+    // `guess`: a file this markup claims by its content when another owns the name
+    // (Vimwiki's default `.wiki` is MediaWiki's too).
+    ($(#[$doc:meta])* $reader:ident, $info:ident, $id:literal, $name:literal, $kind:literal, [$($ext:literal),*], [$($mime:literal),*], $render:path, guess = $guess:path) => {
         static $info: libfileparser_core::ReaderInfo = libfileparser_core::ReaderInfo::new($id, $name, libfileparser_core::Category::Docs).extensions(&[$($ext),*]).mime_types(&[$($mime),*]);
 
         $(#[$doc])*
@@ -52,9 +57,13 @@ macro_rules! markup {
                 &$info
             }
 
-            /// By extension only: none of these markups has a signature.
+            /// By extension, as none of these markups has a signature, or by `guess`.
             fn detect(&self, header: &[u8], name: &str) -> libfileparser_core::Detection {
-                if $info.matches_extension(name) && libfileparser_core::is_text(header) {
+                if !libfileparser_core::is_text(header) {
+                    libfileparser_core::Detection::NONE
+                } else if $guess(header, name) {
+                    libfileparser_core::Detection::new(libfileparser_core::Confidence::Content).with_language($id)
+                } else if $info.matches_extension(name) {
                     libfileparser_core::Detection::new(libfileparser_core::Confidence::Extension).with_language($id)
                 } else {
                     libfileparser_core::Detection::NONE
@@ -68,6 +77,11 @@ macro_rules! markup {
     };
 }
 pub(crate) use markup;
+
+/// For markups claimed by extension alone.
+pub(crate) fn no_guess(_: &[u8], _: &str) -> bool {
+    false
+}
 
 pub(crate) fn read(src: &FileSource, cx: &ParseContext, id: &'static str, kind: &'static str, render: fn(&str) -> Result<Rendered>) -> Result<Document> {
     cx.cancel.check()?;

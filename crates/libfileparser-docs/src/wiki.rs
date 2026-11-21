@@ -65,8 +65,32 @@ markup!(
 
 markup!(
     /// Vimwiki's default syntax.
-    VimwikiReader, VIMWIKI, "vimwiki", "Vimwiki", "Vimwiki page", ["vimwiki"], ["text/x-vimwiki"], vimwiki
+    VimwikiReader, VIMWIKI, "vimwiki", "Vimwiki", "Vimwiki page", ["vimwiki"], ["text/x-vimwiki"], vimwiki, guess = vimwiki_by_content
 );
+
+/// A `.wiki` file (Vimwiki's default name, and MediaWiki's) whose lines read as Vimwiki:
+/// its `%title` and `{{{` blocks, `*bold*` and `- [ ]` checkboxes, more than MediaWiki's
+/// `'''bold'''`, `''italic''`, `{{templates}}` and `{|` tables.
+fn vimwiki_by_content(header: &[u8], name: &str) -> bool {
+    if !name.to_ascii_lowercase().ends_with(".wiki") {
+        return false;
+    }
+    let text = String::from_utf8_lossy(header);
+    let (mut vim, mut media) = (0, 0);
+    for line in text.lines() {
+        let t = line.trim_start();
+        let block = t.starts_with('%') || t.starts_with("{{{") || t.starts_with("}}}");
+        let task = t.contains("[ ]") || t.contains("[X]") || t.contains("[x]");
+        let bold = t.split_whitespace().any(|w| w.len() > 2 && w.starts_with('*') && w.ends_with('*') && !w.starts_with("**")) || t.contains("_*");
+        if block || task || bold {
+            vim += 1;
+        }
+        if t.contains("'''") || t.contains("''") || t.starts_with("{{") || t.starts_with("{|") || t.contains("<ref") || t.contains("__TOC__") {
+            media += 1;
+        }
+    }
+    vim >= 2 && vim > media
+}
 
 markup!(
     /// Gemtext, the Gemini protocol's line-oriented markup.
@@ -220,6 +244,15 @@ mod tests {
         let (_, s) = blocks(&ZimWikiReader, "a.zim", "Content-Type: text/x-zim-wiki\nWiki-Format: zim 0.4\n\n====== Top ======\n**bold** //it// ''mono'' [[Page|link]]\n* one\n\t* two\n1. first\n'''\ncode\n'''\n|a|b|\n|-|-|\n|1|2|\n");
         has(&s, &["Heading { level: 1", "Strong", "Emphasis", "Code(\"mono\")", "Page", "List { ordered: false", "two", "List { ordered: true", "text: \"code\"", "Table { header_rows: 1"]);
         lacks(&s, &["Content-Type"]);
+    }
+
+    #[test]
+    fn vimwiki_takes_wiki_files_that_read_as_vimwiki() {
+        let vim = b"%title Notes\n= Heading =\n* [ ] a task\nsome *bold* words\n{{{\ncode\n}}}\n";
+        let media = b"== Heading ==\nSome '''bold''' and ''italic''.\n{{Infobox}}\n{| class=wikitable\n|}\n";
+        assert!(super::vimwiki_by_content(vim, "notes.wiki"));
+        assert!(!super::vimwiki_by_content(media, "Article.wiki"));
+        assert!(!super::vimwiki_by_content(vim, "notes.txt"), "only .wiki is in question");
     }
 
     #[test]

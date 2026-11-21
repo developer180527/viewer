@@ -99,4 +99,18 @@ fetch cclib/cclib '/data/Turbomole/' '/data/Molden/' '/data/regression/Molden/'
 fetch materialsproject/pymatgen '/test-files/**/POSCAR*' '/test-files/**/CONTCAR*' '/test-files/**/*.vasp' '!/test-files/**/*.gz' '!/test-files/**/*.bz2' '!/test-files/**/*.xz'
 fetch gtkwave/gtkwave '/**/*.vcd'
 
+# Images, archives and text (2026-11-22): images and their test suites (PngSuite among
+# image-rs's), SVG from resvg's tests, archives broken and whole from zip2's and
+# CPython's, tar-rs's and flate2's tests, and real text in dozens of languages and
+# encodings from uchardet's.
+fetch image-rs/image '/tests/images/'
+fetch image-rs/image-tiff '/tests/images/'
+fetch webmproject/libwebp-test-data '/*.webp'
+fetch linebender/resvg '/crates/resvg/tests/**/*.svg'
+fetch zip-rs/zip2 '/tests/data/'
+fetch python/cpython '/Lib/test/archivetestdata/'
+fetch alexcrichton/tar-rs '/tests/archives/'
+fetch rust-lang/flate2-rs '/tests/'
+fetch BYVoid/uchardet '/test/'
+
 for d in real/*/; do printf '%-24s %s\n' "$(basename "$d")" "$(ls "$d" | wc -l | tr -d ' ')"; done

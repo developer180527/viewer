@@ -254,5 +254,17 @@ fn real_3d_files() {
             println!("    {why}: {} (e.g. {})", fs.len(), fs.iter().take(2).cloned().collect::<Vec<_>>().join(", "));
         }
     }
+    // One line a reader in real_world.rs's words, which docs/formats.md reads (files
+    // broken on purpose aren't counted).
+    let mut per_reader: BTreeMap<&str, (usize, usize)> = BTreeMap::new();
+    for (ext, r) in &rows {
+        let t = per_reader.entry(reader_for(ext).unwrap()).or_default();
+        t.0 += r.files - r.purpose;
+        t.1 += r.ok;
+    }
+    println!();
+    for (reader, (files, ok)) in &per_reader {
+        println!("{reader}: {files} files — {ok} opened as {reader}");
+    }
     assert!(broken.is_empty(), "{} files crashed or hung:\n{}", broken.len(), broken.join("\n"));
 }
