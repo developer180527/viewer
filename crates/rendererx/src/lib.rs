@@ -46,6 +46,14 @@ pub const OPTIONAL_FEATURES: wgpu::Features = wgpu::Features::TEXTURE_COMPRESSIO
     .union(wgpu::Features::TEXTURE_COMPRESSION_ETC2)
     .union(wgpu::Features::TEXTURE_COMPRESSION_ASTC);
 
+/// Tells the scene loaders what `features` (a device's, or the adapter's it will be
+/// made from) read compressed, so textures decoded from now on come ready for it:
+/// BC7 where BC is there, a quarter of RGBA8's memory (scene_data's `compress`).
+pub fn announce_features(features: wgpu::Features) {
+    let bc = features.contains(wgpu::Features::TEXTURE_COMPRESSION_BC);
+    scene_data::set_compression(if bc { scene_data::Compression::Bc7 } else { scene_data::Compression::None });
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Msaa {
     Off,

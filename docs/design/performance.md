@@ -245,7 +245,7 @@ In order. Each step names the scenario that proves it and the target; re-run
     heap blocks are MuPDF's resource store, then cap it (`fz_new_context` store size,
     ~64 MB).
 
-    ◐ **Images and the PDF store done 2026-11-21; 3D textures still to do.**
+    ✅ **Done 2026-11-21** (3D textures last, after step 6).
 
     (10) An image too big to hold whole (over 128 MB of pixels on the Mac, 64 MB on
     touch) is now decoded once into a box-filtered preview of at most 4096 px a side,
@@ -271,14 +271,41 @@ In order. Each step names the scenario that proves it and the target; re-run
     | Mac geotopo.pdf at rest | 577 MB (225 MB large heap) | 216 MB (13 MB) |
     | iPhone image-zoom-pan peak | 454–503 MB | 250 MB |
     | iPhone image-zoom-pan power | — | 120 mW |
-    | Mac Sponza | 842 MB | 842 MB (unchanged) |
 
-    (11) Still to do. Two thirds of it was already in place: libfileparser-3d caps the
-    base level at 2048 and builds mips, and scene-data frees each texture's CPU copy once
-    it's uploaded. What's left is compression. Sponza's 409 MB of GPU textures would be
-    about a quarter of that as ASTC 4×4 on iOS or BC7 on the Mac. That means encoding on
-    the load worker (or caching encoded textures beside the file), which is a task of its
-    own. The other ~377 MB of Sponza is malloc and wants its own Allocations pass.
+    (11) Two thirds of it was already in place: libfileparser-3d caps the base level at
+    2048 and builds mips, and scene-data frees each texture's CPU copy once it's
+    uploaded. What was missing was compression. The texture jobs now encode every level
+    as BC7 on their own threads (`scene_data::compress`), wherever the GPU reads BC. That
+    covers every Apple-silicon Mac, and iPhones on iOS 16.4+ that report it; the iPhone
+    17 does. Elsewhere textures stay RGBA8, as before. The encoder is our own and writes
+    only mode 6: one RGBA line per block, so alpha, normal maps and packed
+    metal-roughness maps need no shader change. On Sponza's 69 textures it scores
+    37.3 dB PSNR. Least-squares refits, as fuller encoders do, gained 0.03 dB for 60%
+    more time, so they're out. A 1024² level takes 16 ms of CPU, about three times its
+    JPEG decode, split over up to four threads. Sponza costs about 1.5 s more CPU to
+    load, and its textures arrive a little later. Whether the GPU reads BC is learned
+    where the device is made (`viewer_surface::open_device`) and, for the Apple shell,
+    from the adapter on a thread the session starts. The shell makes its canvas only
+    when a drawn page first shows, which is after a model's textures start decoding.
+    The headless `--screenshot` path stays uncompressed, so goldens don't depend on
+    timing. A rendererx test draws the same texture as RGBA8 and as the encoder's BC7
+    and compares the two pictures: 7 levels off at worst, 0.9 on average. Rendered whole
+    on the Mac, Sponza with BC7 agrees with Sponza in RGBA8 to 51 dB PSNR (0.2 levels
+    off on average).
+
+    | 3D at rest, after a 10 s orbit | Before | After |
+    |---|---|---|
+    | iPhone Sponza, end (peak) | 570 MB (703) | 293 MB (384) |
+    | iPhone mosquito.glb | 288 MB | 207 MB |
+    | iPhone helmet.usdz | 290 MB | 210 MB |
+    | Mac Sponza | 825–845 MB | 549–581 MB |
+    | Mac mosquito.glb / helmet.usdz | 609–611 / 570–577 MB | 536–541 / 496–523 MB |
+
+    Frame rate, draw times and orbit power are unchanged on the iPhone (120 fps, p50
+    1.5–1.8 ms, 24–35 mW). Sampling a quarter of the bytes should help the GPU too, but
+    these scenes were never bandwidth-bound enough to show it. Of Sponza's remaining
+    memory on the Mac, ~377 MB is malloc, which wants its own Allocations pass. An ASTC
+    encoder would cover iPhones without BC.
 
 ### Step 6: the smaller ones (findings 10, 11)
 

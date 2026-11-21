@@ -154,6 +154,9 @@ impl ViewerSession {
 impl ViewerSession {
     #[uniffi::constructor]
     pub fn new(waker: Arc<dyn Waker>) -> Arc<Self> {
+        // The canvas (and its device) comes when a drawn page first shows; textures
+        // decode before that, so they learn what the GPU reads from here.
+        viewer_surface::probe_texture_compression();
         let w = waker.clone();
         let hooks = Hooks::new(Arc::new(move || w.wake()));
         Arc::new(Self { inner: Mutex::new(Session::new(hooks)), waker })

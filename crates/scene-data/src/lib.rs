@@ -11,6 +11,7 @@
 //!
 //! See docs/design/3d-renderer.md §4–§6 and §12.
 
+mod compress;
 mod error;
 mod material;
 mod mesh;
@@ -19,6 +20,7 @@ mod scene;
 mod stream;
 mod texture;
 
+pub use compress::{Compression, compress_for_gpu, compression, encode_bc7, set_compression};
 pub use error::{Error, SceneLimits};
 pub use glam;
 pub use material::{AlphaMode, Material, ParamBlock, ParamValue, ShadingId, ShadingSource, Slot};

@@ -664,3 +664,31 @@ fn background_compile_never_compiles_on_the_frame_path() {
     assert_ne!(shaded, clay, "then its own PBR shading");
     assert!(shaded[0] > 2 * shaded[1], "red base colour: {shaded:?}");
 }
+
+#[test]
+fn bc7_textures_from_the_encoder_draw_like_the_pixels_they_came_from() {
+    // A device with the compressed formats, as the apps make it.
+    let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+    let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) else { return eprintln!("no GPU adapter; skipping") };
+    if !adapter.features().contains(wgpu::Features::TEXTURE_COMPRESSION_BC) {
+        return eprintln!("no BC textures on this GPU; skipping");
+    }
+    let desc = wgpu::DeviceDescriptor { required_features: adapter.features() & OPTIONAL_FEATURES, ..Default::default() };
+    let (device, queue) = pollster::block_on(adapter.request_device(&desc)).unwrap();
+    let r = Renderer::new(&device, &queue, RendererDesc { msaa: Msaa::Off, ..Default::default() });
+    // Smooth colour across the quad, with a hard edge down the middle: what the GPU
+    // decodes has to be what the encoder meant, block layout and endpoint order alike.
+    let (w, h) = (64u32, 64u32);
+    let pixels: Vec<u8> = (0..w * h).flat_map(|i| {
+        let (x, y) = (i % w, i / w);
+        if x < w / 2 { [(x * 8) as u8, (y * 4) as u8, 200, 255] } else { [40, 255 - (y * 4) as u8, (x * 2) as u8, 255] }
+    }).collect();
+    let unlit = || Material::new(ShadingId::UNLIT, ShadingSource::FromFile).with_param("base_color", ParamValue::Vec4(Vec4::ONE));
+    let plain = TextureData::rgba8(w, h, ColorSpace::Srgb, pixels.clone());
+    let bc7 = TextureData::new(w, h, TextureFormat::Bc7, ColorSpace::Srgb, vec![encode_bc7(w, h, &pixels).into()]);
+    let a = render_quad(&r, &device, &queue, &material_quad(unlit(), Some((Slot::BASE_COLOR, plain))));
+    let b = render_quad(&r, &device, &queue, &material_quad(unlit(), Some((Slot::BASE_COLOR, bc7))));
+    let worst = a.iter().zip(&b).map(|(x, y)| x.abs_diff(*y)).max().unwrap();
+    let mean = a.iter().zip(&b).map(|(x, y)| x.abs_diff(*y) as f64).sum::<f64>() / a.len() as f64;
+    assert!(worst <= 24 && mean < 2.0, "BC7 drawn {worst} off at worst, {mean:.2} on average");
+}

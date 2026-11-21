@@ -4,6 +4,7 @@
 //!
 //! Images are scaled to at most [`MAX_SIDE`] and get a full mip chain here, so the
 //! renderer only copies bytes. Mips of colour textures are averaged in linear light.
+//! Where the GPU reads BC7, every level is encoded here too (`scene_data::compress`).
 
 use std::path::{Component, Path};
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -184,7 +185,8 @@ pub fn spawn(sink: TextureSink, jobs: Vec<ImageJob>, cx: &ParseContext) -> Textu
             let state = if !wanted() {
                 State::Skipped
             } else {
-                match ParseContext::catching(|| decode(&job.source, job.color_space, max_alloc)) {
+                // Compressed for the GPU here, on the decoder's thread, when it reads BC7.
+                match ParseContext::catching(|| decode(&job.source, job.color_space, max_alloc).map(scene_data::compress_for_gpu)) {
                     Some(data) => if sink.set_texture(job.texture, data).is_ok() { State::Decoded } else { State::Failed },
                     None => State::Failed,
                 }

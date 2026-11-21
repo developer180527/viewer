@@ -17,4 +17,4 @@ pub mod views;
 mod canvas;
 
 pub use canvas::{Canvas, Drawn};
-pub use gpu::{Gpu, GpuUploader, Rx, TexturePool, Wake, open_device};
+pub use gpu::{Gpu, GpuUploader, Rx, TexturePool, Wake, open_device, probe_texture_compression};

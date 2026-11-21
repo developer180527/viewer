@@ -21,7 +21,22 @@ pub fn open_device(adapter: &wgpu::Adapter) -> anyhow::Result<(wgpu::Device, wgp
         required_features: adapter.features() & rendererx::OPTIONAL_FEATURES,
         ..Default::default()
     };
-    pollster::block_on(adapter.request_device(&desc)).context("creating the GPU device")
+    let (device, queue) = pollster::block_on(adapter.request_device(&desc)).context("creating the GPU device")?;
+    rendererx::announce_features(device.features());
+    Ok((device, queue))
+}
+
+/// Finds out, on a thread of its own, which compressed textures this machine's GPU
+/// reads, and tells the scene loaders: for shells that make their device only when a
+/// drawn page first shows, after a model's textures have started decoding. A few
+/// milliseconds for the adapter, off the launch path.
+pub fn probe_texture_compression() {
+    let _ = std::thread::Builder::new().name("gpu probe".into()).spawn(|| {
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        if let Ok(adapter) = pollster::block_on(instance.request_adapter(&Default::default())) {
+            rendererx::announce_features(adapter.features() & rendererx::OPTIONAL_FEATURES);
+        }
+    });
 }
 
 /// RendererX for windows, in background-compile mode, and the thread that compiles
