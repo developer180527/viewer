@@ -282,8 +282,7 @@ In order. Each step names the scenario that proves it and the target; re-run
     metal-roughness maps need no shader change. On Sponza's 69 textures it scores
     37.3 dB PSNR. Least-squares refits, as fuller encoders do, gained 0.03 dB for 60%
     more time, so they're out. A 1024² level takes 16 ms of CPU, about three times its
-    JPEG decode, split over up to four threads. Sponza costs about 1.5 s more CPU to
-    load, and its textures arrive a little later. Whether the GPU reads BC is learned
+    JPEG decode, split over up to four threads. Whether the GPU reads BC is learned
     where the device is made (`viewer_surface::open_device`) and, for the Apple shell,
     from the adapter on a thread the session starts. The shell makes its canvas only
     when a drawn page first shows, which is after a model's textures start decoding.
@@ -303,9 +302,9 @@ In order. Each step names the scenario that proves it and the target; re-run
 
     Frame rate, draw times and orbit power are unchanged on the iPhone (120 fps, p50
     1.5–1.8 ms, 24–35 mW). Sampling a quarter of the bytes should help the GPU too, but
-    these scenes were never bandwidth-bound enough to show it. Of Sponza's remaining
-    memory on the Mac, ~377 MB is malloc, which wants its own Allocations pass. An ASTC
-    encoder would cover iPhones without BC.
+    these scenes were never bandwidth-bound enough to show it. An ASTC encoder would
+    cover iPhones without BC. Where the rest of Sponza's memory goes, and what the
+    texture threads cost, is under "Allocations and threads" below.
 
 ### Step 6: the smaller ones (findings 10, 11)
 
@@ -347,6 +346,62 @@ In order. Each step names the scenario that proves it and the target; re-run
     callback runs for all of them), so the libgui interface on a 126-column sheet still
     lays out 126 labels a row. Column virtualization belongs in libgui's table, next to
     its rows'.
+
+### Allocations and threads (2026-11-21, after the texture compression)
+
+Sponza open on the Mac, traced with malloc stack logging, `vmmap`, `footprint`,
+`heap` and Instruments' System Trace. (`xctrace` can't export the Allocations
+instrument's data from the command line, so the heap figures come from the command-line
+tools.)
+
+**Where the memory goes.** 569 MB while orbiting:
+
+| | MB |
+|---|---|
+| GPU memory owned by the process | 318 |
+| Malloc Small (about half of it freed pages not yet returned) | 111 |
+| Other owned memory, unmapped | 43 |
+| IOSurface (the window's drawables) | 37 |
+| Malloc Large | 34 |
+
+- Step 5's "~377 MB of malloc" was wrong: malloc is about 145 MB. Live allocations are
+  52 MB; the largest single item is libgui's font rasteriser keeping 20 MB of glyph
+  geometry (fontdue, about 5,900 allocations), a libgui follow-up.
+- The rest is pages the texture work freed (89 MB of the zones is free). The shell
+  returns them when the canvas goes idle (step 5's `releaseFreeMemory`), so they last
+  only while the scene moves.
+- On the GPU, textures are about 90 MB, geometry about 12 MB, the view's target and
+  resolve about 27 MB. MSAA and depth are memoryless, as meant.
+- About 165 MB is Metal's own. In a bare test, a new device's first copy took 69 MB
+  and its first render pass another 96 MB, with no rendererx involved. It's per device
+  and paid once; the app has one device.
+
+**Threads.** System Trace of the same open, 10 s:
+
+| | Before | After |
+|---|---|---|
+| BC7 encoding | ~2300 ms (unnamed threads) | 1137 ms (named "bc7"), 7.6 ms waiting for a core |
+| JPEG decoding (2 texture threads) | 970 ms | 692 ms |
+| jpeg-decoder's per-channel threads | ~290 ms, ~27,000 slices | gone |
+| Main thread running / waiting for a core | 1215 / 29 ms | 1177 / 20 ms |
+| Everything, open and 10 s orbit | ~4.8 s CPU | ~4.2 s CPU |
+
+Two fixes came out of it:
+
+- The encoder's threads cost 24% more instructions than one thread doing the same
+  blocks. Context switches were trivial (about 390 in all); joining the threads'
+  outputs byte by byte through an iterator was the cost. Each thread now writes into
+  its own slice of one buffer, with the same instructions as single-threaded and a
+  third less wall time.
+- jpeg-decoder starts a thread per colour channel for every JPEG and passes rows
+  between them over channels. On Sponza's 65 JPEGs that took 12.2 G instructions and
+  25,000 context switches, against 5.4 G and 60 for `image`'s decoder (zune-jpeg),
+  which agrees with it to 3 levels. JPEGs up to 2048 px now go to `image`; jpeg-decoder
+  stays for larger ones, where its scaled IDCT does the shrinking.
+
+The unnamed threads left (about 1.2 s over 50,000 slices) are the system's frame
+machinery at 120 fps: Metal's command-buffer submission, Core Animation's present
+callbacks, frame pacing and Swift's task pool.
 
 ### After each step
 

@@ -385,19 +385,23 @@ fn split(i: usize, n: usize, out: usize) -> Split {
     }
 }
 
-/// Decodes a JPEG at the smallest of 1, 1/2, 1/4, 1/8 scale that still reaches
-/// [`MAX_SIDE`] (the IDCT does the scaling), then finishes with a box filter. A 4K map
-/// is decoded at 2K: a quarter of the memory and time.
+/// Decodes a JPEG larger than [`MAX_SIDE`] at the smallest of 1/2, 1/4, 1/8 scale that
+/// still reaches it (the IDCT does the scaling), then finishes with a box filter. A 4K
+/// map is decoded at 2K: a quarter of the memory and time. `None` for one that already
+/// fits, which `image`'s decoder reads: jpeg-decoder starts a thread per colour channel
+/// for every image and passes rows between them, which on Sponza's 65 JPEGs cost 2.3×
+/// the instructions and 25,000 context switches against 60.
 fn load_jpeg(bytes: &[u8], srgb: bool) -> Option<image::RgbaImage> {
     let mut d = jpeg_decoder::Decoder::new(bytes);
     d.read_info().ok()?;
     let info = d.info()?;
     let side = info.width.max(info.height) as u32;
-    if side > MAX_SIDE {
-        // `scale` picks the smallest IDCT size at least this large.
-        let k = MAX_SIDE as f32 / side as f32;
-        d.scale((info.width as f32 * k).ceil() as u16, (info.height as f32 * k).ceil() as u16).ok()?;
+    if side <= MAX_SIDE {
+        return None;
     }
+    // `scale` picks the smallest IDCT size at least this large.
+    let k = MAX_SIDE as f32 / side as f32;
+    d.scale((info.width as f32 * k).ceil() as u16, (info.height as f32 * k).ceil() as u16).ok()?;
     let pixels = d.decode().ok()?;
     let info = d.info()?;
     let (w, h) = (info.width as u32, info.height as u32);

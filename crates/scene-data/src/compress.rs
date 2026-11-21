@@ -60,35 +60,39 @@ pub fn compress_for_gpu(data: TextureData) -> TextureData {
 /// four threads: the same work, done sooner (about 16 ms a 1024² level on one M-series
 /// core, three times a JPEG's decode).
 pub fn encode_bc7(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
-    let bh = height.div_ceil(4);
-    let threads = if width as u64 * height as u64 >= 1 << 18 { std::thread::available_parallelism().map_or(1, |n| n.get()).min(4) as u32 } else { 1 };
+    let (bw, bh) = (width.div_ceil(4) as usize, height.div_ceil(4) as usize);
+    let mut out = vec![0u8; bw * bh * 16];
+    let threads = if width as u64 * height as u64 >= 1 << 18 { std::thread::available_parallelism().map_or(1, |n| n.get()).min(4) } else { 1 };
     if threads <= 1 {
-        return encode_rows(width, height, rgba, 0..bh);
+        encode_rows(width, height, rgba, 0, &mut out);
+        return out;
     }
-    let per = bh.div_ceil(threads);
+    // Each thread writes its rows of blocks straight into its part of the output.
+    // (Joining parts made apart, byte by byte, cost a quarter more instructions than
+    // the encoding itself.)
+    let rows_each = bh.div_ceil(threads);
     std::thread::scope(|s| {
-        let parts: Vec<_> = (0..threads).map(|t| s.spawn(move || encode_rows(width, height, rgba, t * per..((t + 1) * per).min(bh)))).collect();
-        parts.into_iter().flat_map(|p| p.join().expect("BC7 encoder thread")).collect()
-    })
+        for (t, part) in out.chunks_mut(rows_each * bw * 16).enumerate() {
+            std::thread::Builder::new().name("bc7".into()).spawn_scoped(s, move || encode_rows(width, height, rgba, (t * rows_each) as u32, part)).expect("BC7 encoder thread");
+        }
+    });
+    out
 }
 
-/// Block rows `rows` of a level.
-fn encode_rows(width: u32, height: u32, rgba: &[u8], rows: std::ops::Range<u32>) -> Vec<u8> {
+/// Rows of blocks from `first_row` on, as many as `out` holds.
+fn encode_rows(width: u32, height: u32, rgba: &[u8], first_row: u32, out: &mut [u8]) {
     let bw = width.div_ceil(4);
-    let mut out = Vec::with_capacity(bw as usize * rows.len() * 16);
     let mut block = [[0u8; 4]; 16];
-    for by in rows {
-        for bx in 0..bw {
-            for (i, p) in block.iter_mut().enumerate() {
-                let x = (bx * 4 + i as u32 % 4).min(width - 1);
-                let y = (by * 4 + i as u32 / 4).min(height - 1);
-                let at = (y as usize * width as usize + x as usize) * 4;
-                p.copy_from_slice(&rgba[at..at + 4]);
-            }
-            out.extend_from_slice(&mode6(&block));
+    for (k, dst) in out.as_chunks_mut::<16>().0.iter_mut().enumerate() {
+        let (bx, by) = (k as u32 % bw, first_row + k as u32 / bw);
+        for (i, p) in block.iter_mut().enumerate() {
+            let x = (bx * 4 + i as u32 % 4).min(width - 1);
+            let y = (by * 4 + i as u32 / 4).min(height - 1);
+            let at = (y as usize * width as usize + x as usize) * 4;
+            p.copy_from_slice(&rgba[at..at + 4]);
         }
+        *dst = mode6(&block);
     }
-    out
 }
 
 /// Mode 6's sixteen weights, out of 64.
