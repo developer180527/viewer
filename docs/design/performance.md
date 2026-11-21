@@ -347,6 +347,14 @@ In order. Each step names the scenario that proves it and the target; re-run
     lays out 126 labels a row. Column virtualization belongs in libgui's table, next to
     its rows'.
 
+    Done in libgui (after its rev 2709ad4; Viewer picks it up when the pin moves):
+    `table_with` builds only the scrolling columns that overlap the viewport, plus one
+    either side, with a gap before and after so the pane keeps its width. A 126-column,
+    160 px table in a 1100×760 window builds a frame in 0.17 ms against 1.50 ms (p95
+    0.20 against 1.59), with no allocation per frame. libgui's tests cover a 100-column
+    table, and its headers still line up with their cells while columns resize and the
+    window narrows.
+
 ### Allocations and threads (2026-11-21, after the texture compression)
 
 Sponza open on the Mac, traced with malloc stack logging, `vmmap`, `footprint`,
@@ -366,7 +374,13 @@ tools.)
 
 - Step 5's "~377 MB of malloc" was wrong: malloc is about 145 MB. Live allocations are
   52 MB; the largest single item is libgui's font rasteriser keeping 20 MB of glyph
-  geometry (fontdue, about 5,900 allocations), a libgui follow-up.
+  geometry (fontdue, about 5,900 allocations). fontdue builds every glyph's outline
+  when a font loads: Inter (2,933 glyphs) holds 9.1 MB and takes 14.5 ms, and Hack
+  (1,573) 3.4 MB and 4 ms. Both load at launch, on the main thread. Inter's bold,
+  italic and bold italic add about 8.8 MB and 8 ms each when formatted text first
+  shows: up to 39 MB in all. A rasteriser that reads outlines per glyph as it draws
+  (ttf-parser with ab_glyph's rasteriser; both are already in the lockfile) would hold
+  only what's drawn.
 - The rest is pages the texture work freed (89 MB of the zones is free). The shell
   returns them when the canvas goes idle (step 5's `releaseFreeMemory`), so they last
   only while the scene moves.
