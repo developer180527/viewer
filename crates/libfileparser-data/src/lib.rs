@@ -335,11 +335,17 @@ fn looks_like_json(header: &[u8]) -> bool {
     }
 }
 
-/// The file as UTF-8 text, without a byte-order mark.
-fn text<'a>(src: &'a FileSource, format: &str) -> Result<&'a str> {
+/// The file as text, without a byte-order mark: UTF-8, or UTF-16 when its mark says so
+/// (Windows writes INI and `.inf` files that way).
+fn text<'a>(src: &'a FileSource, format: &str) -> Result<std::borrow::Cow<'a, str>> {
     let bytes = src.bytes();
+    if let Some((enc, bom)) = encoding_rs::Encoding::for_bom(bytes)
+        && enc != encoding_rs::UTF_8
+    {
+        return Ok(std::borrow::Cow::Owned(enc.decode_without_bom_handling(&bytes[bom..]).0.into_owned()));
+    }
     let bytes = bytes.strip_prefix(b"\xEF\xBB\xBF").unwrap_or(bytes);
-    std::str::from_utf8(bytes).map_err(|e| {
+    std::str::from_utf8(bytes).map(std::borrow::Cow::Borrowed).map_err(|e| {
         ParseError::corrupt(format!(
             "{format}: not UTF-8 text (byte {})",
             e.valid_up_to()
@@ -449,7 +455,7 @@ static YAML: Data = Data {
     open: |src, cx| {
         Ok(json::tree_document(
             format("yaml", "YAML"),
-            yaml::parse(text(src, "YAML")?, cx)?,
+            yaml::parse(&text(src, "YAML")?, cx)?,
             src,
             "yaml",
         ))
@@ -468,7 +474,7 @@ static TOML: Data = Data {
     open: |src, cx| {
         Ok(json::tree_document(
             format("toml", "TOML"),
-            toml::parse(text(src, "TOML")?, cx)?,
+            toml::parse(&text(src, "TOML")?, cx)?,
             src,
             "toml",
         ))
@@ -571,7 +577,7 @@ static INI: Data = Data {
     open: |src, cx| {
         Ok(json::tree_document(
             format("ini", "INI"),
-            config::parse_ini(text(src, "INI")?, cx)?,
+            config::parse_ini(&text(src, "INI")?, cx)?,
             src,
             "ini",
         ))
@@ -611,7 +617,7 @@ static ENV: Data = Data {
     open: |src, cx| {
         Ok(json::tree_document(
             format("env", "Environment file"),
-            config::parse_env(text(src, ".env")?, cx)?,
+            config::parse_env(&text(src, ".env")?, cx)?,
             src,
             "shell",
         ))

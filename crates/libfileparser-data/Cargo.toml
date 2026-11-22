@@ -23,6 +23,8 @@ science = ["dep:chem-lite"]
 business = []
 
 [dependencies]
+# UTF-16 text with a byte-order mark (INI, YAML, TOML, .env from Windows).
+encoding_rs = "0.8"
 libfileparser-core.workspace = true
 memchr.workspace = true
 csv = "1"

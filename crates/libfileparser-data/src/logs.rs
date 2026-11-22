@@ -456,10 +456,15 @@ fn stamp_len(line: &str) -> Option<usize> {
         Some(rest) => (1, rest),
         None => (0, line),
     };
-    let n = iso_len(inner).or_else(|| bsd_time_len(inner)).or_else(|| {
-        let n = inner.bytes().take_while(u8::is_ascii_digit).count();
-        (matches!(n, 10 | 13) && inner.as_bytes().get(n).is_none_or(|c| matches!(c, b' ' | b'.' | b']'))).then_some(n)
-    })?;
+    let n = iso_len(inner)
+        .or_else(|| bsd_time_len(inner))
+        .or_else(|| {
+            let n = inner.bytes().take_while(u8::is_ascii_digit).count();
+            (matches!(n, 10 | 13) && inner.as_bytes().get(n).is_none_or(|c| matches!(c, b' ' | b'.' | b']'))).then_some(n)
+        })
+        .or_else(|| weekday_time_len(inner))
+        .or_else(|| clock_len(inner))
+        .or_else(|| (open == 0).then(|| tagged_epoch_len(inner)).flatten())?;
     if open == 1 {
         // To the closing bracket: `[2024-11-08 10:00:00 +0000]`.
         let close = inner.find(']')?;
@@ -467,6 +472,58 @@ fn stamp_len(line: &str) -> Option<usize> {
     } else {
         Some(n)
     }
+}
+
+/// `Sun Dec 04 04:47:44 2005` (Apache's error log, ctime): a weekday, then the BSD form.
+fn weekday_time_len(s: &str) -> Option<usize> {
+    const DAYS: [&str; 7] = ["Mon ", "Tue ", "Wed ", "Thu ", "Fri ", "Sat ", "Sun "];
+    let rest = DAYS.iter().find_map(|d| s.strip_prefix(d))?;
+    let n = bsd_time_len(rest)?;
+    // A year after the time.
+    let year = rest[n..].strip_prefix(' ').filter(|y| y.len() >= 4 && y.as_bytes()[..4].iter().all(u8::is_ascii_digit)).map_or(0, |_| 5);
+    Some(4 + n + year)
+}
+
+/// A date of digits and separators ending in a clock, with its fraction: Android's
+/// `03-17 16:13:38.811`, Spark's `17/06/09 20:10:40`, HealthApp's
+/// `20171223-22:15:29:606`, Proxifier's `10.30 16:49:06`; and HDFS's `081109 203615`.
+fn clock_len(s: &str) -> Option<usize> {
+    let b = s.as_bytes();
+    if !b.first()?.is_ascii_digit() {
+        return None;
+    }
+    let digit = |i: usize| b.get(i).is_some_and(u8::is_ascii_digit);
+    // HDFS: yymmdd hhmmss.
+    if (0..6).all(digit) && b.get(6) == Some(&b' ') && (7..13).all(digit) && b.get(13).is_none_or(|c| *c == b' ') {
+        return Some(13);
+    }
+    // The date before the clock: digits and separators only, at most 11 bytes.
+    let date = b.iter().take(12).take_while(|c| c.is_ascii_digit() || b"-/._ ".contains(c)).count();
+    let p = (0..=date).find(|&p| digit(p) && digit(p + 1) && b.get(p + 2) == Some(&b':') && digit(p + 3) && digit(p + 4) && b.get(p + 5) == Some(&b':') && digit(p + 6) && digit(p + 7))?;
+    if p == 0 {
+        return None;
+    }
+    let mut end = p + 8;
+    if b.get(end).is_some_and(|c| matches!(c, b'.' | b',' | b':')) && digit(end + 1) {
+        end += 1;
+        while digit(end) {
+            end += 1;
+        }
+    }
+    Some(end)
+}
+
+/// `- 1117838570 …` (BGL's and Thunderbird's labelled logs): an alert tag, `-` when
+/// there's none, then a Unix time.
+fn tagged_epoch_len(s: &str) -> Option<usize> {
+    let tag = s.find(' ')?;
+    let t = &s[..tag];
+    if !(t == "-" || (t.len() <= 16 && t.bytes().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == b'_'))) {
+        return None;
+    }
+    let rest = &s[tag + 1..];
+    let n = rest.bytes().take_while(u8::is_ascii_digit).count();
+    (n == 10 && rest.as_bytes().get(n) == Some(&b' ')).then_some(tag + 1 + n)
 }
 
 struct Stamped<'a> {
@@ -792,6 +849,23 @@ mod tests {
         }
         assert!(stamp_len("Hello 2024-11-08").is_none());
         assert!(stamp_len("12345 apples").is_none());
+    }
+
+    #[test]
+    fn the_timestamps_real_logs_start_with_are_found() {
+        for (line, stamp) in [
+            ("03-17 16:13:38.811  1702  2395 D WindowManager: x", "03-17 16:13:38.811"),
+            ("081109 203615 148 INFO dfs.DataNode: x", "081109 203615"),
+            ("17/06/09 20:10:40 INFO executor: x", "17/06/09 20:10:40"),
+            ("20171223-22:15:29:606|Step_LSC|30002312|x", "20171223-22:15:29:606"),
+            ("[10.30 16:49:06] chrome.exe - x", "10.30 16:49:06"),
+            ("[Sun Dec 04 04:47:44 2005] [notice] x", "Sun Dec 04 04:47:44 2005"),
+            ("- 1131566461 2005.11.09 dn228 x", "- 1131566461"),
+        ] {
+            assert_eq!(stamped(line).map(|s| s.time), Some(stamp), "{line}");
+        }
+        assert!(stamp_len("1702 not a time").is_none());
+        assert!(stamp_len("version 1.2.3 released").is_none());
     }
 
     #[test]

@@ -26,7 +26,7 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
           "mediawiki": "mediawiki", "wiki": "mediawiki", "latex": "latex", "tex": "latex", "creole": "creole", "pod": "pod", "gmi": "gemtext",
           "fountain": "fountain", "dokuwiki": "dokuwiki", "jira": "jira", "t2t": "txt2tags", "muse": "muse", "haddock": "haddock",
           "docbook": "docbook", "dbk": "docbook", "tei": "tei", "texinfo": "texinfo", "texi": "texinfo", "xwiki": "xwiki", "tikiwiki": "tikiwiki",
-          "twiki": "twiki", "zimwiki": "zimwiki", "vimwiki": "vimwiki", "eml": "eml", "mbox": "mbox", "mht": "mhtml", "mhtml": "mhtml",
+          "twiki": "twiki", "zimwiki": "zimwiki", "vimwiki": "vimwiki", "gemini": "gemtext", "eml": "eml", "mbox": "mbox", "mht": "mhtml", "mhtml": "mhtml",
           "msg": "msg", "mobi": "mobi", "azw": "mobi", "azw3": "mobi", "prc": "mobi", "fb2": "fb2", "djvu": "djvu", "djv": "djvu",
           "hwp": "hwp", "hwpx": "hwp", "cb7": "comic", "cbr": "comic", "opml": "opml",
           "1": "man", "2": "man", "3": "man", "4": "man", "5": "man", "6": "man", "7": "man", "8": "man", "9": "man",
@@ -36,10 +36,21 @@ by_ext = {"hcl": "hcl", "tf": "hcl", "kdl": "kdl", "dhall": "dhall", "ncl": "nic
           # Images, archives (2026-11-22). Text is by repository (uchardet's), below.
           **{e: "image" for e in ("png", "apng", "jpg", "jpeg", "jfif", "gif", "webp", "tif", "tiff", "bmp", "ico", "tga", "qoi",
                                   "pbm", "pgm", "ppm", "pam", "pnm", "hdr", "exr", "dds", "ff")},
-          "svg": "svg", "svgz": "svg", "zip": "zip", "tar": "tar", "tgz": "tar", "gz": "gzip"}
+          "svg": "svg", "svgz": "svg", "zip": "zip", "tar": "tar", "tgz": "tar", "gz": "gzip",
+          # Data formats that had no real files (2026-11-22).
+          "arb": "arb", "arff": "arff", "atom": "atom", "avsc": "avro", "bed": "bed", "capnp": "capnp", "cron": "cron", "crontab": "cron",
+          "cue": "cue", "dbml": "dbml", "dimacs": "dimacs", "cnf": "dimacs", "wcnf": "dimacs", "env": "env", "fix": "fix", "fbs": "flatbuffers",
+          "gb": "genbank", "gbk": "genbank", "genbank": "genbank", "gbff": "genbank", "geojson": "geojson", "gexf": "gexf", "gff": "gff",
+          "gtf": "gff", "graphml": "graphml", "graphql": "graphql", "gql": "graphql", "graphqls": "graphql", "gxl": "gxl", "har": "har",
+          "hjson": "hjson", "ini": "ini", "desktop": "ini", "jsonl": "json-lines", "ndjson": "json-lines", "json5": "json5", "jsonld": "jsonld",
+          "kmz": "kmz", "ldif": "ldif", "log": "log", "m3u": "m3u", "m3u8": "m3u", "nmea": "nmea", "osm": "osm", "plist": "plist",
+          "stringsdict": "plist", "pls": "pls", "prisma": "prisma", "properties": "properties", "resx": "resx", "resw": "resx", "rss": "rss",
+          "sgml": "sgml", "sgm": "sgml", "smithy": "smithy", "rq": "sparql", "sparql": "sparql", "ru": "sparql", "sql": "sql",
+          "strings": "strings", "thrift": "thrift", "tmx": "tmx", "topojson": "topojson", "trix": "trix", "wkt": "wkt", "xlf": "xliff",
+          "xliff": "xliff", "xsd": "xsd", "xspf": "xspf", "cbz": "comic", "cbt": "comic", "xps": "xps", "oxps": "xps"}
 # Category folders, as corpus/real is laid out: data/, docs/, sheets/ (3d/ is
 # fetch-real-3d.sh's).
-DOCS = {"asciidoc", "doc", "docx", "epub", "html", "markdown", "odp", "odt", "org", "pdf", "ppt", "pptx", "rst", "rtf", "textile", "xps", "comic",
+DOCS = {"xps", "asciidoc", "doc", "docx", "epub", "html", "markdown", "odp", "odt", "org", "pdf", "ppt", "pptx", "rst", "rtf", "textile", "xps", "comic",
         "djot", "typst", "ipynb", "man", "mediawiki", "latex", "creole", "pod", "gemtext", "fountain", "dokuwiki", "jira", "txt2tags", "muse",
         "haddock", "docbook", "tei", "texinfo", "xwiki", "tikiwiki", "twiki", "zimwiki", "vimwiki", "eml", "mbox", "mhtml", "msg", "mobi", "fb2",
         "djvu", "hwp"}
@@ -85,13 +96,26 @@ for repo in [os.path.basename(clone)]:
             # Text in dozens of languages and encodings, each a real document.
             if repo.startswith("BYVoid_uchardet"):
                 reader = "text" if ext == "txt" else None
+            # Shared extensions and names, sorted by content.
+            if ext == "gml":
+                reader = "graph-gml" if b"graph" in head and b"[" in head and not head.lstrip().startswith(b"<") else "gml"
+            if ext in ("json", "yaml", "yml") and (b'"openapi"' in head or b'"swagger"' in head or head.lstrip().startswith((b"openapi:", b"swagger:"))):
+                reader = "openapi"
+            if ext in ("json",) and b'"Topology"' in head:
+                reader = "topojson"
+            if repo.startswith("kurtmckee_feedparser") and ext == "xml":
+                reader = "atom" if b"<feed" in head else "rss" if b"<rss" in head else None
+            if repo.startswith("lxml_lxml") and ext == "xml":
+                reader = "xml"
+            if low.startswith(".env") and ext not in ("example",):
+                reader = "env"
             if repo.startswith("WoLpH_mt940") and ext not in ("sta", "txt"):
                 reader = None
             if reader is None:
                 continue
             # Invalid on purpose: they must fail (or fall back), not crash.
             name = f.lower()
-            invalid = ("/invalid/" in "/" + rel + "/" or (repo.startswith("nst_") and f.startswith("n_"))
+            invalid = ("/invalid/" in "/" + rel + "/" or name.startswith("invalid") or (repo.startswith("nst_") and f.startswith("n_"))
                        or ("-bad-" in name) or (reader == "rdfxml" and "error" in name) or "fail" in rel.lower()
                        # Fuzzers' and CVEs' regression inputs: kept to prove nothing crashes,
                        # not documents (LibreOffice keeps them among its "pass" files).

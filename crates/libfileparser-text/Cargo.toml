@@ -9,6 +9,10 @@ license.workspace = true
 [dependencies]
 libfileparser-core.workspace = true
 memchr.workspace = true
+# Text in other encodings (Windows code pages, ISO-8859, Shift_JIS, GB18030, UTF-16…):
+# encoding_rs decodes, chardetng (Mozilla's, as Firefox uses) guesses which. MIT/Apache.
+encoding_rs = "0.8"
+chardetng = "0.1"
 
 [dev-dependencies]
 libfileparser-testkit.workspace = true

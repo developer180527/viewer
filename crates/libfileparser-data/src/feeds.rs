@@ -14,7 +14,9 @@ pub(crate) fn looks_like_rss(header: &[u8]) -> bool {
 }
 
 pub(crate) fn looks_like_atom(header: &[u8]) -> bool {
-    memchr::memmem::find(header, b"<feed").is_some() && memchr::memmem::find(header, b"http://www.w3.org/2005/Atom").is_some()
+    // Atom 1.0, and 0.3 (2003–05, still in archives and old feeds).
+    memchr::memmem::find(header, b"<feed").is_some()
+        && (memchr::memmem::find(header, b"http://www.w3.org/2005/Atom").is_some() || memchr::memmem::find(header, b"http://purl.org/atom/ns#").is_some())
 }
 
 /// The first of `names` (local names) below `id` that has a value.

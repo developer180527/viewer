@@ -646,6 +646,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f079e83a288787bcd14a6aea84cee5c87a67c5a3e660c30f557a3d24761b3527"
 
 [[package]]
+name = "chardetng"
+version = "0.1.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "14b8f0b65b7b08ae3c8187e8d77174de20cb6777864c6b832d8ad365999cf1ea"
+dependencies = [
+ "cfg-if",
+ "encoding_rs",
+ "memchr",
+]
+
+[[package]]
 name = "chem-lite"
 version = "0.3.1"
 dependencies = [
@@ -2149,6 +2160,7 @@ version = "0.3.1"
 dependencies = [
  "chem-lite",
  "csv",
+ "encoding_rs",
  "libfileparser-core",
  "libfileparser-testkit",
  "memchr",
@@ -2211,6 +2223,7 @@ dependencies = [
  "png",
  "resvg",
  "smallvec",
+ "tiff",
 ]
 
 [[package]]
@@ -2264,6 +2277,8 @@ dependencies = [
 name = "libfileparser-text"
 version = "0.3.1"
 dependencies = [
+ "chardetng",
+ "encoding_rs",
  "libfileparser-core",
  "libfileparser-testkit",
  "memchr",

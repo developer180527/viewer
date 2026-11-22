@@ -79,7 +79,15 @@ pub(crate) fn parse(text: &str, lang: &Lang, cx: &ParseContext) -> Result<Blocks
         // Strings, copied whole: `"…"`, `'…'`, GraphQL's `"""…"""`.
         if c == b'"' || c == b'\'' {
             let end = if s[i..].starts_with(b"\"\"\"") {
-                memchr::memmem::find(&s[i + 3..], b"\"\"\"").map_or(s.len(), |p| i + 3 + p + 3)
+                // To the first `"""` not escaped as `\"""`.
+                let mut from = i + 3;
+                loop {
+                    match memchr::memmem::find(&s[from..], b"\"\"\"") {
+                        Some(p) if s[from + p - 1] == b'\\' && from + p > i + 3 => from += p + 3,
+                        Some(p) => break from + p + 3,
+                        None => break s.len(),
+                    }
+                }
             } else {
                 let mut j = i + 1;
                 while j < s.len() && s[j] != c && s[j] != b'\n' {
@@ -256,6 +264,14 @@ mod tests {
         assert_eq!(person[3].0, "scores");
         assert_eq!(names(&p.tree, "/People")[0].0, "Get");
         assert_eq!(p.blocks.len(), 3);
+    }
+
+    #[test]
+    fn a_graphql_block_string_may_hold_an_escaped_triple_quote() {
+        let cx = ParseContext::new();
+        let gql = Lang { line_comments: &["#"], newline_ends: true, comma_ends: true, name: Name::BeforeColon };
+        let p = parse("query {\n  f(arg: \"\"\"\n  block string uses \\\"\"\"\n  \"\"\")\n  g\n}\n", &gql, &cx).expect("the block closes");
+        assert_eq!(p.blocks.len(), 1);
     }
 
     #[test]

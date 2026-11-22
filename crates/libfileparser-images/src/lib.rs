@@ -50,6 +50,8 @@ fn corrupt(e: impl std::fmt::Display) -> ParseError {
 
 /// EXR files without RGB channels, shown as their first channel in grey: `Y`, or
 /// whichever the file has (a roughness or depth map).
+mod tiff_any;
+
 mod exr_channel {
     use exr::prelude::*;
 
@@ -135,7 +137,11 @@ impl Reader for ImageReader {
             // `image` reads only RGB(A) EXR files.
             Err(e) => match (format == ImageFormat::OpenExr).then(|| exr_channel::size(src.bytes())).flatten() {
                 Some((w, h, channel)) => (w, h, format!("{channel} (one channel)")),
-                None => return Err(corrupt(e)),
+                // Bit depths and sample kinds `image` won't convert.
+                None => match (format == ImageFormat::Tiff).then(|| tiff_any::size(src.bytes())).flatten() {
+                    Some(size) => size,
+                    None => return Err(corrupt(e)),
+                },
             },
         };
         cx.limits.check(Limit::ImagePixels, width as u64 * height as u64)?;
@@ -180,7 +186,12 @@ impl ImageBands {
         reader.limits(limits);
         match reader.decode() {
             Ok(image) => Ok(image),
-            Err(e) => (self.format == ImageFormat::OpenExr).then(|| exr_channel::decode(self.src.bytes(), self.max_alloc)).flatten().ok_or_else(|| corrupt(e)),
+            Err(e) => match self.format {
+                ImageFormat::OpenExr => exr_channel::decode(self.src.bytes(), self.max_alloc),
+                ImageFormat::Tiff => tiff_any::decode(self.src.bytes(), self.max_alloc),
+                _ => None,
+            }
+            .ok_or_else(|| corrupt(e)),
         }
     }
 }
@@ -472,6 +483,22 @@ mod tests {
         let rgba = raster(&doc).decode().unwrap();
         assert_eq!(&rgba[..12], [255, 0, 0, 255, 0, 255, 0, 128, 0, 0, 255, 0]);
         assert!(rgba == image::load_from_memory(&out).unwrap().into_rgba8().into_raw());
+    }
+
+    #[test]
+    fn a_32_bit_grey_tiff_opens_stretched_to_its_range() {
+        // `image` won't convert 32-bit grey; the fallback stretches lowest to highest.
+        let mut out = Vec::new();
+        {
+            let mut enc = tiff::encoder::TiffEncoder::new(std::io::Cursor::new(&mut out)).unwrap();
+            let data: Vec<u32> = vec![1000, 2000, 3000, 5000];
+            enc.write_image::<tiff::encoder::colortype::Gray32>(2, 2, &data).unwrap();
+        }
+        let doc = ImageReader.open(&FileSource::from_bytes("g.tiff", out), &ParseContext::new()).expect("opens");
+        let r = raster(&doc);
+        let rgba = r.decode().unwrap();
+        let grey: Vec<u8> = rgba.as_chunks::<4>().0.iter().map(|p| p[0]).collect();
+        assert_eq!(grey, [0, 64, 128, 255]);
     }
 
     #[test]

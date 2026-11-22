@@ -27,6 +27,28 @@ fetch() {
   fi
   rm -rf "$dir"
 }
+# A repository's files with these extensions, wherever they are: its tree is listed
+# (no file contents), up to 200 files of each extension are picked, and only those are
+# checked out. For repositories whose test folders move.
+fetch_ext() {
+  repo=$1; shift
+  dir="$tmp/$(echo "$repo" | tr / _)"
+  if git clone -q --depth 1 --filter=blob:none --no-checkout "https://github.com/$repo.git" "$dir"; then
+    list="$tmp/list"
+    : > "$list"
+    for ext in "$@"; do
+      git -C "$dir" ls-tree -r --name-only HEAD | grep -i "\.$ext\$" | head -200 | sed 's|^|/|' >> "$list" || true
+    done
+    if [ -s "$list" ] && git -C "$dir" sparse-checkout set --no-cone --stdin < "$list" && git -C "$dir" checkout -q; then
+      python3 -I organize-real.py "$dir" real
+    else
+      echo "skipped $repo: nothing with $*" >&2
+    fi
+  else
+    echo "skipped $repo: couldn't clone it" >&2
+  fi
+  rm -rf "$dir"
+}
 fetch hashicorp/hcl '/specsuite/tests/'
 fetch kdl-org/kdl '/tests/test_cases/input/' '/examples/'
 fetch dhall-lang/dhall-lang '/tests/parser/success/unit/*A.dhall'
@@ -112,5 +134,50 @@ fetch python/cpython '/Lib/test/archivetestdata/'
 fetch alexcrichton/tar-rs '/tests/archives/'
 fetch rust-lang/flate2-rs '/tests/'
 fetch BYVoid/uchardet '/test/'
+
+# Data formats that had no real files (2026-11-22): repositories listed by what they
+# hold, not where, so a moved folder doesn't lose them (fetch_ext, above).
+fetch_ext flutter/flutter arb
+fetch_ext renatopp/arff-datasets arff
+fetch_ext kurtmckee/feedparser xml atom rss
+fetch_ext apache/avro avsc
+fetch_ext arq5x/bedtools2 bed
+fetch_ext capnproto/capnproto capnp
+fetch_ext cue-lang/cue cue
+fetch_ext holistics/dbml dbml
+fetch_ext arminbiere/kissat cnf
+fetch_ext motdotla/dotenv env
+fetch_ext google/flatbuffers fbs
+fetch_ext biopython/biopython gb gbk gff gtf
+fetch_ext mapbox/togeojson geojson
+fetch_ext topojson/topojson-client json topojson
+fetch_ext gephi/gephi gexf
+fetch_ext igraph/igraph graphml gml gxl
+fetch_ext graphql/graphql-js graphql
+fetch_ext hjson/hjson-js hjson
+fetch_ext go-ini/ini ini
+fetch_ext simdjson/simdjson ndjson jsonl
+fetch_ext json5/json5-tests json5
+fetch_ext w3c/json-ld-api jsonld
+fetch_ext openldap/openldap ldif
+fetch_ext logpai/loghub log
+fetch_ext videojs/m3u8-parser m3u8 m3u
+fetch_ext OAI/OpenAPI-Specification yaml json
+fetch_ext osmcode/osm-testdata osm
+fetch_ext sparkle-project/Sparkle plist strings
+fetch_ext prisma/prisma-examples prisma
+fetch_ext spring-projects/spring-boot properties
+fetch_ext dotnet/winforms resx
+fetch_ext smithy-lang/smithy smithy
+fetch_ext w3c/rdf-tests rq ru
+fetch_ext sqlfluff/sqlfluff sql
+fetch_ext apache/thrift thrift
+fetch_ext translate/translate tmx xlf xliff
+fetch_ext RDFLib/rdflib trix
+fetch_ext sabre-io/vobject vcf
+fetch_ext georust/wkt wkt
+fetch_ext lxml/lxml xml xsd
+fetch_ext mitmproxy/mitmproxy har
+fetch_ext michael-lazar/jetforce gmi
 
 for d in real/*/; do printf '%-24s %s\n' "$(basename "$d")" "$(ls "$d" | wc -l | tr -d ' ')"; done

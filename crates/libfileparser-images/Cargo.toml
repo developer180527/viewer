@@ -15,6 +15,9 @@ image = { version = "0.25", default-features = false, features = [
 ] }
 # Row-by-row PNG decoding for big images (the version `image` uses).
 png = "0.18"
+# TIFFs `image` won't convert (1-, 4-, 12-, 32-bit, float, signed, palette, multiband),
+# read here through the decoder it uses (tiff_any.rs).
+tiff = "0.11"
 resvg = { version = "0.50", default-features = false, features = ["text", "system-fonts", "memmap-fonts", "svgz", "raster-images"] }
 
 [dev-dependencies]
