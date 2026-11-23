@@ -1,0 +1,13 @@
+loader = "media"
+format = "WebM video"
+model = "Raster"
+
+[raster]
+size = "96x64"
+
+[metadata]
+Container = "WebM video"
+Duration = "0:01.01"
+Bitrate = "93 kb/s"
+Video = "vp9 (Profile 0), 96 × 64, 24 fps"
+Audio = "opus, 48 kHz, mono"

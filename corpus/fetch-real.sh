@@ -178,6 +178,9 @@ fetch_ext sabre-io/vobject vcf
 fetch_ext georust/wkt wkt
 fetch_ext lxml/lxml xml xsd
 fetch_ext mitmproxy/mitmproxy har
+# Audio and video (libfileparser-media): the browsers' shared tests hold real files in
+# most containers and codecs.
+fetch_ext web-platform-tests/wpt mp4 webm ogg ogv oga opus mp3 wav flac m4a mkv mov aac
 fetch_ext michael-lazar/jetforce gmi
 
 for d in real/*/; do printf '%-24s %s\n' "$(basename "$d")" "$(ls "$d" | wc -l | tr -d ' ')"; done

@@ -2107,6 +2107,7 @@ dependencies = [
  "libfileparser-data",
  "libfileparser-docs",
  "libfileparser-images",
+ "libfileparser-media",
  "libfileparser-sheets",
  "libfileparser-testkit",
  "libfileparser-text",
@@ -2224,6 +2225,16 @@ dependencies = [
  "resvg",
  "smallvec",
  "tiff",
+]
+
+[[package]]
+name = "libfileparser-media"
+version = "0.3.1"
+dependencies = [
+ "cc",
+ "image",
+ "libfileparser-core",
+ "libfileparser-testkit",
 ]
 
 [[package]]

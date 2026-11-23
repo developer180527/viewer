@@ -17,6 +17,13 @@ libfileparser-images.workspace = true
 # and on macOS when VIEWER_PDF_BACKEND=pdfkit (docs/design/pdf.md §2).
 libfileparser-pdfkit.workspace = true
 
+# Audio and video through FFmpeg and dav1d on every platform it builds for (LGPL and
+# BSD, linked statically: the app's source is open, so users can relink against a
+# changed FFmpeg, as LGPL asks; docs/design/media.md). FFmpeg's configure doesn't run on
+# Windows yet.
+[target.'cfg(not(windows))'.dependencies]
+libfileparser = { workspace = true, features = ["media-ffmpeg"] }
+
 # MuPDF for PDF everywhere else (AGPL; not built for Windows yet). A feature on a
 # target-specific dependency applies only when building for that target.
 [target.'cfg(not(any(target_os = "ios", windows)))'.dependencies]

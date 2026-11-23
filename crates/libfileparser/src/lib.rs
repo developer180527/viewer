@@ -105,6 +105,8 @@ impl Library {
         all.extend(libfileparser_sheets::readers());
         #[cfg(feature = "archives")]
         all.extend(libfileparser_archives::readers());
+        #[cfg(feature = "media-ffmpeg")]
+        all.extend(libfileparser_media::readers());
         #[cfg(feature = "data")]
         all.extend(libfileparser_data::readers());
         #[cfg(feature = "text")]

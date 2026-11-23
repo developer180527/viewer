@@ -1,0 +1,15 @@
+loader = "media"
+format = "MP3 audio"
+model = "Raster"
+
+[raster]
+size = "32x32"
+
+[metadata]
+Container = "MP3 audio"
+Duration = "0:01"
+Bitrate = "37 kb/s"
+Audio = "mp3, 44.1 kHz, mono"
+Title = "Tone"
+Artist = "Viewer corpus"
+Album = "Samples"

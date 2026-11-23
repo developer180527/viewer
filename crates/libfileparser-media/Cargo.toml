@@ -1,0 +1,20 @@
+[package]
+name = "libfileparser-media"
+description = "Audio and video through FFmpeg (libavformat, libavcodec), built from source: streams, tags, chapters, cover art, a poster frame and a waveform. LGPL, as this FFmpeg build is."
+version.workspace = true
+edition.workspace = true
+# FFmpeg is built LGPL-only (no --enable-gpl, no external libraries) and linked
+# statically, so this crate is LGPL too. libfileparser depends on it only with its
+# `media-ffmpeg` feature, off by default (docs/design/media.md).
+license = "LGPL-2.1-or-later"
+links = "avformat"
+
+[dependencies]
+libfileparser-core.workspace = true
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp", "bmp", "gif"] }
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true
+
+[build-dependencies]
+cc = "1"

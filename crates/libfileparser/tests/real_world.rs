@@ -75,7 +75,7 @@ fn real_world_files() {
         let name = top.file_name().unwrap().to_string_lossy().into_owned();
         match name.as_str() {
             "3d" => {}
-            "data" | "docs" | "sheets" | "text" | "images" | "archives" => folders.extend(dirs(&top)),
+            "data" | "docs" | "sheets" | "text" | "images" | "archives" | "media" => folders.extend(dirs(&top)),
             _ => folders.push(top),
         }
     }

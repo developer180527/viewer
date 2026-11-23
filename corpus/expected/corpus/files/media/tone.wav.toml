@@ -1,0 +1,12 @@
+loader = "media"
+format = "WAV audio"
+model = "Raster"
+
+[raster]
+size = "1600x320"
+
+[metadata]
+Container = "WAV audio"
+Duration = "0:01"
+Bitrate = "129 kb/s"
+Audio = "pcm_s16le, 8 kHz, 1 channels"

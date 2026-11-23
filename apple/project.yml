@@ -23,7 +23,7 @@ settingGroups:
     CODE_SIGN_STYLE: Automatic
     SWIFT_VERSION: "6.0"
     # The Rust library's system dependencies (rustc --print native-static-libs).
-    OTHER_LDFLAGS: "-framework PDFKit -framework Foundation -framework CoreGraphics -framework CoreFoundation -lobjc -lc++ -liconv"
+    OTHER_LDFLAGS: "-framework PDFKit -framework Foundation -framework CoreGraphics -framework CoreFoundation -lobjc -lc++ -liconv -lz"
     DEAD_CODE_STRIPPING: YES
 targets:
   ViewerShell:

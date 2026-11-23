@@ -1,0 +1,12 @@
+loader = "media"
+format = "FLAC audio"
+model = "Raster"
+
+[raster]
+size = "1600x320"
+
+[metadata]
+Container = "FLAC audio"
+Duration = "0:01"
+Bitrate = "163 kb/s"
+Audio = "flac, 44.1 kHz, mono"

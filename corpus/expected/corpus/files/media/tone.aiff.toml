@@ -1,0 +1,12 @@
+loader = "media"
+format = "AIFF audio"
+model = "Raster"
+
+[raster]
+size = "1600x320"
+
+[metadata]
+Container = "AIFF audio"
+Duration = "0:01"
+Bitrate = "128 kb/s"
+Audio = "pcm_s16be, 8 kHz, 1 channels"

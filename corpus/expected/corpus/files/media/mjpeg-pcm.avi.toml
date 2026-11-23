@@ -1,0 +1,13 @@
+loader = "media"
+format = "AVI video"
+model = "Raster"
+
+[raster]
+size = "96x64"
+
+[metadata]
+Container = "AVI video"
+Duration = "0:01"
+Bitrate = "276 kb/s"
+Video = "mjpeg (Baseline), 96 × 64, 8 fps"
+Audio = "pcm_s16le, 8 kHz, 1 channels"

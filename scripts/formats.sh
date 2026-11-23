@@ -12,18 +12,19 @@ cd "$(dirname "$0")/.."
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-nice cargo run -q -j2 -p libfileparser --example formats > "$tmp/readers.tsv"
+# Every reader the apps have: MuPDF's PDF and FFmpeg's media included.
+nice cargo run -q -j2 -p libfileparser --features docs-mupdf,media-ffmpeg --example formats > "$tmp/readers.tsv"
 # Conformance and fuzz: the testkit records each reader it checks (LFP_TESTED).
 LFP_TESTED="$tmp/tested.tsv" nice cargo test -q -j2 \
   -p libfileparser-images -p libfileparser-3d -p libfileparser-data -p libfileparser-docs \
-  -p libfileparser-sheets -p libfileparser-text -p libfileparser-archives > "$tmp/tests.log" 2>&1 || {
+  -p libfileparser-sheets -p libfileparser-text -p libfileparser-archives -p libfileparser-media > "$tmp/tests.log" 2>&1 || {
   echo "some category tests failed; their readers stay unticked (see below)" >&2
   grep -E "panicked|FAILED" "$tmp/tests.log" | head -20 >&2
 }
 real=""
 if [[ -d corpus/real && -z "${FORMATS_SKIP_REAL:-}" ]]; then
   # With MuPDF, as the apps open PDFs: without it every PDF is refused as unsupported.
-  LFP_REAL_CORPUS="$PWD/corpus/real" nice cargo test -q -j2 --release -p libfileparser --features docs-mupdf --test real_world -- --ignored --nocapture > "$tmp/real.log" 2>&1 || true
+  LFP_REAL_CORPUS="$PWD/corpus/real" nice cargo test -q -j2 --release -p libfileparser --features docs-mupdf,media-ffmpeg --test real_world -- --ignored --nocapture > "$tmp/real.log" 2>&1 || true
   # 3D models are whole repositories, read where they are (real_3d.rs).
   if [[ -d corpus/real/3d ]]; then
     LFP_REAL_3D="$PWD/corpus/real/3d" nice cargo test -q -j2 --release -p libfileparser --features docs-mupdf --test real_3d -- --ignored --nocapture >> "$tmp/real.log" 2>&1 || true

@@ -33,6 +33,9 @@ pub fn registry() -> &'static Registry {
             adapt(::libfileparser::Category::Docs),
             adapt(::libfileparser::Category::Sheets),
             adapt(::libfileparser::Category::Archives),
+            // Audio and video (FFmpeg), before data and text: `.ts` is MPEG-TS or
+            // TypeScript, and FFmpeg refuses the second in a moment.
+            adapt(::libfileparser::Category::Media),
             adapt(::libfileparser::Category::Data),
             viewer_fmt_doc::LOADERS,
             adapt(::libfileparser::Category::ThreeD),

@@ -1,0 +1,12 @@
+loader = "media"
+format = "QuickTime movie"
+model = "Raster"
+
+[raster]
+size = "96x64"
+
+[metadata]
+Container = "QuickTime movie"
+Duration = "0:01"
+Bitrate = "220 kb/s"
+Video = "prores (Proxy), 96 × 64, 24 fps"

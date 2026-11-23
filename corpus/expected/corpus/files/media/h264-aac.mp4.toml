@@ -1,0 +1,15 @@
+loader = "media"
+format = "MP4 video"
+model = "Raster"
+
+[raster]
+size = "64x96"
+
+[metadata]
+Container = "MP4 video"
+Duration = "0:01"
+Bitrate = "91 kb/s"
+Video = "h264 (High), 96 × 64, 24 fps, rotated 90°"
+Audio = "aac (LC), 44.1 kHz, mono"
+Title = "Test pattern"
+Artist = "Viewer corpus"

@@ -5,10 +5,11 @@ import collections, datetime, glob, os, re, subprocess, sys
 
 readers_tsv, tested_tsv, real_log = sys.argv[1], sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""
 
-ORDER = ["Images", "ThreeD", "Data", "Docs", "Sheets", "Text", "Archives"]
+ORDER = ["Images", "ThreeD", "Data", "Docs", "Sheets", "Text", "Archives", "Media"]
 CRATE = {"Images": "libfileparser-images", "ThreeD": "libfileparser-3d", "Data": "libfileparser-data", "Docs": "libfileparser-docs",
-         "Sheets": "libfileparser-sheets", "Text": "libfileparser-text", "Archives": "libfileparser-archives"}
-SOAK_TARGET = {"Images": "images", "ThreeD": "threed", "Data": "data", "Docs": "docs", "Sheets": "sheets", "Text": "text", "Archives": "archives"}
+         "Sheets": "libfileparser-sheets", "Text": "libfileparser-text", "Archives": "libfileparser-archives",
+         "Media": "libfileparser-media"}
+SOAK_TARGET = {"Images": "images", "ThreeD": "threed", "Data": "data", "Docs": "docs", "Sheets": "sheets", "Text": "text", "Archives": "archives", "Media": "media"}
 
 readers = []
 for line in open(readers_tsv):

@@ -915,3 +915,44 @@ timeout = 120
 path = "test_3d_files/32-mercedes-benz-gls-580-2020/uploads_files_2787791_Mercedes+Benz+GLS+580.blend"
 optional = true
 timeout = 120
+
+# ---------------------------------------------------------------- media (corpus/make-media.sh)
+
+[[file]]
+path = "corpus/files/media/h264-aac.mp4"
+
+[[file]]
+path = "corpus/files/media/hevc.mp4"
+
+[[file]]
+path = "corpus/files/media/vp9-opus.webm"
+
+[[file]]
+path = "corpus/files/media/av1.mkv"
+
+[[file]]
+path = "corpus/files/media/prores.mov"
+
+[[file]]
+path = "corpus/files/media/mjpeg-pcm.avi"
+
+[[file]]
+path = "corpus/files/media/subtitled.mkv"
+
+[[file]]
+path = "corpus/files/media/cover.mp3"
+
+[[file]]
+path = "corpus/files/media/tone.flac"
+
+[[file]]
+path = "corpus/files/media/tone.wav"
+
+[[file]]
+path = "corpus/files/media/tone.opus"
+
+[[file]]
+path = "corpus/files/media/tone.m4a"
+
+[[file]]
+path = "corpus/files/media/tone.aiff"

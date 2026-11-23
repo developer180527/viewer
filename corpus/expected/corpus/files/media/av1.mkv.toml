@@ -1,0 +1,12 @@
+loader = "media"
+format = "Matroska video"
+model = "Raster"
+
+[raster]
+size = "96x64"
+
+[metadata]
+Container = "Matroska video"
+Duration = "0:01"
+Bitrate = "42 kb/s"
+Video = "av1 (Main), 96 × 64, 24 fps"

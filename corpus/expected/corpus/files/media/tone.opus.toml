@@ -1,0 +1,12 @@
+loader = "media"
+format = "Opus audio"
+model = "Raster"
+
+[raster]
+size = "1600x320"
+
+[metadata]
+Container = "Opus audio"
+Duration = "0:01.01"
+Bitrate = "32 kb/s"
+Audio = "opus, 48 kHz, mono"

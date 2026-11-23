@@ -56,6 +56,8 @@ DOCS = {"xps", "asciidoc", "doc", "docx", "epub", "html", "markdown", "odp", "od
         "djvu", "hwp"}
 SHEETS = {"dif", "fods", "numbers", "ods", "sylk", "xls", "xlsb", "xlsx", "xmlss"}
 IMAGES = {"image", "svg"}
+MEDIA_EXT = {"mp4", "m4v", "mov", "mkv", "webm", "avi", "wmv", "asf", "flv", "mpg", "mpeg", "ts", "m2ts", "mts", "vob", "3gp", "ogv", "mxf",
+             "mp3", "m4a", "aac", "ac3", "flac", "wav", "aif", "aiff", "caf", "ogg", "oga", "opus", "wma", "amr", "ape", "wv", "mka"}
 ARCHIVES = {"zip", "tar", "gzip"}
 counts = {}
 for repo in [os.path.basename(clone)]:
@@ -96,6 +98,8 @@ for repo in [os.path.basename(clone)]:
             # Text in dozens of languages and encodings, each a real document.
             if repo.startswith("BYVoid_uchardet"):
                 reader = "text" if ext == "txt" else None
+            if ext in MEDIA_EXT:
+                reader = "media"
             # Shared extensions and names, sorted by content.
             if ext == "gml":
                 reader = "graph-gml" if b"graph" in head and b"[" in head and not head.lstrip().startswith(b"<") else "gml"
@@ -124,7 +128,7 @@ for repo in [os.path.basename(clone)]:
                        or ("pngsuite" in rel.lower() and name.startswith("x")))
             folder = reader + ("-invalid" if invalid else "")
             category = ("docs" if reader in DOCS else "sheets" if reader in SHEETS else "images" if reader in IMAGES
-                        else "archives" if reader in ARCHIVES else "text" if reader == "text" else "data")
+                        else "archives" if reader in ARCHIVES else "media" if reader == "media" else "text" if reader == "text" else "data")
             dst = os.path.join(out, category, folder, (repo.split("_", 1)[1] + "__" + rel.replace("/", "__"))[-150:])
             os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(path, dst)

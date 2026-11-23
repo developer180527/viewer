@@ -19,6 +19,9 @@ sheets = ["dep:libfileparser-sheets"]
 # PDF through MuPDF, built from source. AGPL-3.0-or-later: in no preset, so it is on
 # only when an app names it (docs/design/libfileparser.md §2).
 docs-mupdf = ["docs", "libfileparser-docs/mupdf"]
+# Audio and video through FFmpeg, built from source. LGPL-2.1-or-later (an LGPL-only
+# FFmpeg build): in no preset either, on only when an app names it (docs/design/media.md).
+media-ffmpeg = ["dep:libfileparser-media"]
 
 [dependencies]
 libfileparser-core.workspace = true
@@ -28,6 +31,7 @@ libfileparser-data = { workspace = true, optional = true }
 libfileparser-text = { workspace = true, optional = true }
 libfileparser-archives = { workspace = true, optional = true }
 libfileparser-docs = { workspace = true, optional = true }
+libfileparser-media = { workspace = true, optional = true }
 libfileparser-sheets = { workspace = true, optional = true }
 
 [dev-dependencies]

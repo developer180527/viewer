@@ -1,0 +1,12 @@
+loader = "media"
+format = "MP4 video"
+model = "Raster"
+
+[raster]
+size = "96x64"
+
+[metadata]
+Container = "MP4 video"
+Duration = "0:01"
+Bitrate = "48 kb/s"
+Video = "hevc (Main), 96 × 64, 24 fps"
