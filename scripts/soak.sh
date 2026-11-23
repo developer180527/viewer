@@ -18,7 +18,7 @@ CORES=$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)
 HOURS=${HOURS:-8}
 SECS=${SECS:-$((HOURS * 3600))}
 OUT=$ROOT/soak
-TARGETS=(data sheets docs threed text archives images rtf ods_flat usd gltf)
+TARGETS=(data sheets docs threed text archives images media rtf ods_flat usd gltf)
 # Memory each target may hold before libFuzzer calls it an out-of-memory finding.
 RSS=${RSS:-1200}
 

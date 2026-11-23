@@ -14,6 +14,12 @@ use std::process::Command;
 
 fn main() {
     let target = std::env::var("TARGET").unwrap();
+    if target.contains("windows") {
+        // FFmpeg's configure needs a POSIX shell (MSYS2) on Windows, not wired in yet.
+        // Until then the crate is empty there, as libfileparser-mupdf is, so a
+        // workspace build (and `--all-features`) still builds on Windows.
+        return;
+    }
     let host = std::env::var("HOST").unwrap();
     let manifest = PathBuf::from(std::env::var("CARGO_MANIFEST_DIR").unwrap());
     let third = manifest.join("../../third_party");

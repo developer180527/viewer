@@ -17,6 +17,7 @@ libfileparser-core = { path = "../crates/libfileparser-core", features = ["scene
 libfileparser-testkit = { path = "../crates/libfileparser-testkit" }
 libfileparser-data = { path = "../crates/libfileparser-data" }
 libfileparser-sheets = { path = "../crates/libfileparser-sheets" }
+libfileparser-media = { path = "../crates/libfileparser-media" }
 libfileparser-docs = { path = "../crates/libfileparser-docs" }
 libfileparser-3d = { path = "../crates/libfileparser-3d" }
 libfileparser-text = { path = "../crates/libfileparser-text" }
@@ -43,6 +44,13 @@ doc = false
 [[bin]]
 name = "data"
 path = "fuzz_targets/data.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "media"
+path = "fuzz_targets/media.rs"
 test = false
 doc = false
 bench = false

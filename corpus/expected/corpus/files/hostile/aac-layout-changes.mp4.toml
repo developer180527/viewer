@@ -1,0 +1,12 @@
+loader = "media"
+format = "MP4 audio"
+model = "Raster"
+
+[raster]
+size = "1600x320"
+
+[metadata]
+Container = "MP4 audio"
+Duration = "0:05.08"
+Bitrate = "134 kb/s"
+Audio = "aac (LC), 48 kHz, 5.1"

@@ -5500,6 +5500,8 @@ name = "viewer-fmt-doc"
 version = "0.3.1"
 dependencies = [
  "anyhow",
+ "encoding_rs",
+ "libfileparser-text",
  "memchr",
  "syntect",
  "viewer-model",

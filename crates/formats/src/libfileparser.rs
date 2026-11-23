@@ -54,7 +54,23 @@ impl FormatLoader for ReaderLoader {
         let cx = context();
         let doc = library().open_with(self.0.info().id, src, &cx).map_err(|e| anyhow!("{e}"))?;
         let start = starting_facet(&doc, &cx);
-        viewer_document(Arc::new(doc), start, src, &cx)
+        let doc = Arc::new(doc);
+        match viewer_document(doc.clone(), start, src, &cx) {
+            Ok(d) => Ok(d),
+            // Its picture couldn't be made (a video fragment with no frames, audio that
+            // won't decode), but the reader read the file: its own tables still say what
+            // it holds, which a hex dump wouldn't. Why the picture failed goes in the
+            // info panel.
+            Err(e) => {
+                let others = doc.facets().enumerate().filter(|(i, f)| *i != start && matches!(f.role, Role::Primary | Role::Structure | Role::Inspector));
+                for (i, _) in others.map(|(i, f)| (i, f.clone())).collect::<Vec<_>>() {
+                    if let Ok(d) = viewer_document(doc.clone(), i, src, &cx) {
+                        return Ok(d.with_meta("Warning", format!("{e:#}")));
+                    }
+                }
+                Err(e)
+            }
+        }
     }
 }
 
@@ -224,5 +240,21 @@ mod tests {
     fn a_file_with_nothing_to_draw_opens_on_its_structure() {
         assert_eq!(opened_on(b"#usda 1.0\ndef Camera \"c\" {}\n"), "Stage");
         assert_eq!(opened_on(b"#usda 1.0\ndef Sphere \"s\" {}\n"), "Scene");
+    }
+
+    /// A media file whose picture can't be made still opens as media, on its Streams
+    /// table, with why in the info panel: before, the whole file fell to hex.
+    #[test]
+    fn a_file_whose_picture_fails_opens_on_its_tables() {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/files/hostile/huge-sample-rate.wav");
+        let src = FileSource::from_bytes("huge-sample-rate.wav", std::fs::read(p).unwrap());
+        let (doc, loader, _) = crate::registry().open(&src);
+        if cfg!(windows) {
+            return; // no media reader there yet
+        }
+        assert_eq!(loader, "media");
+        let facets = doc.facets.as_ref().unwrap();
+        assert_eq!(facets.doc.facets().nth(facets.shown).unwrap().name, "Streams");
+        assert!(doc.metadata.iter().any(|(k, v)| k == "Warning" && v.contains("Waveform")), "{:?}", doc.metadata);
     }
 }

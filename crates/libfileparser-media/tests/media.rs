@@ -1,6 +1,8 @@
 //! The media reader on the corpus's audio and video (corpus/make-media.sh): what each
 //! file holds, its picture, and the conformance and fuzz suites every reader passes.
 
+#![cfg(not(windows))]
+
 use libfileparser_core::{Content, FileSource, ParseContext, Reader};
 use libfileparser_media::MediaReader;
 use libfileparser_testkit::{Sample, assert_conforms};
@@ -128,4 +130,32 @@ fn every_reader_survives_fuzzing() {
             .map(|n| Sample::new(*n, std::fs::read(corpus_dir().join("media").join(n)).unwrap()))
             .collect()
     });
+}
+
+/// A damaged AAC file whose frames decode with another channel layout than its header
+/// says: FFmpeg's resampler, set up from the header, read a channel plane that wasn't
+/// there and crashed the process (found by the soak, 2026-11-24).
+#[test]
+fn audio_that_changes_layout_mid_stream_gives_a_waveform_not_a_crash() {
+    let cx = ParseContext::new();
+    let p = corpus_dir().join("hostile/aac-layout-changes.mp4");
+    let src = FileSource::from_bytes("aac-layout-changes.mp4", std::fs::read(&p).unwrap());
+    let doc = MediaReader.open(&src, &cx).expect("opens");
+    assert_eq!(doc.facets().next().unwrap().name, "Waveform");
+    let (w, h, _) = picture(&doc, &cx);
+    assert_eq!((w, h), (1600, 320));
+}
+
+/// A damaged WAV header claiming 654 MHz: building FFmpeg's resampler for that took ten
+/// seconds that couldn't be cancelled. Rates above 1 MHz aren't audio.
+#[test]
+fn an_absurd_sample_rate_is_refused_quickly() {
+    let cx = ParseContext::new();
+    let p = corpus_dir().join("hostile/huge-sample-rate.wav");
+    let src = FileSource::from_bytes("huge-sample-rate.wav", std::fs::read(&p).unwrap());
+    let started = std::time::Instant::now();
+    if let Ok(doc) = MediaReader.open(&src, &cx) {
+        let _ = doc.facet(0, &cx);
+    }
+    assert!(started.elapsed() < std::time::Duration::from_secs(2), "took {:?}", started.elapsed());
 }

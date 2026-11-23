@@ -48,7 +48,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             libxkbcommon-dev libwayland-dev libx11-dev libxcursor-dev libxrandr-dev libxi-dev \
-            libgtk-3-dev mesa-vulkan-drivers libvulkan1
+            libgtk-3-dev mesa-vulkan-drivers libvulkan1 \
+            meson ninja-build nasm zlib1g-dev
+
+      # FFmpeg and dav1d build from their submodules (docs/design/media.md §3): dav1d
+      # with meson and ninja. Not on Windows, where the media crate is empty for now.
+      - name: macOS packages (meson and ninja, for dav1d)
+        if: runner.os == 'macOS'
+        run: brew install meson ninja
 
       # Warnings as errors.
       - name: Clippy
@@ -183,6 +190,12 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v5
+        # FFmpeg and dav1d build for iOS from their submodules (docs/design/media.md §3).
+        with:
+          submodules: recursive
+
+      - name: meson and ninja, for dav1d
+        run: brew install meson ninja
 
       - uses: dtolnay/rust-toolchain@stable
         with:

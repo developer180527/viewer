@@ -233,11 +233,14 @@ int vm_cover(vm_media *m, const uint8_t **data, int *len) {
     return -1;
 }
 
-static AVCodecContext *open_decoder(AVStream *s) {
+// `max_pixels`: the most a decoded picture may have. FFmpeg's default is INT_MAX, so
+// a few bytes of crafted header could make a decoder allocate gigabytes of frames.
+static AVCodecContext *open_decoder(AVStream *s, int64_t max_pixels) {
     const AVCodec *codec = avcodec_find_decoder(s->codecpar->codec_id);
     if (!codec) return NULL;
     AVCodecContext *c = avcodec_alloc_context3(codec);
     if (!c) return NULL;
+    if (max_pixels > 0) c->max_pixels = max_pixels;
     if (avcodec_parameters_to_context(c, s->codecpar) < 0 || avcodec_open2(c, codec, NULL) < 0) {
         avcodec_free_context(&c);
         return NULL;
@@ -248,12 +251,12 @@ static AVCodecContext *open_decoder(AVStream *s) {
 // The best video stream's frame nearest `at_us` (the first frame after the keyframe
 // before it), scaled to fit `max_side` and converted to RGBA, in a buffer to free
 // with vm_free. 0 on success; a negative AVERROR otherwise.
-int vm_frame(vm_media *m, int64_t at_us, int max_side, uint8_t **rgba, int *width, int *height) {
+int vm_frame(vm_media *m, int64_t at_us, int max_side, int64_t max_pixels, uint8_t **rgba, int *width, int *height) {
     int si = av_find_best_stream(m->fmt, AVMEDIA_TYPE_VIDEO, -1, -1, NULL, 0);
     if (si < 0) return si;
     AVStream *s = m->fmt->streams[si];
     if (s->disposition & AV_DISPOSITION_ATTACHED_PIC) return AVERROR_STREAM_NOT_FOUND;
-    AVCodecContext *c = open_decoder(s);
+    AVCodecContext *c = open_decoder(s, max_pixels);
     if (!c) return AVERROR_DECODER_NOT_FOUND;
     if (at_us > 0) {
         int64_t ts = av_rescale_q(at_us, AV_TIME_BASE_Q, s->time_base);
@@ -328,14 +331,54 @@ static void take(peak_state *st, const float *v, int n) {
     }
 }
 
+// The resampler to mono at `rate`, and the input it was set up for. It's set up from
+// each frame, not from the stream's header: a damaged file can decode frames with
+// another channel count or sample format than its header says, and a resampler fed
+// planes it wasn't set up for reads past them.
+typedef struct mono {
+    SwrContext *swr;
+    int rate;
+    int fmt, in_rate;
+    AVChannelLayout layout;
+} mono;
+
+static void mono_free(mono *m) {
+    swr_free(&m->swr);
+    av_channel_layout_uninit(&m->layout);
+}
+
+// Ready for `frame`: the same resampler when the frame's format matches, else a new
+// one (what the old one held is drained into the peaks first). 0 when it can't be.
+static int mono_for(mono *m, const AVFrame *frame, peak_state *st);
+
 // A decoded frame through the resampler into the peaks; NULL flushes what it holds.
-static void resample(SwrContext *swr, AVFrame *frame, peak_state *st) {
+static void resample(mono *m, AVFrame *frame, peak_state *st) {
+    if (frame && (!frame->extended_data || frame->nb_samples <= 0 || !mono_for(m, frame, st))) return;
+    if (!m->swr) return;
     float tmp[4096];
     uint8_t *o[1] = { (uint8_t *)tmp };
-    int n = swr_convert(swr, o, 4096, frame ? (const uint8_t **)frame->extended_data : NULL, frame ? frame->nb_samples : 0);
+    int n = swr_convert(m->swr, o, 4096, frame ? (const uint8_t **)frame->extended_data : NULL, frame ? frame->nb_samples : 0);
     if (n > 0) take(st, tmp, n);
     // More than one buffer's worth came out of that frame, or a flush: drain it all.
-    while ((frame ? swr_get_out_samples(swr, 0) >= 4096 : 1) && (n = swr_convert(swr, o, 4096, NULL, 0)) > 0) take(st, tmp, n);
+    while ((frame ? swr_get_out_samples(m->swr, 0) >= 4096 : 1) && (n = swr_convert(m->swr, o, 4096, NULL, 0)) > 0) take(st, tmp, n);
+}
+
+static int mono_for(mono *m, const AVFrame *frame, peak_state *st) {
+    // Real audio stays under 1 MHz (DSD decodes to 352.8 kHz). A damaged header's
+    // 654 MHz made swresample spend ten seconds building its filter.
+    if (frame->ch_layout.nb_channels <= 0 || frame->sample_rate <= 0 || frame->sample_rate > 1000000 || frame->format < 0) return 0;
+    if (m->swr && frame->format == m->fmt && frame->sample_rate == m->in_rate && !av_channel_layout_compare(&frame->ch_layout, &m->layout)) return 1;
+    if (m->swr) resample(m, NULL, st);
+    mono_free(m);
+    AVChannelLayout out = AV_CHANNEL_LAYOUT_MONO;
+    if (swr_alloc_set_opts2(&m->swr, &out, AV_SAMPLE_FMT_FLT, m->rate, &frame->ch_layout, frame->format, frame->sample_rate, 0, NULL) < 0 || swr_init(m->swr) < 0 ||
+        av_channel_layout_copy(&m->layout, &frame->ch_layout) < 0) {
+        mono_free(m);
+        return 0;
+    }
+    m->fmt = frame->format;
+    m->in_rate = frame->sample_rate;
+    return 1;
 }
 
 // The best audio stream decoded to mono, as the peak level of each of `buckets`
@@ -345,20 +388,14 @@ int vm_peaks(vm_media *m, int buckets, float *out, double max_seconds) {
     int si = av_find_best_stream(m->fmt, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
     if (si < 0) return si;
     AVStream *s = m->fmt->streams[si];
-    AVCodecContext *c = open_decoder(s);
+    AVCodecContext *c = open_decoder(s, 0);
     if (!c) return AVERROR_DECODER_NOT_FOUND;
     double seconds = s->duration != AV_NOPTS_VALUE ? s->duration * av_q2d(s->time_base) : m->fmt->duration != AV_NOPTS_VALUE ? m->fmt->duration / (double)AV_TIME_BASE : 0;
     if (max_seconds > 0 && (seconds <= 0 || seconds > max_seconds)) seconds = max_seconds;
     if (seconds <= 0) seconds = 600;
     const int rate = 8000; // enough to see a waveform's shape
     double total = seconds * rate;
-    SwrContext *swr = NULL;
-    AVChannelLayout mono = AV_CHANNEL_LAYOUT_MONO;
-    if (swr_alloc_set_opts2(&swr, &mono, AV_SAMPLE_FMT_FLT, rate, &c->ch_layout, c->sample_fmt, c->sample_rate, 0, NULL) < 0 || swr_init(swr) < 0) {
-        swr_free(&swr);
-        avcodec_free_context(&c);
-        return AVERROR(EINVAL);
-    }
+    mono mono = { .rate = rate };
     for (int i = 0; i < buckets; i++) out[i] = 0;
     // No seek to the start: a file is opened afresh for this, and FFmpeg replays the
     // packets it read while probing. Seeking would drop them, and a small raw file
@@ -369,7 +406,7 @@ int vm_peaks(vm_media *m, int buckets, float *out, double max_seconds) {
     int r = 0;
     while (pkt && frame && st.done < total && (r = av_read_frame(m->fmt, pkt)) >= 0) {
         if (pkt->stream_index == si && avcodec_send_packet(c, pkt) >= 0) {
-            while (avcodec_receive_frame(c, frame) >= 0) resample(swr, frame, &st);
+            while (avcodec_receive_frame(c, frame) >= 0) resample(&mono, frame, &st);
         }
         av_packet_unref(pkt);
         if (io_stop(m)) break;
@@ -377,13 +414,13 @@ int vm_peaks(vm_media *m, int buckets, float *out, double max_seconds) {
     // The decoder's last frames, then what the resampler still holds: a very short
     // file is all in these.
     if (pkt && frame && avcodec_send_packet(c, NULL) >= 0) {
-        while (avcodec_receive_frame(c, frame) >= 0) resample(swr, frame, &st);
+        while (avcodec_receive_frame(c, frame) >= 0) resample(&mono, frame, &st);
     }
-    resample(swr, NULL, &st);
+    resample(&mono, NULL, &st);
     int reached = st.reached;
     av_frame_free(&frame);
     av_packet_free(&pkt);
-    swr_free(&swr);
+    mono_free(&mono);
     avcodec_free_context(&c);
     for (int i = 0; i < buckets; i++) {
         if (out[i] > 1) out[i] = 1;

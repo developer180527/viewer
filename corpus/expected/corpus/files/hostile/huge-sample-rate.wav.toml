@@ -1,0 +1,16 @@
+loader = "media"
+format = "WAV audio"
+model = "Table"
+
+[table]
+rows = 1
+columns = 9
+headers = ["#", "Kind", "Codec", "Details", "Bitrate", "Duration", "Language", "Title", "Default"]
+kinds = ["Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text", "Text"]
+
+[metadata]
+Container = "WAV audio"
+Duration = "0:00"
+Bitrate = "5166000 kb/s"
+Audio = "pcm_mulaw, 654359.424 kHz, 1 channels"
+Warning = "Waveform: damaged or not understood: FFmpeg couldn't decode the audio (0)"

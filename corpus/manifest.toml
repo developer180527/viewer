@@ -854,6 +854,14 @@ path = "corpus/files/3d/cube-gltf"
 
 # ---------------------------------------------------------------- hostile: must fail cleanly
 
+# A damaged AAC file whose frames change channel layout: crashed FFmpeg's resampler.
+[[file]]
+path = "corpus/files/hostile/aac-layout-changes.mp4"
+
+# A WAV header claiming 654 MHz: took ten seconds in the resampler.
+[[file]]
+path = "corpus/files/hostile/huge-sample-rate.wav"
+
 [[file]]
 path = "corpus/files/hostile/truncated.png"
 

@@ -12,6 +12,9 @@ pub static LOADERS: &[&dyn FormatLoader] = &[&TextLoader];
 /// Files above this size are shown without highlighting so they open instantly.
 const HIGHLIGHT_LIMIT: usize = 512 * 1024;
 
+/// Files in another encoding up to this size are decoded to UTF-8 to be shown.
+const DECODE_LIMIT: usize = 256 << 20;
+
 /// Files with a line longer than this are shown without highlighting.
 const LONG_LINE: usize = 20_000;
 
@@ -44,7 +47,7 @@ impl FormatLoader for TextLoader {
             || matches!(base.as_str(), "makefile" | "dockerfile" | "license" | "readme" | "cmakelists.txt")
         {
             Confidence::EXTENSION
-        } else if looks_like_text(header) {
+        } else if looks_like_text(header) || libfileparser_text::legacy_encoding(header).is_some() {
             Confidence::SNIFF
         } else {
             Confidence::NONE
@@ -52,6 +55,18 @@ impl FormatLoader for TextLoader {
     }
 
     fn open(&self, src: &FileSource) -> Result<Document> {
+        // Text in another encoding (Windows-1252, Shift JIS, UTF-16) is shown as UTF-8,
+        // as libfileparser's text reader shows it. A huge one is shown as it is.
+        let legacy = libfileparser_text::legacy_encoding(src.header()).filter(|_| src.len() <= DECODE_LIMIT as u64);
+        let decoded;
+        let src = match legacy {
+            Some(enc) => {
+                let (text, _, _) = enc.decode(src.bytes());
+                decoded = FileSource::from_bytes(src.name().to_string(), text.into_owned().into_bytes());
+                &decoded
+            }
+            None => src,
+        };
         let bytes = src.bytes();
         let mut line_starts = vec![0];
         line_starts.extend(memchr::memchr_iter(b'\n', bytes).map(|i| i + 1).filter(|&i| i < bytes.len()));
@@ -73,7 +88,11 @@ impl FormatLoader for TextLoader {
         let format = doc.syntax.clone().map_or("Plain text".into(), |s| format!("{s} source"));
         let mut out = Document::new(format, Content::Text(doc))
             .with_meta("Lines", lines)
-            .with_meta("Encoding", if std::str::from_utf8(bytes).is_ok() { "UTF-8" } else { "binary / non-UTF-8" });
+            .with_meta("Encoding", match legacy {
+                Some(enc) => enc.name(),
+                None if std::str::from_utf8(bytes).is_ok() => "UTF-8",
+                None => "binary / non-UTF-8",
+            });
         if bytes.len() > HIGHLIGHT_LIMIT {
             out = out.with_meta("Highlighting", "off (file too large)");
         }
@@ -178,5 +197,16 @@ mod tests {
         assert!(looks_like_text("héllo".as_bytes()));
         assert!(looks_like_text(&"héllo".as_bytes()[..2])); // cut mid-character
         assert!(!looks_like_text(&[0x89, b'P', b'N', b'G', 0, 0]));
+    }
+
+    #[test]
+    fn text_in_another_encoding_is_shown_decoded() {
+        // Windows-1252: "café" with é as 0xE9, which isn't UTF-8.
+        let src = FileSource::from_bytes("notes", b"Le caf\xe9 est ferm\xe9 aujourd'hui, revenez demain matin.\n".to_vec());
+        assert!(TextLoader.probe(src.header(), None, "notes") > Confidence::NONE);
+        let doc = TextLoader.open(&src).unwrap();
+        let Content::Text(t) = &doc.content else { panic!("text") };
+        assert!(std::str::from_utf8(t.source.bytes()).unwrap().contains("café"));
+        assert!(doc.metadata.iter().any(|(k, v)| k == "Encoding" && v == "windows-1252"), "{:?}", doc.metadata);
     }
 }

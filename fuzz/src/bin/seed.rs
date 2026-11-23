@@ -42,9 +42,10 @@ fn main() {
     for d in dirs {
         files(Path::new(d), &mut all);
     }
-    let categories: [(&str, &[&'static dyn Reader]); 7] = [
+    let categories: [(&str, &[&'static dyn Reader]); 8] = [
         ("data", libfileparser_data::readers()),
         ("sheets", libfileparser_sheets::readers()),
+        ("media", libfileparser_media::readers()),
         ("docs", libfileparser_docs::readers()),
         ("threed", libfileparser_3d::readers()),
         ("text", libfileparser_text::readers()),

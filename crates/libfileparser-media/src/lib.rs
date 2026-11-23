@@ -9,6 +9,10 @@
 //!
 //! Playing is the app's (a player view); this is the parser. FFmpeg is built LGPL-only
 //! with no external libraries (build.rs), so this crate is LGPL (docs/design/media.md).
+//!
+//! Empty on Windows until FFmpeg's Windows build is wired in (build.rs).
+
+#![cfg(not(windows))]
 
 use std::ffi::{CStr, c_char, c_int, c_void};
 use std::sync::Arc;
@@ -68,7 +72,7 @@ mod ffi {
         pub fn vm_chapter_count(m: *mut Media) -> c_int;
         pub fn vm_chapter(m: *mut Media, i: c_int, start_us: *mut i64, end_us: *mut i64, title: *mut *const c_char) -> c_int;
         pub fn vm_cover(m: *mut Media, data: *mut *const u8, len: *mut c_int) -> c_int;
-        pub fn vm_frame(m: *mut Media, at_us: i64, max_side: c_int, rgba: *mut *mut u8, width: *mut c_int, height: *mut c_int) -> c_int;
+        pub fn vm_frame(m: *mut Media, at_us: i64, max_side: c_int, max_pixels: i64, rgba: *mut *mut u8, width: *mut c_int, height: *mut c_int) -> c_int;
         pub fn vm_peaks(m: *mut Media, buckets: c_int, out: *mut f32, max_seconds: f64) -> c_int;
         pub fn vm_free(p: *mut c_void);
     }
@@ -462,7 +466,9 @@ impl Opened {
     fn poster(&self, cx: &ParseContext) -> Result<Raster> {
         let at = self.duration().filter(|d| *d > 4.0).map_or(0, |d| (d * 0.1 * 1e6) as i64);
         let (mut px, mut w, mut h) = (std::ptr::null_mut(), 0, 0);
-        let r = unsafe { ffi::vm_frame(self.m, at, 1920, &mut px, &mut w, &mut h) };
+        // The decoder's own pictures are held to the image limit too, whatever the header said.
+        let max_pixels = i64::try_from(cx.limits.image_pixels).unwrap_or(i64::MAX).min(i32::MAX as i64);
+        let r = unsafe { ffi::vm_frame(self.m, at, 1920, max_pixels, &mut px, &mut w, &mut h) };
         cx.cancel.check()?;
         if r != 0 || px.is_null() {
             return Err(ParseError::corrupt(format!("FFmpeg couldn't decode a frame ({r})")));

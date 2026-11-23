@@ -105,7 +105,8 @@ impl Library {
         all.extend(libfileparser_sheets::readers());
         #[cfg(feature = "archives")]
         all.extend(libfileparser_archives::readers());
-        #[cfg(feature = "media-ffmpeg")]
+        // FFmpeg isn't built on Windows yet: the crate is empty there.
+        #[cfg(all(feature = "media-ffmpeg", not(windows)))]
         all.extend(libfileparser_media::readers());
         #[cfg(feature = "data")]
         all.extend(libfileparser_data::readers());

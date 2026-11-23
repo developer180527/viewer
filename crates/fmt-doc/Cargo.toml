@@ -9,5 +9,8 @@ license.workspace = true
 viewer-model.workspace = true
 anyhow.workspace = true
 memchr.workspace = true
+# Which encoding text that isn't UTF-8 is in, as libfileparser's own text reader finds it.
+libfileparser-text.workspace = true
+encoding_rs = "0.8"
 # fancy-regex instead of Oniguruma: no C dependency, builds on every target.
 syntect = { version = "5.3", default-features = false, features = ["default-syntaxes", "default-themes", "regex-fancy"] }
