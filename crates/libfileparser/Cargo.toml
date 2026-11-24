@@ -38,3 +38,4 @@ libfileparser-sheets = { workspace = true, optional = true }
 libfileparser-testkit.workspace = true
 scene-data.workspace = true
 zip = { version = "9", default-features = false }
+serde_json = "1"

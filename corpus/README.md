@@ -72,6 +72,33 @@ A failing render leaves what was drawn and a diff in `target/tmp/corpus/`.
 
 `every_loader_has_a_corpus_file` fails while a loader opens no committed corpus file. `LOCAL_ONLY` in `crates/corpus/tests/corpus.rs` lists the loaders that so far have only optional files.
 
+## Against reference renderers
+
+Opening isn't showing: a DOCX can open with half its text gone and pass everything above. `scripts/reference.sh` checks each document against the tool that defines its format: Pandoc for Markdown, the wikis, reST, Org, DOCX, ODT, EPUB, RTF, LaTeX and the rest it reads; LibreOffice for DOC, PPT, PPTX, ODP and HWP; Calibre for MOBI; Asciidoctor, makeinfo, mandoc and pod2html for their own formats; a mail client's rules (Python's email package) for messages. Both sides become the same outline (`crates/libfileparser/tests/outline.rs` writes ours), compared on what any renderer agrees on, not on layout:
+
+- **text**: the words in order, as recall (how much of the reference's text we show) and precision (how much of ours it has);
+- **headings**: found, and at the same level as the others (a constant shift, like a title added as level 1, is fine);
+- **tables** and their cells, **list items**, **code blocks**, **images**: how many.
+
+```bash
+scripts/reference.sh                 # target/reference/{files,real}/report.md
+scripts/reference.sh --only=docx,rtf
+```
+
+Pages formats (PDF, XPS, DjVu, comics) aren't compared: their engine is the reference. An mbox is shown as a list of messages, which no reference has. A missing tool is reported and its formats skipped.
+
+What the first run found (2026-11-25, with mandoc, pod2html, Python's email and the HTML files only):
+
+| format | files | clean | text recall | precision | headings at their level |
+|---|---:|---:|---:|---:|---:|
+| HTML | 32 | 25 | 100% | 100% | 155/163 |
+| POD | 30 | 28 | 100% | 100% | 569/571 |
+| man | 67 | 57 | 100% | 99% | 893/894 |
+| email | 182 | 127 | 100% | 100% | – |
+
+- man: bullet and numbered lists (`.Bl -bullet`, `.Bl -enum`, man(7)'s `.IP \(bu`) are paragraphs starting with "•", not lists (10 files); neighbouring code blocks in Pandoc-written pages are merged; one `tbl` table loses 4 of 23 cells.
+- email: a header whose value isn't an address or a date (`From: Whomever`) isn't shown; `text/enriched` parts are listed as attachments instead of shown. The remaining differences are messages we decode further than Python (doubly encoded, broken headers).
+
 ## Real-world 3D
 
 `fetch-real-3d.sh` works the same way but keeps each repository's folders, since a model finds its buffers and textures by relative path. `real/3d/` (about 1.5 GB, ignored by git) holds Khronos's glTF samples, the USD Working Group's assets, Pixar's OpenUSD examples, Assimp's and ufbx's test models, the Blender glTF exporter's test scenes and more. An opt-in test goes beyond "did it open": it counts models that opened with nothing to draw, with broken bounds, with files they couldn't find, or under another reader, and says why:

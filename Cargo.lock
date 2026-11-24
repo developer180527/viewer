@@ -2112,6 +2112,7 @@ dependencies = [
  "libfileparser-testkit",
  "libfileparser-text",
  "scene-data",
+ "serde_json",
  "zip",
 ]
 

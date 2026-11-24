@@ -57,6 +57,19 @@ struct Frame {
     body: bool,
     /// Started by man's `.TP`/`.IP` rather than `.Bl`: ended by the next paragraph.
     implicit: bool,
+    /// Its `<ul>` or `<ol>` is written (bullet, dash and numbered lists).
+    open: bool,
+}
+
+impl Kind {
+    /// A list of items, as HTML has them, rather than terms and bodies.
+    fn list_tag(self) -> Option<&'static str> {
+        match self {
+            Kind::Bullet | Kind::Dash => Some("ul"),
+            Kind::Enum => Some("ol"),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Default)]
@@ -115,23 +128,34 @@ impl Roff {
                 top.body = false;
                 if top.kind == Kind::Tag {
                     self.html.push_str("</blockquote>");
+                } else if top.open {
+                    self.html.push_str("</li>");
                 }
             }
+    }
+
+    /// Ends the innermost list.
+    fn pop_frame(&mut self) {
+        self.end_body();
+        if let Some(f) = self.frames.pop()
+            && f.open
+            && let Some(tag) = f.kind.list_tag()
+        {
+            self.html.push_str(&format!("</{tag}>"));
+        }
     }
 
     /// Ends man's implicit tagged lists (at `.PP`, `.SH`).
     fn end_implicit(&mut self) {
         while self.frames.last().is_some_and(|f| f.implicit) {
-            self.end_body();
-            self.frames.pop();
+            self.pop_frame();
         }
     }
 
     fn end_all(&mut self) {
         self.end_table();
         while !self.frames.is_empty() {
-            self.end_body();
-            self.frames.pop();
+            self.pop_frame();
         }
         while self.rs > 0 {
             self.html.push_str("</blockquote>");
@@ -159,13 +183,19 @@ impl Roff {
     }
 
     /// A list item with a term (`term_html`, already formatted) and a body to come.
-    fn tag_item(&mut self, term_html: &str, implicit: bool) {
+    /// `implicit`: man's `.TP`/`.IP`, which make a list of that kind if one of it
+    /// isn't open.
+    fn tag_item(&mut self, term_html: &str, implicit: Option<Kind>) {
         self.end_table();
-        if implicit
-            && !self.frames.last().is_some_and(|f| f.implicit) {
-                self.end_para();
-                self.frames.push(Frame { kind: Kind::Tag, count: 0, body: false, implicit: true });
+        if let Some(kind) = implicit {
+            if self.frames.last().is_some_and(|f| f.implicit && f.kind != kind) {
+                self.pop_frame();
             }
+            if !self.frames.last().is_some_and(|f| f.implicit) {
+                self.end_para();
+                self.frames.push(Frame { kind, count: 0, body: false, implicit: true, open: false });
+            }
+        }
         self.end_body();
         let top = self.frames.last().map(|f| f.kind).unwrap_or(Kind::Tag);
         match top {
@@ -175,11 +205,14 @@ impl Roff {
                 }
                 self.html.push_str("<blockquote>");
             }
-            Kind::Bullet => self.inl.push_str("• "),
-            Kind::Dash => self.inl.push_str("– "),
-            Kind::Enum => {
-                let n = self.frames.last().map_or(1, |f| f.count + 1);
-                self.inl.push_str(&format!("{n}. "));
+            Kind::Bullet | Kind::Dash | Kind::Enum => {
+                if let Some(f) = self.frames.last_mut()
+                    && !f.open
+                {
+                    f.open = true;
+                    self.html.push_str(if f.kind == Kind::Enum { "<ol>" } else { "<ul>" });
+                }
+                self.html.push_str("<li>");
             }
             Kind::Item | Kind::Column => {}
         }
@@ -525,6 +558,9 @@ pub fn man(text: &str) -> Html {
     let mut url: Option<String> = None;
     // A table (`.TS`): its format lines are skipped up to the one ending in `.`.
     let mut table: Option<(bool, char)> = None;
+    // The table row being read, and whether a text block (`T{`) is open in it.
+    let mut row: Vec<String> = Vec::new();
+    let mut in_block = false;
     let mut is_mdoc = false;
     while i < lines.len() {
         let raw = lines[i];
@@ -540,6 +576,10 @@ pub fn man(text: &str) -> Html {
         if let Some((formatting, tab)) = table.as_mut() {
             if line.starts_with(".TE") {
                 table = None;
+                in_block = false;
+                if !row.is_empty() {
+                    r.rows.push(std::mem::take(&mut row));
+                }
                 r.end_table();
                 continue;
             }
@@ -556,21 +596,52 @@ pub fn man(text: &str) -> Html {
                 }
                 continue;
             }
-            if line.starts_with("_") || line.starts_with("=") {
+            let t = *tab;
+            // A text block (`T{` … `T}`) is a cell over several lines.
+            let mut rest = line;
+            if in_block {
+                match line.strip_prefix("T}") {
+                    Some(after) => {
+                        in_block = false;
+                        rest = after.strip_prefix(t).unwrap_or(after);
+                        if after.is_empty() {
+                            rest = "";
+                        }
+                    }
+                    None => {
+                        if let Some(c) = row.last_mut() {
+                            c.push(' ');
+                            c.push_str(line);
+                        }
+                        continue;
+                    }
+                }
+            } else if line.starts_with('_') || line.starts_with('=') {
                 continue;
             }
-            let t = *tab;
-            let cells: Vec<String> = line
-                .split(t)
-                .map(|c| {
-                    let mut cell = Roff::default();
-                    cell.text(c.trim_start_matches("T{").trim_end_matches("T}"));
-                    cell.end_para_inline();
-                    cell.inl
-                })
-                .collect();
-            r.end_para();
-            r.rows.push(cells);
+            if !rest.is_empty() || row.is_empty() {
+                for c in rest.split(t) {
+                    if c.trim() == "T{" {
+                        row.push(String::new());
+                        in_block = true;
+                    } else {
+                        row.push(c.to_string());
+                    }
+                }
+            }
+            if !in_block {
+                let cells = std::mem::take(&mut row)
+                    .iter()
+                    .map(|c| {
+                        let mut cell = Roff::default();
+                        cell.text(c.trim());
+                        cell.end_para_inline();
+                        cell.inl
+                    })
+                    .collect();
+                r.end_para();
+                r.rows.push(cells);
+            }
             continue;
         }
         if nofill {
@@ -620,7 +691,7 @@ pub fn man(text: &str) -> Html {
                 let mut term = Roff::default();
                 term.text(body);
                 term.end_para_inline();
-                r.tag_item(&term.inl, true);
+                r.tag_item(&term.inl, Some(Kind::Tag));
                 continue;
             }
             if body.starts_with([' ', '\t']) && !r.inl.is_empty() {
@@ -680,15 +751,17 @@ pub fn man(text: &str) -> Html {
             }
             "IP" | "HP" => {
                 let tag = a.first().cloned().unwrap_or_default();
-                let bulletish = matches!(plain(&tag).trim(), "•" | "*" | "-" | "o" | "·" | "–");
-                if bulletish {
-                    r.tag_item("", true);
-                    r.inl.push_str("• ");
+                let mark = plain(&tag);
+                let mark = mark.trim();
+                if matches!(mark, "•" | "*" | "-" | "o" | "·" | "–") {
+                    r.tag_item("", Some(Kind::Bullet));
+                } else if mark.trim_end_matches(['.', ')']).parse::<u32>().is_ok() && mark.len() <= 5 {
+                    r.tag_item("", Some(Kind::Enum));
                 } else {
                     let mut term = Roff::default();
                     term.text(&tag);
                     term.end_para_inline();
-                    r.tag_item(&term.inl, true);
+                    r.tag_item(&term.inl, Some(Kind::Tag));
                 }
             }
             "RS" => {
@@ -725,7 +798,7 @@ pub fn man(text: &str) -> Html {
                     let mut term = Roff::default();
                     term.word(&a.join(" "), f);
                     term.end_para_inline();
-                    r.tag_item(&term.inl, true);
+                    r.tag_item(&term.inl, Some(Kind::Tag));
                 } else {
                     r.space();
                     r.word(&a.join(" "), f);
@@ -749,7 +822,7 @@ pub fn man(text: &str) -> Html {
                 out.end_para_inline();
                 if tp {
                     tp = false;
-                    r.tag_item(&out.inl, true);
+                    r.tag_item(&out.inl, Some(Kind::Tag));
                 } else {
                     r.space();
                     r.end_para_inline();
@@ -829,16 +902,14 @@ pub fn man(text: &str) -> Html {
                     Kind::Tag
                 };
                 // Inside man's implicit lists, an explicit one nests.
-                r.frames.push(Frame { kind, count: 0, body: false, implicit: false });
+                r.frames.push(Frame { kind, count: 0, body: false, implicit: false, open: false });
             }
             "El" => {
                 r.end_table();
                 while r.frames.last().is_some_and(|f| f.implicit) {
-                    r.end_body();
-                    r.frames.pop();
+                    r.pop_frame();
                 }
-                r.end_body();
-                r.frames.pop();
+                r.pop_frame();
             }
             "It" => {
                 let mut a = a;
@@ -888,12 +959,12 @@ pub fn man(text: &str) -> Html {
                     }
                     Some(Kind::Tag) | None => {
                         if kind.is_none() {
-                            r.frames.push(Frame { kind: Kind::Tag, count: 0, body: false, implicit: false });
+                            r.frames.push(Frame { kind: Kind::Tag, count: 0, body: false, implicit: false, open: false });
                         }
-                        r.tag_item(&term.inl, false);
+                        r.tag_item(&term.inl, None);
                     }
                     _ => {
-                        r.tag_item("", false);
+                        r.tag_item("", None);
                         r.end_para_inline();
                         r.inl.push_str(&term.inl);
                     }

@@ -186,10 +186,12 @@ fn addresses(list: &mail_parser::AddressList) -> String {
 fn addresses_html(list: &mail_parser::AddressList) -> String {
     list.mailboxes()
         .filter_map(|m| {
-            let a = m.address()?;
-            Some(match m.name() {
-                Some(n) => format!("{} &lt;<a href=\"mailto:{1}\">{1}</a>&gt;", esc(n), esc(a)),
-                None => format!("<a href=\"mailto:{0}\">{0}</a>", esc(a)),
+            Some(match (m.name(), m.address()) {
+                (Some(n), Some(a)) => format!("{} &lt;<a href=\"mailto:{1}\">{1}</a>&gt;", esc(n), esc(a)),
+                (None, Some(a)) => format!("<a href=\"mailto:{0}\">{0}</a>", esc(a)),
+                // Only a name ("From: Whomever"): it's what the sender wrote.
+                (Some(n), None) => esc(n),
+                (None, None) => return None,
             })
         })
         .collect::<Vec<_>>()
@@ -246,18 +248,13 @@ fn message_html(m: MessageRef, out: &mut String, depth: usize) {
             out.push_str(&format!("<tr><th>{k}</th><td>{v}</td></tr>"));
         }
     };
-    if let Some(f) = m.from() {
-        row(out, "From", addresses_html(&f));
-    }
-    if let Some(t) = m.to() {
-        row(out, "To", addresses_html(&t));
-    }
-    if let Some(c) = m.cc() {
-        row(out, "Cc", addresses_html(&c));
-    }
-    if let Some(d) = m.date() {
-        row(out, "Date", esc(&d.to_rfc822()));
-    }
+    // A value that isn't an address or a date is shown as written, as mail clients do.
+    let raw = |name: &str| m.headers().iter().find(|h| h.raw_name().eq_ignore_ascii_case(name)).map(|h| esc(&header_text(&h))).unwrap_or_default();
+    let or_raw = |v: String, name: &str| if v.trim().is_empty() { raw(name) } else { v };
+    row(out, "From", or_raw(m.from().map(|a| addresses_html(&a)).unwrap_or_default(), "From"));
+    row(out, "To", or_raw(m.to().map(|a| addresses_html(&a)).unwrap_or_default(), "To"));
+    row(out, "Cc", or_raw(m.cc().map(|a| addresses_html(&a)).unwrap_or_default(), "Cc"));
+    row(out, "Date", or_raw(m.date().map(|d| esc(&d.to_rfc822())).unwrap_or_default(), "Date"));
     if let Some(s) = m.subject() {
         row(out, "Subject", format!("<strong>{}</strong>", esc(s)));
     }
@@ -285,12 +282,83 @@ fn message_html(m: MessageRef, out: &mut String, depth: usize) {
             }
             continue;
         }
+        // Enriched text (RFC 1896) is a body to read, not a file.
+        if a.attachment_name().is_none() && (a.is_content_type("text", "enriched") || a.is_content_type("text", "richtext")) {
+            out.push_str(&enriched_html(&String::from_utf8_lossy(&a.decoded())));
+            continue;
+        }
         let kind = a.content_type().map(|c| format!("{}/{}", c.ctype(), c.subtype().unwrap_or(""))).unwrap_or_default();
         listed.push(format!("<li>{} <em>({}, {})</em></li>", esc(a.attachment_name().unwrap_or("(unnamed)")), esc(&kind), size(a.decoded_len())));
     }
     if !listed.is_empty() {
         out.push_str(&format!("<p><strong>Attachments</strong></p><ul>{}</ul>", listed.join("")));
     }
+}
+
+/// `text/enriched` (RFC 1896) as HTML: its formatting commands as tags, `<<` as `<`,
+/// a single line end as a space and each further one as a line break; `<param>`s (a
+/// font's name, a colour) and commands it doesn't know dropped.
+fn enriched_html(text: &str) -> String {
+    let text = text.replace("\r\n", "\n");
+    let mut out = String::from("<p>");
+    let mut param = 0usize;
+    let mut chars = text.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '<' if chars.peek() == Some(&'<') => {
+                chars.next();
+                if param == 0 {
+                    out.push_str("&lt;");
+                }
+            }
+            '<' => {
+                let mut name = String::new();
+                for d in chars.by_ref() {
+                    if d == '>' {
+                        break;
+                    }
+                    name.push(d);
+                }
+                let name = name.to_ascii_lowercase();
+                let (close, cmd) = match name.strip_prefix('/') {
+                    Some(n) => (true, n),
+                    None => (false, name.as_str()),
+                };
+                let tag = match cmd {
+                    "bold" => "strong",
+                    "italic" => "em",
+                    "underline" => "u",
+                    "fixed" => "code",
+                    "param" => {
+                        param = if close { param.saturating_sub(1) } else { param + 1 };
+                        continue;
+                    }
+                    _ => continue,
+                };
+                out.push_str(&format!("<{}{tag}>", if close { "/" } else { "" }));
+            }
+            '\n' if param == 0 => {
+                let mut n = 1;
+                while chars.peek() == Some(&'\n') {
+                    chars.next();
+                    n += 1;
+                }
+                if n == 1 {
+                    out.push(' ');
+                } else if n == 2 {
+                    out.push_str("<br>");
+                } else {
+                    out.push_str("</p><p>");
+                }
+            }
+            _ if param > 0 => {}
+            '&' => out.push_str("&amp;"),
+            '>' => out.push_str("&gt;"),
+            c => out.push(c),
+        }
+    }
+    out.push_str("</p>");
+    out
 }
 
 fn size(n: usize) -> String {
@@ -575,6 +643,21 @@ mod tests {
         assert!(doc.metadata().iter().any(|(k, v)| k == "Title" && v == "Café plans"));
         assert!(doc.metadata().iter().any(|(k, v)| k == "Attachments" && v == "1"));
         assert!(doc.facets().any(|f| f.name == "Headers"));
+    }
+
+    #[test]
+    fn headers_that_dont_parse_are_shown_as_written() {
+        let m = b"From: Whomever\r\nTo: Someone\r\nDate: Whenever\r\nSubject: whatever\r\n\r\nbody\r\n";
+        let s = flow(&EmlReader.open(&FileSource::from_bytes("a.eml", m.to_vec()), &ParseContext::new()).unwrap());
+        has(&s, &["Text(\"Whomever\")", "Text(\"Someone\")", "Text(\"Whenever\")", "whatever", "body"]);
+    }
+
+    #[test]
+    fn enriched_text_is_read_not_attached() {
+        let m = b"From: a@b.c\r\nSubject: s\r\nContent-Type: multipart/mixed; boundary=x\r\n\r\n--x\r\nContent-Type: text/enriched\r\n\r\nThis is <bold>bold</bold> and <italic>i</italic>, <<tag>.\r\n<param>Times</param>Same line.\r\n\r\nNew line.\r\n--x--\r\n";
+        let s = flow(&EmlReader.open(&FileSource::from_bytes("a.eml", m.to_vec()), &ParseContext::new()).unwrap());
+        has(&s, &["Strong([Text(\"bold\")])", "Emphasis([Text(\"i\")])", "<tag>", "Same line.", "New line."]);
+        assert!(!s.contains("Times") && !s.contains("Attachments") && !s.contains("text/enriched"), "{s}");
     }
 
     #[test]

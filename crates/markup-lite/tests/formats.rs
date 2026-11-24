@@ -60,6 +60,15 @@ fn manuals_and_sources() {
     assert!(!markup_lite::starts_like_a_manual(b"Some prose.\n"));
     let md = man(".Dd 2026\n.Dt CAT 1\n.Sh NAME\n.Nm cat\n.Nd join\n.Sh SYNOPSIS\n.Nm\n.Op Fl n\n.Ar file\n");
     has(&md, &["<h1>cat(1)</h1>", "<strong>cat</strong>", "— join", "[<strong>-n</strong>]", "<em>file</em>"]);
+    // Bullet and numbered lists are lists, as mandoc shows them, in man and mdoc.
+    let lists = man(".TH X 1\n.SH L\n.IP \\(bu 2\none\n.IP \\(bu 2\ntwo\n.PP\nAfter.\n.IP 1. 3\nfirst\n.IP 2. 3\nsecond\n.PP\nEnd.\n");
+    has(&lists, &["<ul><li><p>one</p></li><li><p>two</p></li></ul><p>After.</p>", "<ol><li><p>first</p></li><li><p>second</p></li></ol><p>End.</p>"]);
+    lacks(&lists, &["•"]);
+    let bl = man(".Dd 2026\n.Dt X 1\n.Sh L\n.Bl -enum\n.It\nfirst\n.It\nsecond\n.El\n.Bl -bullet\n.It\nthree\n.El\n");
+    has(&bl, &["<ol><li><p>first</p></li><li><p>second</p></li></ol>", "<ul><li><p>three</p></li></ul>"]);
+    // A table's text blocks (T{ … T}) are cells over several lines.
+    let tbl = man(".TH X 1\n.TS\ntab(@);\ncw(10n) lw(9n).\nT{\nCentered\nHeader\nT}@T{\nLeft\nT}\n_\nA@B\n.TE\n");
+    has(&tbl, &["<tr><td>Centered Header</td><td>Left</td></tr><tr><td>A</td><td>B</td></tr>"]);
     let l = latex("\\documentclass{article}\\title{T}\\begin{document}\\maketitle\\section{S}A \\textbf{b} \\emph{i}, $x^2$.\\begin{itemize}\\item one\\end{itemize}\\end{document}");
     has(&l, &["<h1>T</h1>", "<h2>S</h2>", "<strong>b</strong>", "<em>i</em>", "<code>x^2</code>", "<li><p> one"]);
     lacks(&l, &["documentclass"]);
