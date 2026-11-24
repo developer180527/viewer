@@ -2200,6 +2200,7 @@ dependencies = [
  "office_oxide",
  "orgize",
  "pulldown-cmark",
+ "quick-xml 0.41.0",
  "rars",
  "rbook",
  "rst_parser",

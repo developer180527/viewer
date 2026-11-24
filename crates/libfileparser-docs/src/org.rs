@@ -62,6 +62,50 @@ fn tame(text: &str) -> (Cow<'_, str>, usize) {
     (Cow::Owned(out), tamed)
 }
 
+/// Headings' TODO keywords marked bold, as Emacs shows them: orgize's HTML leaves them
+/// out, and a checklist without them loses its point. The keywords are TODO and DONE,
+/// or the document's own (`#+TODO: NEXT WAIT | DONE CANCELLED`).
+fn keywords(text: &str) -> Cow<'_, str> {
+    let mut words: Vec<String> = Vec::new();
+    for line in text.lines() {
+        let l = line.trim_start();
+        let upper = l.get(..12).unwrap_or(l).to_ascii_uppercase();
+        if let Some(rest) = ["#+TODO:", "#+SEQ_TODO:", "#+TYP_TODO:"].iter().find(|k| upper.starts_with(*k)).map(|k| &l[k.len()..]) {
+            words.extend(rest.split_whitespace().filter(|w| *w != "|").map(|w| w.split('(').next().unwrap_or(w).to_string()));
+        }
+    }
+    if words.is_empty() {
+        words = vec!["TODO".into(), "DONE".into()];
+    }
+    let keyword = |line: &str| -> Option<usize> {
+        let stars = line.bytes().take_while(|&b| b == b'*').count();
+        let rest = line.get(stars..)?;
+        if stars == 0 || !rest.starts_with(' ') {
+            return None;
+        }
+        let word = rest.split_whitespace().next()?;
+        words.iter().any(|w| w == word).then(|| line.len() - rest.trim_start().len())
+    };
+    if !text.lines().any(|l| keyword(l).is_some()) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::with_capacity(text.len() + 64);
+    for line in text.split_inclusive('\n') {
+        match keyword(line) {
+            Some(at) => {
+                let word_len = line[at..].split_whitespace().next().map_or(0, str::len);
+                out.push_str(&line[..at]);
+                out.push('*');
+                out.push_str(&line[at..at + word_len]);
+                out.push('*');
+                out.push_str(&line[at + word_len..]);
+            }
+            None => out.push_str(line),
+        }
+    }
+    Cow::Owned(out)
+}
+
 impl Reader for OrgReader {
     fn info(&self) -> &ReaderInfo {
         &INFO
@@ -80,6 +124,7 @@ impl Reader for OrgReader {
         let bytes = crate::whole(src, cx)?;
         let text = String::from_utf8_lossy(&bytes);
         let (text, tamed) = tame(&text);
+        let text = keywords(&text);
         let org = orgize::Org::parse(&text);
         let title = org.document().title();
         let mut b = Builder::new(cx);
@@ -110,6 +155,20 @@ mod tests {
             assert!(s.contains(want), "{want} in {s}");
         }
         assert!(doc.warnings().is_empty());
+    }
+
+    #[test]
+    fn todo_keywords_are_shown() {
+        let flow = |t: &str| {
+            let doc = OrgReader.open(&FileSource::from_bytes("n.org", t.as_bytes().to_vec()), &ParseContext::new()).unwrap();
+            let Content::Flow(f) = doc.facet(0, &ParseContext::new()).unwrap() else { panic!() };
+            format!("{:?}", f.blocks(0..100).unwrap())
+        };
+        let s = flow("* TODO Write it\n** DONE Plan\n* TODOS are not keywords\n");
+        assert!(s.contains("Strong([Text(\"TODO\")]), Text(\" Write it\")") && s.contains("Strong([Text(\"DONE\")])"), "{s}");
+        assert!(s.contains("TODOS are not keywords") && !s.contains("Strong([Text(\"TODOS"), "{s}");
+        let s = flow("#+TODO: NEXT(n) | CANCELLED\n* NEXT Call\n* TODO plain word here\n");
+        assert!(s.contains("Strong([Text(\"NEXT\")])") && !s.contains("Strong([Text(\"TODO"), "{s}");
     }
 
     /// Found by the overnight soak: a paragraph of thousands of unclosed marks, which

@@ -872,7 +872,13 @@ fn jira_image(inside: &str, _: &[Rule]) -> Option<String> {
     (!src.contains(' ') && !src.is_empty()).then(|| img(src, ""))
 }
 
+/// `{anchor:name}`: a place to link to, shown as nothing.
+fn jira_anchor(inside: &str, _: &[Rule]) -> Option<String> {
+    (!inside.contains(['\n', '}'])).then(String::new)
+}
+
 const JIRA_RULES: &[Rule] = &[
+    Rule::Link("{anchor:", "}", jira_anchor),
     Rule::Literal("{{", "}}"),
     Rule::Link("[", "]", jira_link),
     Rule::Link("!", "!", jira_image),

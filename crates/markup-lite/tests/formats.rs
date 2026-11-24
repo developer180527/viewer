@@ -24,6 +24,10 @@ fn wikis() {
     let d = dokuwiki("====== Top ======\n**b** //i// ''c''\n  * one\n  - first\n<code rust>\nfn x() {}\n</code>\n");
     has(&d, &["<h1>Top</h1>", "<code>c</code>", "<ul><li>one", "<ol><li>first", "language-rust"]);
     has(&jira("h2. Top\n*b* _i_ {{c}} [l|https://x.org]\n{code:java}\nint x;\n{code}\n"), &["<h2>Top</h2>", "<strong>b</strong>", "<code>c</code>", "language-java"]);
+    // An anchor is a place to link to, not text.
+    let a = jira("h1. {anchor:top}Headers\n");
+    has(&a, &["<h1>Headers</h1>"]);
+    lacks(&a, &["anchor"]);
     let t = txt2tags("My Title\n\n\n= S =\n**b** //i// ``c``\n+ first\n");
     has(&t, &["<h1>My Title</h1>", "<h1>S</h1>", "<ol><li>first"]);
     assert_eq!(t.title.as_deref(), Some("My Title"));

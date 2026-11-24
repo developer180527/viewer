@@ -200,6 +200,31 @@ fn options(src: &FileSource, cx: &ParseContext) -> ParseOptions {
     o
 }
 
+/// The text of blocks, paragraphs and items run together, for finding text in it.
+fn plain_text(blocks: &[Block]) -> String {
+    paragraphs_of_all(blocks).join("\n")
+}
+
+/// Each paragraph's text in a block, lists and quotes opened.
+fn paragraphs_of(block: &Block) -> Vec<String> {
+    paragraphs_of_all(std::slice::from_ref(block))
+}
+
+fn paragraphs_of_all(blocks: &[Block]) -> Vec<String> {
+    let mut out = Vec::new();
+    for b in blocks {
+        match b {
+            Block::Paragraph(t) | Block::Heading { text: t, .. } => out.push(Inline::plain(t).trim().to_string()),
+            Block::List { items, .. } => items.iter().for_each(|i| out.extend(paragraphs_of_all(i))),
+            Block::Quote(q) => out.extend(paragraphs_of_all(q)),
+            Block::Table { rows, .. } => rows.iter().flatten().for_each(|c| out.push(Inline::plain(c).trim().to_string())),
+            _ => {}
+        }
+    }
+    out.retain(|t| !t.is_empty());
+    out
+}
+
 fn error(e: office_oxide::OfficeError) -> ParseError {
     let text = e.to_string();
     let lower = text.to_ascii_lowercase();
@@ -216,6 +241,8 @@ fn error(e: office_oxide::OfficeError) -> ParseError {
 fn open(src: &FileSource, cx: &ParseContext, format: DocumentFormat, id: &'static str, name: &'static str) -> Result<Document> {
     cx.cancel.check()?;
     let bytes = crate::whole(src, cx)?.to_vec();
+    // SmartArt, which office_oxide leaves out, read from the package first.
+    let diagrams = if matches!(format, DocumentFormat::Pptx) { crate::smartart::diagrams(&bytes) } else { Vec::new() };
     let doc = office_oxide::Document::from_reader_with(Cursor::new(bytes), format, &options(src, cx)).map_err(error)?;
     cx.cancel.check()?;
     let ir = doc.to_ir();
@@ -224,7 +251,18 @@ fn open(src: &FileSource, cx: &ParseContext, format: DocumentFormat, id: &'stati
     let mut slides = Vec::new();
     for (i, section) in ir.sections.iter().enumerate() {
         cx.cancel.check()?;
-        let body = blocks(&section.elements, &mut out)?;
+        let mut body = blocks(&section.elements, &mut out)?;
+        if let Some(d) = diagrams.get(i) {
+            // office_oxide reads some diagrams itself (from the drawing saved with them):
+            // those are left as it has them.
+            let shown = plain_text(&body);
+            for diagram in d {
+                let texts = paragraphs_of(diagram);
+                if !texts.iter().all(|t| shown.contains(t.as_str())) {
+                    body.push(diagram.clone());
+                }
+            }
+        }
         if presentation {
             let title = section.title.clone().filter(|t| !t.trim().is_empty());
             let heading = title.clone().map_or_else(|| format!("Slide {}", i + 1), |t| format!("{}. {t}", i + 1));

@@ -17,7 +17,7 @@ use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::time::Duration;
 
-use libfileparser::{Block, Content, FileSource, Inline, Model, ParseContext, Role};
+use libfileparser::{Block, Content, FileSource, FolderFiles, Inline, Model, ParseContext, Role};
 use serde_json::{Value, json};
 
 const LIMIT: Duration = Duration::from_secs(60);
@@ -91,7 +91,8 @@ fn flatten(blocks: &[Block], out: &mut Vec<Value>) {
 }
 
 fn outline(path: &Path) -> Value {
-    let cx = ParseContext::new();
+    // Its folder readable, as when a user grants it: includes and linked files resolve.
+    let cx = ParseContext::new().with_files(FolderFiles::within(path.parent().unwrap_or(Path::new("."))));
     let src = match FileSource::open(path) {
         Ok(s) => s,
         Err(e) => return json!({ "error": e.to_string() }),

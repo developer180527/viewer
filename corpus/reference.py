@@ -59,7 +59,7 @@ PANDOC = {
     "html": "html", "htm": "html",
 }
 # Formats whose reference turns them into HTML first.
-LIBREOFFICE = {"doc", "ppt", "pptx", "odp", "hwp", "hwpx"}
+LIBREOFFICE = {"doc", "ppt", "pptx", "odp"}  # Its HWP import is missing from the macOS build.
 CALIBRE = {"mobi", "azw", "azw3", "prc"}
 PAGES = {"pdf", "xps", "oxps", "djvu", "djv", "cbz", "cbr", "cb7", "cbt"}
 # Extensions under corpus/files/docs, to our reader folders' names.
@@ -131,8 +131,12 @@ def reference(path: Path, kind: str):
     if kind == "asciidoc":
         if not have("asciidoctor"):
             raise Missing("asciidoctor")
-        r = run(["asciidoctor", "-s", "-o", "-", str(path)])
-        return html_outline(r.stdout.decode("utf-8", "replace"))
+        # The whole page, its title included, without the contents and footer it adds.
+        r = run(["asciidoctor", "-a", "toc!", "-a", "nofooter", "-o", "-", str(path)])
+        page = r.stdout.decode("utf-8", "replace")
+        # A NOTE or TIP is drawn as a table of icon and text; it's a block of text.
+        page = re.sub(r'(<div class="admonitionblock[^"]*">\s*)<table>(.*?)</table>', lambda m: m.group(1) + re.sub(r"</?(tr|td|tbody)[^>]*>", " ", m.group(2)), page, flags=re.S)
+        return html_outline(page)
     if kind == "texinfo":
         if not have("makeinfo"):
             raise Missing("makeinfo (texinfo)")
@@ -541,7 +545,8 @@ def compare(ours, ref):
         precision = matched / len(a) if a else 0.0
 
     def heads(bl):
-        return [(x[1], norm(x[2])) for x in bl if x[0] == "h" and norm(x[2])]
+        # Without a leading number ("3.1"): Word's automatic numbering is counted apart.
+        return [(x[1], re.sub(r"^[\d ]+", "", norm(x[2]))) for x in bl if x[0] == "h" and re.sub(r"^[\d ]+", "", norm(x[2]))]
 
     ho, hr = heads(ours), heads(ref)
     ours_by_text = {}
@@ -652,7 +657,11 @@ def main():
             continue
         if ours.get("model") == "pages":
             continue
-        r = compare(ours.get("blocks", []), ref)
+        blocks = ours.get("blocks", [])
+        if kind in ("ppt", "pptx", "odp"):
+            # Our "Slide 3" headings are the viewer's, not the deck's.
+            blocks = [b for b in blocks if not (b[0] == "h" and re.fullmatch(r"Slide \d+", b[2]))]
+        r = compare(blocks, ref)
         rows.append((kind, str(rel), r, problems(r, kind), ours))
 
     out_dir.mkdir(parents=True, exist_ok=True)

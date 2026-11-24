@@ -120,13 +120,60 @@ fn rst(text: &str) -> Result<Rendered> {
         text.push('\n');
     }
     let (text, long) = tame_rst(&text);
-    let doc = rst_parser::parse(&text).map_err(|e| ParseError::invalid(format!("not reStructuredText this parser reads: {}", first_line(&e.to_string()))))?;
+    let (text, tables, literals) = rst_tables(&text);
+    // A directive option rst_parser's grammar refuses (`:alt:` with spaces) loses the
+    // whole document; without the option, the rest reads. A few, then give up.
+    let mut text = text;
+    let mut dropped = 0;
+    let doc = loop {
+        match rst_parser::parse(&text) {
+            Ok(doc) => break doc,
+            Err(e) => {
+                let msg = e.to_string();
+                let at = msg.split("--> ").nth(1).and_then(|r| r.split(':').next()).and_then(|n| n.trim().parse::<usize>().ok());
+                let lines: Vec<&str> = text.split_inclusive('\n').collect();
+                let option = at.filter(|&n| n >= 1 && n <= lines.len()).filter(|&n| {
+                    let l = lines[n - 1];
+                    l.starts_with([' ', '\t']) && l.trim_start().starts_with(':') && l.trim_start()[1..].contains(':')
+                });
+                match option {
+                    Some(n) if dropped < 32 => {
+                        dropped += 1;
+                        text = lines.iter().enumerate().filter(|&(k, _)| k != n - 1).map(|(_, l)| *l).collect();
+                    }
+                    _ => return Err(ParseError::invalid(format!("not reStructuredText this parser reads: {}", first_line(&msg)))),
+                }
+            }
+        }
+    };
     // The tree as JSON (document_tree derives Serialize), walked generically: rst_parser's
     // own HTML writer, rst_renderer, panics on 13 kinds of element.
     let tree = serde_json::to_value(&doc).map_err(ParseError::invalid)?;
     let mut w = RstHtml { out: String::with_capacity(text.len() * 2), sections: 0, title: None, depth: 0 };
     w.children(&tree);
+    // Each literal block, then each table, where its placeholder paragraph is.
+    for (n, code) in literals.iter().enumerate() {
+        let mark = literal_placeholder(n);
+        let html = format!("<pre>{}</pre>", esc(code));
+        if w.out.contains(&format!("<p>{mark}</p>")) {
+            w.out = w.out.replacen(&format!("<p>{mark}</p>"), &html, 1);
+        } else {
+            w.out = w.out.replacen(&mark, &html, 1);
+        }
+    }
+    for (n, table) in tables.iter().enumerate() {
+        let mark = table_placeholder(n);
+        let html = table_html(table);
+        if w.out.contains(&format!("<p>{mark}</p>")) {
+            w.out = w.out.replacen(&format!("<p>{mark}</p>"), &html, 1);
+        } else {
+            w.out = w.out.replacen(&mark, &html, 1);
+        }
+    }
     let mut warnings = Vec::new();
+    if dropped > 0 {
+        warnings.push(format!("{dropped} directive option(s) this parser doesn't read left out (an image's alt text, say)."));
+    }
     if !long.is_empty() {
         // Each long line back where its placeholder is, as written.
         for (n, line) in long.iter().enumerate() {
@@ -169,6 +216,377 @@ fn tame_rst(text: &str) -> (String, Vec<String>) {
         }
     }
     (out, long)
+}
+
+/// A table read from reStructuredText's grid or simple syntax, which rst_parser
+/// doesn't read: its rows of cells, as written, and how many rows are headers.
+struct RstTable {
+    rows: Vec<Vec<String>>,
+    header_rows: usize,
+}
+
+fn table_placeholder(n: usize) -> String {
+    format!("lfptable{n}x")
+}
+
+/// `text` with each grid table (`+---+`), simple table (`=== ===`) and literal block
+/// (the indented lines after `::`) swapped for a placeholder paragraph at its indent,
+/// and those tables and blocks. Tables inside a literal block or a directive's content
+/// stay as written.
+fn rst_tables(text: &str) -> (String, Vec<RstTable>, Vec<String>) {
+    let (mut tables, mut literals) = (Vec::new(), Vec::new());
+    let out = rst_tables_into(text, &mut tables, &mut literals, 0);
+    (out, tables, literals)
+}
+
+fn rst_tables_into(text: &str, tables: &mut Vec<RstTable>, literals: &mut Vec<String>, depth: usize) -> String {
+    let lines: Vec<&str> = text.split_inclusive('\n').collect();
+    let indent = |l: &str| l.len() - l.trim_start().len();
+    let blank = |l: &str| l.trim().is_empty();
+    let grid_border = |l: &str| {
+        let t = l.trim();
+        t.len() > 2 && t.starts_with('+') && t.ends_with('+') && t.chars().all(|c| matches!(c, '+' | '-' | '=' | ':'))
+    };
+    let simple_border = |l: &str| {
+        let t = l.trim();
+        t.contains(' ') && t.split_whitespace().count() >= 2 && t.split_whitespace().all(|r| r.chars().all(|c| c == '='))
+    };
+    if !lines.iter().any(|l| grid_border(l) || simple_border(l) || l.contains("::")) {
+        return text.to_string();
+    }
+    let mut out = String::with_capacity(text.len());
+    // Indent under which lines are a literal block or a directive's content.
+    let mut literal: Option<usize> = None;
+    let mut i = 0;
+    while i < lines.len() {
+        let line = lines[i];
+        if let Some(at) = literal {
+            if blank(line) || indent(line) > at {
+                out.push_str(line);
+                i += 1;
+                continue;
+            }
+            literal = None;
+        }
+        let starts_block = i == 0 || blank(lines[i - 1]);
+        let table = if starts_block && grid_border(line) {
+            grid_table(&lines[i..])
+        } else if starts_block && simple_border(line) {
+            simple_table(&lines[i..])
+        } else {
+            None
+        };
+        if let Some((table, used)) = table {
+            out.push_str(&" ".repeat(indent(line)));
+            out.push_str(&table_placeholder(tables.len()));
+            out.push('\n');
+            tables.push(table);
+            i += used;
+            continue;
+        }
+        let t = line.trim_end();
+        // `.. table:: caption`, which rst_parser doesn't know: its caption, then its
+        // content read as the rest is.
+        if let Some(caption) = t.trim_start().strip_prefix(".. table::")
+            && depth < 4
+        {
+            let at = indent(line);
+            let mut end = i + 1;
+            while end < lines.len() && (blank(lines[end]) || indent(lines[end]) > at) {
+                end += 1;
+            }
+            let body: Vec<&str> = lines[i + 1..end].to_vec();
+            let cut = body.iter().filter(|l| !blank(l)).map(|l| indent(l)).min().unwrap_or(0);
+            let inner: String = body.iter().map(|l| if blank(l) { "\n" } else { &l[cut.min(l.len())..] }).collect();
+            if !caption.trim().is_empty() {
+                out.push_str(&" ".repeat(at));
+                out.push_str(caption.trim());
+                out.push_str("\n\n");
+            }
+            let inner = rst_tables_into(inner.trim_start_matches('\n'), tables, literals, depth + 1);
+            for l in inner.split_inclusive('\n') {
+                if !blank(l) {
+                    out.push_str(&" ".repeat(at));
+                }
+                out.push_str(l);
+            }
+            if !out.ends_with('\n') {
+                out.push('\n');
+            }
+            i = end;
+            continue;
+        }
+        // `.. list-table::`: rows as a two-level list (`* - a` then `  - b`).
+        if let Some(caption) = t.trim_start().strip_prefix(".. list-table::") {
+            let at = indent(line);
+            let mut end = i + 1;
+            while end < lines.len() && (blank(lines[end]) || indent(lines[end]) > at) {
+                end += 1;
+            }
+            if let Some(table) = list_table(&lines[i + 1..end]) {
+                if !caption.trim().is_empty() {
+                    out.push_str(&" ".repeat(at));
+                    out.push_str(caption.trim());
+                    out.push_str("\n\n");
+                }
+                out.push_str(&" ".repeat(at));
+                out.push_str(&table_placeholder(tables.len()));
+                out.push_str(if end < lines.len() { "\n\n" } else { "\n" });
+                tables.push(table);
+                i = end;
+                continue;
+            }
+        }
+        let directive = t.trim_start().starts_with(".. ") && t.contains("::");
+        if t.ends_with("::") && !t.trim_start().starts_with(".. ") {
+            // A literal block: the indented lines after it, as written (rst_parser
+            // doesn't read them). The paragraph keeps one colon, or none after a space.
+            let at = indent(line);
+            let mut j = i + 1;
+            while j < lines.len() && blank(lines[j]) {
+                j += 1;
+            }
+            let mut end = j;
+            while end < lines.len() && (blank(lines[end]) || indent(lines[end]) > at) {
+                end += 1;
+            }
+            while end > j && blank(lines[end - 1]) {
+                end -= 1;
+            }
+            if j > i + 1 && end > j {
+                let head = t.trim_start();
+                let head = if head == "::" { "" } else if let Some(h) = head.strip_suffix(" ::") { h } else { &t.trim_start()[..head.len() - 1] };
+                if !head.is_empty() {
+                    out.push_str(&" ".repeat(at));
+                    out.push_str(head.trim_end());
+                    out.push_str("\n\n");
+                }
+                let cut = lines[j..end].iter().filter(|l| !blank(l)).map(|l| indent(l)).min().unwrap_or(0);
+                let body: Vec<&str> = lines[j..end].iter().map(|l| l.trim_end_matches(['\n', '\r']).get(cut..).unwrap_or("")).collect();
+                out.push_str(&" ".repeat(at));
+                out.push_str(&literal_placeholder(literals.len()));
+                out.push_str(if end < lines.len() { "\n\n" } else { "\n" });
+                literals.push(body.join("\n"));
+                i = end;
+                continue;
+            }
+            literal = Some(at);
+        } else if directive {
+            literal = Some(indent(line));
+        }
+        out.push_str(line);
+        i += 1;
+    }
+    out
+}
+
+fn literal_placeholder(n: usize) -> String {
+    format!("lfpliteral{n}x")
+}
+
+/// A grid table from its top border: its cells split where the border has `+`, rows
+/// ended by borders, the rows above a `=` border its header. Returns the lines read.
+fn grid_table(lines: &[&str]) -> Option<(RstTable, usize)> {
+    let top = lines[0];
+    let start = top.len() - top.trim_start().len();
+    let cols: Vec<usize> = top.char_indices().filter(|&(_, c)| c == '+').map(|(i, _)| i).collect();
+    if cols.len() < 2 {
+        return None;
+    }
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut header_rows = 0;
+    let mut cells: Vec<Vec<String>> = vec![Vec::new(); cols.len() - 1];
+    let mut used = 1;
+    for line in &lines[1..] {
+        let body = line.trim_end_matches(['\n', '\r']);
+        let t = body.trim_start();
+        if !(t.starts_with('+') || t.starts_with('|')) || body.len() - t.len() != start {
+            break;
+        }
+        used += 1;
+        if t.starts_with('+') {
+            // A border: the row is done (a partial one inside a row span ends it too).
+            if cells.iter().any(|c| !c.is_empty()) {
+                rows.push(cells.iter().map(|c| c.join("\n")).collect());
+            }
+            cells = vec![Vec::new(); cols.len() - 1];
+            if t.contains('=') {
+                header_rows = rows.len();
+            }
+            continue;
+        }
+        // Text between the column lines that have a `|` here; a span keeps going.
+        let chars: Vec<char> = body.chars().collect();
+        let mut from = cols[0] + 1;
+        let mut col = 0;
+        for (j, &edge) in cols.iter().enumerate().skip(1) {
+            if chars.get(edge) == Some(&'|') || j == cols.len() - 1 {
+                let piece: String = chars.get(from..edge.min(chars.len())).map(|s| s.iter().collect()).unwrap_or_default();
+                cells[col].push(piece.trim_end().to_string());
+                from = edge + 1;
+                col = j;
+            }
+        }
+    }
+    if rows.is_empty() {
+        return None;
+    }
+    // Each cell's lines, their shared indent removed.
+    let rows = rows
+        .into_iter()
+        .map(|r| {
+            r.into_iter()
+                .map(|c| {
+                    let lines: Vec<&str> = c.lines().collect();
+                    let cut = lines.iter().filter(|l| !l.trim().is_empty()).map(|l| l.len() - l.trim_start().len()).min().unwrap_or(0);
+                    lines.iter().map(|l| l.get(cut..).unwrap_or("").to_string()).collect::<Vec<_>>().join("\n").trim().to_string()
+                })
+                .collect()
+        })
+        .collect();
+    Some((RstTable { rows, header_rows }, used))
+}
+
+/// A simple table from its top border: columns where the border has `=`s (the last
+/// running to the line's end), a line with its first column empty continuing the row
+/// above, a border before the last its header's end.
+fn simple_table(lines: &[&str]) -> Option<(RstTable, usize)> {
+    let top = lines[0].trim_end();
+    let mut cols: Vec<(usize, usize)> = Vec::new();
+    let mut at = None;
+    for (i, c) in top.char_indices().chain([(top.len(), ' ')]) {
+        match (c == '=', at) {
+            (true, None) => at = Some(i),
+            (false, Some(s)) => {
+                cols.push((s, i));
+                at = None;
+            }
+            _ => {}
+        }
+    }
+    if cols.len() < 2 {
+        return None;
+    }
+    let is_border = |l: &str| {
+        let t = l.trim();
+        !t.is_empty() && t.chars().all(|c| c == '=' || c == ' ')
+    };
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut header_rows = 0;
+    let mut used = 1;
+    let mut ended = false;
+    for (k, line) in lines[1..].iter().enumerate() {
+        used += 1;
+        let body = line.trim_end_matches(['\n', '\r']);
+        if is_border(body) {
+            let next = lines.get(k + 2);
+            if next.is_none_or(|n| n.trim().is_empty()) {
+                ended = true;
+                break;
+            }
+            header_rows = rows.len();
+            continue;
+        }
+        if body.trim().is_empty() || body.trim().chars().all(|c| c == '-' || c == ' ') {
+            continue;
+        }
+        let chars: Vec<char> = body.chars().collect();
+        let cell = |j: usize| -> String {
+            let s = cols[j].0;
+            let e = if j + 1 == cols.len() { chars.len() } else { cols[j + 1].0.min(chars.len()) };
+            chars.get(s.min(chars.len())..e.max(s).min(chars.len())).map(|x| x.iter().collect::<String>()).unwrap_or_default().trim().to_string()
+        };
+        let row: Vec<String> = (0..cols.len()).map(cell).collect();
+        match rows.last_mut() {
+            Some(last) if row[0].is_empty() => {
+                for (c, add) in last.iter_mut().zip(row) {
+                    if !add.is_empty() {
+                        if !c.is_empty() {
+                            c.push(' ');
+                        }
+                        c.push_str(&add);
+                    }
+                }
+            }
+            _ => rows.push(row),
+        }
+    }
+    (ended && !rows.is_empty()).then_some((RstTable { rows, header_rows }, used))
+}
+
+/// A list table's content: its `:header-rows:`, then rows (`* -`) of cells (`-`),
+/// each cell's text running on over the lines indented under it.
+fn list_table(lines: &[&str]) -> Option<RstTable> {
+    let mut header_rows = 0;
+    let mut rows: Vec<Vec<String>> = Vec::new();
+    let mut cell_indent = usize::MAX;
+    for line in lines {
+        let body = line.trim_end_matches(['\n', '\r']);
+        let t = body.trim_start();
+        let ind = body.len() - t.len();
+        if t.is_empty() {
+            if let Some(c) = rows.last_mut().and_then(|r| r.last_mut()) {
+                c.push('\n');
+            }
+            continue;
+        }
+        if rows.is_empty() && t.starts_with(':') {
+            if let Some(n) = t.strip_prefix(":header-rows:") {
+                header_rows = n.trim().parse().unwrap_or(0);
+            }
+            continue;
+        }
+        if let Some(rest) = t.strip_prefix("* -").or_else(|| (t == "* -").then_some("")) {
+            rows.push(vec![rest.trim().to_string()]);
+            cell_indent = ind + 2;
+        } else if let Some(rest) = t.strip_prefix("- ").or_else(|| (t == "-").then_some("")).filter(|_| ind == cell_indent && !rows.is_empty()) {
+            rows.last_mut()?.push(rest.trim().to_string());
+        } else {
+            // More of the cell above; text before any row isn't a list table.
+            let c = rows.last_mut().and_then(|r| r.last_mut())?;
+            if !c.is_empty() && !c.ends_with('\n') {
+                c.push('\n');
+            }
+            c.push_str(t);
+        }
+    }
+    let rows: Vec<Vec<String>> = rows.into_iter().map(|r| r.into_iter().map(|c| c.trim().to_string()).collect()).collect();
+    (!rows.is_empty()).then(|| RstTable { header_rows: header_rows.min(rows.len()), rows })
+}
+
+/// A table as HTML, each cell read as reStructuredText itself.
+fn table_html(t: &RstTable) -> String {
+    let cell = |text: &str| -> String {
+        if text.is_empty() {
+            return String::new();
+        }
+        let html = rst(text).map(|r| r.html).unwrap_or_else(|_| esc(text));
+        // One paragraph is the cell's text.
+        match html.strip_prefix("<p>").and_then(|h| h.strip_suffix("</p>")) {
+            Some(inner) if !inner.contains("<p>") => inner.to_string(),
+            _ => html,
+        }
+    };
+    let mut out = String::from("<table>");
+    for (i, row) in t.rows.iter().enumerate() {
+        let tag = if i < t.header_rows { "th" } else { "td" };
+        if i == 0 && t.header_rows > 0 {
+            out.push_str("<thead>");
+        }
+        if i == t.header_rows && t.header_rows > 0 {
+            out.push_str("</thead><tbody>");
+        }
+        out.push_str("<tr>");
+        for c in row {
+            out.push_str(&format!("<{tag}>{}</{tag}>", cell(c)));
+        }
+        out.push_str("</tr>");
+    }
+    if t.header_rows > 0 {
+        out.push_str("</tbody>");
+    }
+    out.push_str("</table>");
+    out
 }
 
 struct RstHtml {
@@ -377,6 +795,24 @@ fn asciidoc(text: &str) -> Result<Rendered> {
     let title = doc.doctitle().map(str::to_string);
     if let Some(t) = &title {
         out.push_str(&format!("<h1>{t}</h1>"));
+    }
+    // The header's author and revision lines, under the title as Asciidoctor shows them.
+    let authors: Vec<String> = doc
+        .authors()
+        .iter()
+        .map(|a| match a.email() {
+            Some(e) => format!("{} &lt;<a href=\"mailto:{1}\">{1}</a>&gt;", esc(a.name()), esc(e)),
+            None => esc(a.name()),
+        })
+        .collect();
+    if !authors.is_empty() {
+        out.push_str(&format!("<p>{}</p>", authors.join(", ")));
+    }
+    if let Some(r) = doc.header().revision_line() {
+        let parts: Vec<String> = [r.revnumber().map(|n| format!("version {n}")), Some(r.revdate().to_string()).filter(|d| !d.is_empty()), r.revremark().map(str::to_string)].into_iter().flatten().collect();
+        if !parts.is_empty() {
+            out.push_str(&format!("<p><em>{}</em></p>", esc(&parts.join(", "))));
+        }
     }
     let mut warnings = Vec::new();
     adoc_blocks(doc.child_blocks(), &mut out, 0, &mut warnings);
@@ -921,6 +1357,48 @@ fn textile(text: &str) -> Result<Rendered> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rst_blocks(text: &str) -> String {
+        let doc = RstReader.open(&FileSource::from_bytes("t.rst", text.as_bytes().to_vec()), &ParseContext::new()).unwrap();
+        let Content::Flow(f) = doc.facet(0, &ParseContext::new()).unwrap() else { panic!() };
+        format!("{:?}", f.blocks(0..100).unwrap())
+    }
+
+    #[test]
+    fn an_rst_option_the_parser_refuses_is_left_out_not_the_document() {
+        let doc = RstReader.open(&FileSource::from_bytes("t.rst", b"Images\n======\n\n.. image:: lalune.jpg\n   :height: 2343\n   :alt: Voyage dans la Lune\n\nAfter the image.\n".to_vec()), &ParseContext::new()).unwrap();
+        let Content::Flow(f) = doc.facet(0, &ParseContext::new()).unwrap() else { panic!() };
+        let s = format!("{:?}", f.blocks(0..100).unwrap());
+        assert!(s.contains("After the image.") && s.contains("Heading"), "{s}");
+        assert!(doc.warnings().iter().any(|w| w.message.contains("directive option")), "{:?}", doc.warnings());
+    }
+
+    #[test]
+    fn rst_grid_and_simple_tables() {
+        let grid = rst_blocks("Before.\n\n+--------+---------+\n| Head   | Two     |\n+========+=========+\n| *a*    | b       |\n| more a |         |\n+--------+---------+\n| c      | d       |\n+--------+---------+\n\nAfter.\n");
+        assert!(grid.contains("Table { header_rows: 1"), "{grid}");
+        for want in ["\"Head\"", "Emphasis([Text(\"a\")])", "more a", "\"d\"", "After."] {
+            assert!(grid.contains(want), "{want} in {grid}");
+        }
+        assert!(!grid.contains("+---"), "{grid}");
+        let simple = rst_blocks("=====  =====\nA      B\n=====  =====\n1      one\n       still one\n2      two\n=====  =====\n\nAfter.\n");
+        assert!(simple.contains("Table { header_rows: 1"), "{simple}");
+        for want in ["\"A\"", "one still one", "\"two\"", "After."] {
+            assert!(simple.contains(want), "{want} in {simple}");
+        }
+        // A table directive's table, its caption before it.
+        let dir = rst_blocks("Intro.\n\n.. table:: The caption.\n\n   =====  =====\n   A      B\n   =====  =====\n   1      2\n   =====  =====\n\nAfter.\n");
+        assert!(dir.contains("Table { header_rows: 1") && dir.contains("The caption.") && dir.contains("After."), "{dir}");
+        let list = rst_blocks(".. list-table:: Frozen\n   :header-rows: 1\n   :widths: 1 2\n\n   * - Name\n     - Notes\n   * - *one*\n     - first line\n       still first\n   * - two\n     -\n\nAfter.\n");
+        assert!(list.contains("Table { header_rows: 1") && list.contains("Emphasis([Text(\"one\")])") && list.contains("first line still first") && list.contains("Frozen"), "{list}");
+        assert!(!list.contains("widths"), "{list}");
+        // In a literal block, a table is code.
+        let lit = rst_blocks("Example::\n\n    +---+---+\n    | a | b |\n    +---+---+\n\nDone.\n");
+        assert!(!lit.contains("Table {") && lit.contains("Code { language: None, text: \"+---+---+\\n| a | b |\\n+---+---+\" }"), "{lit}");
+        assert!(lit.contains("Text(\"Example:\")") && !lit.contains("Example::"), "{lit}");
+        let lone = rst_blocks("Text ::\n\n  x = 1\n\n::\n\n  y = 2\n\nEnd.\n");
+        assert!(lone.contains("Text(\"Text\")") && lone.contains("\"x = 1\"") && lone.contains("\"y = 2\"") && !lone.contains("::"), "{lone}");
+    }
     use libfileparser_core::Reader;
 
     fn blocks(reader: &dyn Reader, name: &str, text: &str) -> (Document, String) {
@@ -968,6 +1446,14 @@ mod tests {
         let (doc, s) = blocks(&AsciidocReader, "a.adoc", "= The Title\n\n== Section\n\nSome _em_ and *strong* and `mono`.\n\n* one\n* two\n\n[source,rust]\n----\nfn main() {}\n----\n\n|===\n|a |b\n\n|1 |2\n|===\n\nNOTE: careful\n\nhttps://x.org[a link]\n");
         has(&s, &["Heading { level: 1", "The Title", "Heading { level: 2", "Emphasis", "Strong", "Code(\"mono\")", "List", "language: Some(\"rust\")", "Table", "careful", "https://x.org"]);
         assert!(doc.metadata().iter().any(|(k, v)| k == "Title" && v == "The Title"));
+    }
+
+    #[test]
+    fn asciidoc_shows_its_authors_and_revision() {
+        let (_, s) = blocks(&AsciidocReader, "a.adoc", "= Document Title\nDoc Writer <doc.writer@asciidoc.org>\nv1.0, 2013-01-01\n\nBody content.\n");
+        for want in ["Doc Writer", "mailto:doc.writer@asciidoc.org", "version 1.0, 2013-01-01", "Body content."] {
+            assert!(s.contains(want), "{want} in {s}");
+        }
     }
 
     #[test]

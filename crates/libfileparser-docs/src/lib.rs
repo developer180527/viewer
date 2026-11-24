@@ -29,6 +29,7 @@ mod docx;
 mod epub;
 mod html;
 mod office;
+mod smartart;
 mod latex;
 mod lite;
 mod mail;

@@ -87,17 +87,30 @@ scripts/reference.sh --only=docx,rtf
 
 Pages formats (PDF, XPS, DjVu, comics) aren't compared: their engine is the reference. An mbox is shown as a list of messages, which no reference has. A missing tool is reported and its formats skipped.
 
-What the first run found (2026-11-25, with mandoc, pod2html, Python's email and the HTML files only):
+Results, 2026-11-25, every tool installed (`target/reference/real/report.md` has every format and its worst files):
 
 | format | files | clean | text recall | precision | headings at their level |
 |---|---:|---:|---:|---:|---:|
-| HTML | 32 | 25 | 100% | 100% | 155/163 |
-| POD | 30 | 28 | 100% | 100% | 569/571 |
-| man | 67 | 57 | 100% | 99% | 893/894 |
-| email | 182 | 127 | 100% | 100% | – |
+| Markdown | 1236 | 1224 | 100% | 100% | 1130/1133 |
+| DOCX | 244 | 205 | 100% | 100% | 111/113 |
+| PPTX | 459 | 250 | 100% | 92% | – |
+| email | 182 | 128 | 100% | 99% | – |
+| DOC | 147 | 76 | 100% | 100% | 586/769 |
+| PPT | 146 | 66 | 100% | 79% | – |
+| ODP | 93 | 74 | 100% | 75% | – |
+| man | 67 | 62 | 100% | 99% | 888/889 |
+| ODT | 64 | 61 | 100% | 100% | 12/12 |
+| AsciiDoc | 63 | 37 | 100% | 100% | 211/221 |
+| EPUB | 32 | 27 | 100% | 100% | 112/114 |
+| reST | 11 | 6 | 100% | 100% | 112/114 |
 
-- man: bullet and numbered lists (`.Bl -bullet`, `.Bl -enum`, man(7)'s `.IP \(bu`) are paragraphs starting with "•", not lists (10 files); neighbouring code blocks in Pandoc-written pages are merged; one `tbl` table loses 4 of 23 cells.
-- email: a header whose value isn't an address or a date (`From: Whomever`) isn't shown; `text/enriched` parts are listed as attachments instead of shown. The remaining differences are messages we decode further than Python (doubly encoded, broken headers).
+Fixed from what it found: man and mdoc bullet and numbered lists; tbl text blocks (`T{`…`T}`); mail headers that aren't addresses or dates, and `text/enriched` parts; reST grid, simple and list tables, `.. table::`, `Text::` literal blocks, and a directive option the parser refuses no longer losing the document; SmartArt text in PPTX; Org's TODO keywords; Jira's `{anchor:}`; AsciiDoc's author and revision lines.
+
+Still different, and why:
+- DOC headings: Word's automatic numbering ("3.1 Historique") isn't shown; the headings themselves are found.
+- PPT, ODP, PPTX precision: our "Slide 3" headings, slide-number and date fields LibreOffice fills in, and SmartArt in the diagram's order rather than its layout's.
+- HWP isn't compared: LibreOffice for macOS has no HWP import.
+- AsciiDoc fixtures whose includes name files the corpus stores under other names.
 
 ## Real-world 3D
 

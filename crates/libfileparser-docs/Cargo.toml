@@ -42,6 +42,8 @@ ego-tree = "0.11"
 encoding_rs = "0.8"
 # PowerPoint (PPTX, PPT) and Word 97–2003 (DOC): measured on 1,013 real files first.
 office_oxide = { version = "0.1.17", default-features = false }
+# SmartArt's text, which office_oxide doesn't read (src/smartart.rs); xmldoc-lite's.
+quick-xml = "0.41"
 # Markup (2026-11-18): reStructuredText, Djot, AsciiDoc, Typst's syntax.
 rst_parser = "0.4"
 # rst_parser's tree, walked as JSON (its own HTML writer leaves 13 elements unimplemented).
