@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# Patched copies of crates (third_party/README.md), built as dependencies only.
+exclude = ["third_party/office_oxide"]
 
 [workspace.package]
 version = "0.3.1"
@@ -67,3 +69,7 @@ strip = true
 # Decoders are unusably slow unoptimised; keep our own crates debuggable.
 [profile.dev.package."*"]
 opt-level = 2
+
+# office_oxide 0.1.17 with Word 97–2003's list numbering kept (third_party/README.md).
+[patch.crates-io]
+office_oxide = { path = "third_party/office_oxide" }
