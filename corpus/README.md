@@ -104,10 +104,10 @@ Results, 2026-11-25, every tool installed (`target/reference/real/report.md` has
 | EPUB | 32 | 27 | 100% | 100% | 112/114 |
 | reST | 11 | 6 | 100% | 100% | 112/114 |
 
-Fixed from what it found: man and mdoc bullet and numbered lists; tbl text blocks (`T{`…`T}`); mail headers that aren't addresses or dates, and `text/enriched` parts; reST grid, simple and list tables, `.. table::`, `Text::` literal blocks, and a directive option the parser refuses no longer losing the document; SmartArt text in PPTX; Org's TODO keywords; Jira's `{anchor:}`; AsciiDoc's author and revision lines.
+Fixed from what it found: man and mdoc bullet and numbered lists; tbl text blocks (`T{`…`T}`); mail headers that aren't addresses or dates, and `text/enriched` parts; reST grid, simple and list tables, `.. table::`, `Text::` literal blocks, and a directive option the parser refuses no longer losing the document; SmartArt text in PPTX; Org's TODO keywords; Jira's `{anchor:}`; AsciiDoc's author and revision lines; Word's numbered headings in DOCX ("2.1 Context").
 
 Still different, and why:
-- DOC headings: Word's automatic numbering ("3.1 Historique") isn't shown; the headings themselves are found.
+- DOC headings: Word's automatic numbering ("3.1 Historique") isn't shown; the headings themselves are found. DOCX shows it (docx-lite counts Word's lists, matching LibreOffice on every numbered heading checked); for DOC, office_oxide reads each heading's list and drops it before its IR, and keeps no level's number text.
 - PPT, ODP, PPTX precision: our "Slide 3" headings, slide-number and date fields LibreOffice fills in, and SmartArt in the diagram's order rather than its layout's.
 - HWP isn't compared: LibreOffice for macOS has no HWP import.
 - AsciiDoc fixtures whose includes name files the corpus stores under other names.

@@ -9,3 +9,6 @@ license.workspace = true
 [dependencies]
 zip = { version = "9", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 quick-xml = "0.41"
+
+[dev-dependencies]
+zip = { version = "9", default-features = false }

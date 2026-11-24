@@ -260,14 +260,16 @@ fn relationships(pkg: &Package, part: &str) -> Result<Rels, Error> {
 }
 
 /// Paragraph styles: id → heading level (from the style's name, its outline level, or
-/// the style it's based on).
-struct Styles(HashMap<String, u8>);
+/// the style it's based on), and id → the numbering it gives its paragraphs (Word's
+/// numbered headings: "Heading 1" in a list, "Heading 2" at its next level).
+struct Styles(HashMap<String, u8>, HashMap<String, (Option<String>, Option<u8>)>);
 
 impl Styles {
     fn read(pkg: &Package, main: &str) -> Result<Self, Error> {
         let path = resolve(main, "styles.xml");
         let mut levels = HashMap::new();
         let mut based: HashMap<String, String> = HashMap::new();
+        let mut nums: HashMap<String, (Option<String>, Option<u8>)> = HashMap::new();
         if let Some(xml) = pkg.text(&path)? {
             let mut r = XmlReader::from_str(&xml);
             let mut id: Option<String> = None;
@@ -275,6 +277,16 @@ impl Styles {
                 match r.read_event() {
                     Ok(Event::Start(e) | Event::Empty(e)) => match local(&e).as_str() {
                         "style" => id = attr(&e, "styleId"),
+                        "numId" => {
+                            if let Some(id) = &id {
+                                nums.entry(id.clone()).or_default().0 = attr(&e, "val");
+                            }
+                        }
+                        "ilvl" => {
+                            if let Some(id) = &id {
+                                nums.entry(id.clone()).or_default().1 = attr(&e, "val").and_then(|v| v.parse().ok());
+                            }
+                        }
                         "name" => {
                             if let (Some(id), Some(name)) = (&id, attr(&e, "val"))
                                 && let Some(l) = heading_name(&name)
@@ -301,6 +313,20 @@ impl Styles {
                 }
             }
         }
+        // A style based on a numbered one is numbered as it is, unless it says otherwise.
+        for id in based.keys().cloned().collect::<Vec<_>>() {
+            let mut at = id.clone();
+            for _ in 0..8 {
+                let Some(b) = based.get(&at) else { break };
+                if let Some(n) = nums.get(b).cloned() {
+                    let own = nums.entry(id.clone()).or_default();
+                    own.0 = own.0.take().or(n.0);
+                    own.1 = own.1.or(n.1);
+                    break;
+                }
+                at = b.clone();
+            }
+        }
         // A style based on a heading is one (a few steps at most, cycles stop).
         for id in based.keys().cloned().collect::<Vec<_>>() {
             let mut at = id.clone();
@@ -315,12 +341,135 @@ impl Styles {
                 }
             }
         }
-        Ok(Self(levels))
+        Ok(Self(levels, nums))
     }
 
     fn level(&self, id: &str) -> Option<u8> {
         self.0.get(id).copied().or_else(|| heading_name(id))
     }
+
+    /// The numbering style `id` gives: its list and level (level 0 if it names none).
+    fn numbering(&self, id: &str) -> Option<(String, u8)> {
+        let (num, lvl) = self.1.get(id)?;
+        num.clone().filter(|n| n != "0").map(|n| (n, lvl.unwrap_or(0)))
+    }
+}
+
+/// One level of a list's numbering: how its number is written (`numFmt`), the text
+/// around it with `%1`…`%9` for each level's number (`lvlText`), and where it starts.
+#[derive(Clone, Default)]
+struct Level {
+    format: String,
+    text: String,
+    start: u32,
+}
+
+/// The document's lists: numId → its abstract list's levels, each list's own start
+/// overrides, and the numbers counted so far (per abstract list, as Word counts: two
+/// numIds over one abstract list continue each other unless one restarts).
+#[derive(Default)]
+struct Numbering {
+    levels: HashMap<String, HashMap<u8, Level>>,
+    num_abstract: HashMap<String, String>,
+    overrides: HashMap<(String, u8), u32>,
+    counters: std::cell::RefCell<HashMap<String, [Option<u32>; 9]>>,
+    /// numIds whose start overrides have been applied.
+    started: std::cell::RefCell<std::collections::HashSet<String>>,
+}
+
+impl Numbering {
+    fn level(&self, num: &str, lvl: u8) -> Option<&Level> {
+        self.levels.get(self.num_abstract.get(num)?)?.get(&lvl)
+    }
+
+    /// Whether `(num, lvl)` is numbered rather than bulleted.
+    fn ordered(&self, num: &str, lvl: u8) -> bool {
+        self.level(num, lvl).is_some_and(|l| !matches!(l.format.as_str(), "bullet" | "none" | ""))
+    }
+
+    /// Counts a paragraph at `(num, lvl)` and returns its number as Word writes it
+    /// ("2.1", "(b)", "IV."), or `None` for a bullet or an unnumbered level.
+    fn next(&self, num: &str, lvl: u8) -> Option<String> {
+        let lvl = lvl.min(8);
+        let abs = self.num_abstract.get(num)?.clone();
+        let levels = self.levels.get(&abs)?;
+        let mut counters = self.counters.borrow_mut();
+        let c = counters.entry(abs.clone()).or_insert([None; 9]);
+        // A list's first use with its own start values starts there.
+        if self.started.borrow_mut().insert(num.to_string()) {
+            for l in 0..9u8 {
+                if let Some(&start) = self.overrides.get(&(num.to_string(), l)) {
+                    c[l as usize] = Some(start.saturating_sub(1));
+                }
+            }
+        }
+        let start = |l: u8| levels.get(&l).map_or(1, |x| x.start);
+        let n = c[lvl as usize].map_or(start(lvl), |n| n + 1);
+        c[lvl as usize] = Some(n);
+        // Deeper levels start again under the new number.
+        c[lvl as usize + 1..].fill(None);
+        let this = levels.get(&lvl)?;
+        if matches!(this.format.as_str(), "bullet" | "none" | "") {
+            return None;
+        }
+        // `%1.%2`: each level's count in that level's own format.
+        let mut out = String::new();
+        let mut chars = this.text.chars().peekable();
+        while let Some(ch) = chars.next() {
+            match (ch, chars.peek().and_then(|d| d.to_digit(10))) {
+                ('%', Some(d)) if (1..=9).contains(&d) => {
+                    chars.next();
+                    let at = (d - 1) as u8;
+                    let value = c[at as usize].unwrap_or_else(|| start(at));
+                    let format = if at == lvl { this.format.as_str() } else { levels.get(&at).map_or("decimal", |x| x.format.as_str()) };
+                    out.push_str(&number_as(value, format));
+                }
+                _ => out.push(ch),
+            }
+        }
+        let out = out.trim().to_string();
+        (!out.is_empty()).then_some(out)
+    }
+}
+
+/// `n` written in a Word number format.
+fn number_as(n: u32, format: &str) -> String {
+    let letters = |n: u32, base: u8| {
+        // Word repeats the letter past z: aa, bb…
+        if n == 0 {
+            return String::new();
+        }
+        let letter = (base + ((n - 1) % 26) as u8) as char;
+        letter.to_string().repeat(((n - 1) / 26 + 1) as usize)
+    };
+    match format {
+        "lowerLetter" => letters(n, b'a'),
+        "upperLetter" => letters(n, b'A'),
+        "lowerRoman" => roman(n).to_lowercase(),
+        "upperRoman" => roman(n),
+        "decimalZero" => format!("{n:02}"),
+        "ordinal" => format!("{n}{}", match (n % 10, n % 100) {
+            (1, x) if x != 11 => "st",
+            (2, x) if x != 12 => "nd",
+            (3, x) if x != 13 => "rd",
+            _ => "th",
+        }),
+        _ => n.to_string(),
+    }
+}
+
+fn roman(mut n: u32) -> String {
+    if n == 0 || n > 3999 {
+        return n.to_string();
+    }
+    let mut out = String::new();
+    for (v, s) in [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"), (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")] {
+        while n >= v {
+            out.push_str(s);
+            n -= v;
+        }
+    }
+    out
 }
 
 /// "heading 2", "Heading2", "Title" → a level.
@@ -332,45 +481,59 @@ fn heading_name(name: &str) -> Option<u8> {
     n.strip_prefix("heading").and_then(|d| d.parse::<u8>().ok()).filter(|l| (1..=9).contains(l)).map(|l| l.min(6))
 }
 
-/// Lists: (numId, level) → ordered?
-type Numbering = HashMap<(String, u8), bool>;
-
 fn numbering(pkg: &Package, main: &str, rels: &Rels) -> Result<Numbering, Error> {
     let path = rels.values().find(|r| r.2 == "numbering").map(|r| r.0.clone()).unwrap_or_else(|| resolve(main, "numbering.xml"));
-    let mut abstracts: HashMap<String, HashMap<u8, bool>> = HashMap::new();
-    let mut nums: HashMap<String, String> = HashMap::new();
+    let mut out = Numbering::default();
     if let Some(xml) = pkg.text(&path)? {
         let mut r = XmlReader::from_str(&xml);
         let (mut abs, mut lvl, mut num): (Option<String>, Option<u8>, Option<String>) = (None, None, None);
+        // Inside a `w:num`'s `w:lvlOverride`, the level it overrides.
+        let mut over: Option<u8> = None;
         loop {
             match r.read_event() {
                 Ok(Event::Start(e) | Event::Empty(e)) => match local(&e).as_str() {
                     "abstractNum" => abs = attr(&e, "abstractNumId"),
-                    "lvl" => lvl = attr(&e, "ilvl").and_then(|v| v.parse().ok()),
-                    "numFmt" => {
+                    "lvl" if abs.is_some() => {
+                        lvl = attr(&e, "ilvl").and_then(|v| v.parse().ok());
                         if let (Some(a), Some(l)) = (&abs, lvl) {
-                            let fmt = attr(&e, "val").unwrap_or_default();
-                            abstracts.entry(a.clone()).or_default().insert(l, !matches!(fmt.as_str(), "bullet" | "none" | ""));
+                            out.levels.entry(a.clone()).or_default().insert(l, Level { start: 1, ..Level::default() });
+                        }
+                    }
+                    "numFmt" | "lvlText" | "start" if abs.is_some() => {
+                        if let (Some(a), Some(l)) = (&abs, lvl)
+                            && let Some(level) = out.levels.get_mut(a).and_then(|m| m.get_mut(&l))
+                        {
+                            let v = attr(&e, "val").unwrap_or_default();
+                            match local(&e).as_str() {
+                                "numFmt" => level.format = v,
+                                "lvlText" => level.text = v,
+                                _ => level.start = v.parse().unwrap_or(1),
+                            }
                         }
                     }
                     "num" => num = attr(&e, "numId"),
                     "abstractNumId" => {
                         if let (Some(n), Some(v)) = (&num, attr(&e, "val")) {
-                            nums.insert(n.clone(), v);
+                            out.num_abstract.insert(n.clone(), v);
+                        }
+                    }
+                    "lvlOverride" => over = attr(&e, "ilvl").and_then(|v| v.parse().ok()),
+                    "startOverride" => {
+                        if let (Some(n), Some(l), Some(v)) = (&num, over, attr(&e, "val").and_then(|v| v.parse().ok())) {
+                            out.overrides.insert((n.clone(), l), v);
                         }
                     }
                     _ => {}
                 },
-                Ok(Event::End(e)) if e.local_name().as_ref() == b"abstractNum" => abs = None,
+                Ok(Event::End(e)) => match e.local_name().as_ref() {
+                    b"abstractNum" => abs = None,
+                    b"num" => num = None,
+                    b"lvlOverride" => over = None,
+                    _ => {}
+                },
                 Ok(Event::Eof) | Err(_) => break,
                 _ => {}
             }
-        }
-    }
-    let mut out = HashMap::new();
-    for (num, abs) in nums {
-        for (&l, &ordered) in abstracts.get(&abs).into_iter().flatten() {
-            out.insert((num.clone(), l), ordered);
         }
     }
     Ok(out)
@@ -612,8 +775,29 @@ fn start_para<S: Sink>(b: &mut Nest<S>, para: &mut Option<Para>, styles: &Styles
     }
     p.started = true;
     let level = p.outline.or_else(|| p.style.as_deref().and_then(|s| styles.level(s)));
-    if let (Some((num, lvl)), None) = (&p.num, level) {
-        let ordered = numbering.get(&(num.clone(), *lvl)).copied().unwrap_or(false);
+    // The paragraph's numbering: its own, or its style's (a level of its own on a
+    // style's list keeps the style's list).
+    let num = match (&p.num, p.style.as_deref().and_then(|s| styles.numbering(s))) {
+        (Some((n, l)), _) if !n.is_empty() => Some((n.clone(), *l)),
+        (Some((_, l)), Some((n, _))) => Some((n, *l)),
+        (None, s) => s,
+        _ => None,
+    };
+    if let (Some((num, lvl)), Some(l)) = (&num, level) {
+        // A numbered heading ("2.1 Context"): its number, then its text.
+        end_list(b, list, depth)?;
+        b.open(Tag::Heading(l))?;
+        if let Some(label) = numbering.next(num, *lvl) {
+            b.text(&format!("{label} "))?;
+        }
+        return Ok(());
+    }
+    if let Some((num, lvl)) = &num
+        && level.is_none()
+    {
+        // Counted, so a heading after it in the same list numbers as Word does.
+        let _ = numbering.next(num, *lvl);
+        let ordered = numbering.ordered(num, *lvl);
         let want = lvl.saturating_add(1).min(8);
         if list.as_deref() != Some(num.as_str()) {
             end_list(b, list, depth)?;
