@@ -11,6 +11,8 @@ pub libviewer::View::Table(libviewer::TableView)
 pub libviewer::View::Tree(libviewer::TreeView)
 impl libviewer::View
 pub fn libviewer::View::new(&libfileparser_core::content::Content) -> Self
+pub fn libviewer::View::place(&self) -> core::option::Option<libviewer::PagesPlace>
+pub fn libviewer::View::restore(&mut self, libviewer::PagesPlace)
 pub fn libviewer::View::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
 pub struct libviewer::FlowView
 impl libviewer::FlowView
@@ -26,8 +28,22 @@ pub fn libviewer::Frame3d::pending() -> Self
 pub fn libviewer::Frame3d::shown(core::option::Option<libgui::draw::TextureId>, bool) -> Self
 impl core::default::Default for libviewer::Frame3d
 pub fn libviewer::Frame3d::default() -> libviewer::Frame3d
+pub struct libviewer::PagesPlace
+pub libviewer::PagesPlace::offset: f32
+pub libviewer::PagesPlace::page: usize
+pub libviewer::PagesPlace::zoom: core::option::Option<f32>
+impl core::clone::Clone for libviewer::PagesPlace
+pub fn libviewer::PagesPlace::clone(&self) -> libviewer::PagesPlace
+impl core::cmp::PartialEq for libviewer::PagesPlace
+pub fn libviewer::PagesPlace::eq(&self, &libviewer::PagesPlace) -> bool
+impl core::fmt::Debug for libviewer::PagesPlace
+pub fn libviewer::PagesPlace::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for libviewer::PagesPlace
+impl core::marker::StructuralPartialEq for libviewer::PagesPlace
 pub struct libviewer::PagesView
 impl libviewer::PagesView
+pub fn libviewer::PagesView::place(&self) -> libviewer::PagesPlace
+pub fn libviewer::PagesView::restore(&mut self, libviewer::PagesPlace)
 pub fn libviewer::PagesView::textures(&self) -> alloc::vec::Vec<libgui::draw::TextureId>
 impl core::default::Default for libviewer::PagesView
 pub fn libviewer::PagesView::default() -> Self
@@ -56,19 +72,25 @@ pub fn libviewer::TableView::for_table(&dyn libfileparser_core::content::TableSo
 pub struct libviewer::TreeView
 impl core::default::Default for libviewer::TreeView
 pub fn libviewer::TreeView::default() -> Self
+pub struct libviewer::Uploaded(pub alloc::boxed::Box<(dyn core::any::Any + core::marker::Send)>)
 pub trait libviewer::Highlights
 pub fn libviewer::Highlights::spans(&self, usize, bool) -> alloc::vec::Vec<(core::ops::range::Range<usize>, [u8; 3])>
 pub trait libviewer::Host
+pub fn libviewer::Host::adopt(&mut self, libviewer::Uploaded, u32, u32) -> libgui::draw::TextureId
 pub fn libviewer::Host::free(&mut self, libgui::draw::TextureId)
 pub fn libviewer::Host::image_opener(&self) -> core::option::Option<libviewer::ImageOpener>
 pub fn libviewer::Host::max_side(&self) -> u32
 pub fn libviewer::Host::pixels_per_point(&self) -> f32
 pub fn libviewer::Host::render_scene(&mut self, &mut libviewer::SceneGpu, &scene_data::scene::CpuScene, (u32, u32), &rendererx::camera::Camera, [f32; 4]) -> libviewer::Frame3d
 pub fn libviewer::Host::settles(&self) -> bool
+pub fn libviewer::Host::tile_uploader(&self) -> core::option::Option<alloc::sync::Arc<dyn libviewer::TileUploader>>
+pub fn libviewer::Host::touch_screen(&self) -> bool
 pub fn libviewer::Host::trackpad_pinch(&self) -> f32
 pub fn libviewer::Host::upload(&mut self, u32, u32, &[u8]) -> libgui::draw::TextureId
 pub fn libviewer::Host::uploads_done(&mut self)
 pub fn libviewer::Host::waker(&self) -> libviewer::Waker
+pub trait libviewer::TileUploader: core::marker::Send + core::marker::Sync
+pub fn libviewer::TileUploader::upload(&self, u32, u32, &[u8]) -> libviewer::Uploaded
 pub fn libviewer::container(&mut libgui::ui::Ui, &alloc::sync::Arc<dyn libfileparser_core::content::Container>, &mut libviewer::TableView) -> core::option::Option<u64>
 pub fn libviewer::draw_scene((&rendererx::Renderer, &wgpu::api::device::Device, &wgpu::api::queue::Queue), &mut libviewer::SceneGpu, &scene_data::scene::CpuScene, (u32, u32), &rendererx::camera::Camera, [f32; 4], bool) -> bool
 pub fn libviewer::flow(&mut libgui::ui::Ui, &mut libviewer::FlowView, &mut dyn libviewer::Host)

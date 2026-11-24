@@ -141,12 +141,34 @@ fn lines(src: &FileSource, language: Option<&str>, cx: &ParseContext) -> Result<
     LineText::within(src.clone(), language, &cx.limits)
 }
 
+/// A text encoding other than UTF-8, as [`legacy_encoding`] finds it: its name and a
+/// decoder. Its own type, so which library decodes stays out of this crate's API.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct TextEncoding(&'static encoding_rs::Encoding);
+
+impl TextEncoding {
+    /// The WHATWG name: "windows-1252", "Shift_JIS", "UTF-16LE"…
+    pub fn name(self) -> &'static str {
+        self.0.name()
+    }
+
+    /// `bytes` as UTF-8; a byte-order mark is honoured and dropped, and what doesn't
+    /// decode becomes U+FFFD.
+    pub fn decode(self, bytes: &[u8]) -> std::borrow::Cow<'_, str> {
+        self.0.decode(bytes).0
+    }
+}
+
 /// The encoding of text that isn't UTF-8: a byte-order mark's, UTF-16's pattern of
 /// zero bytes, or chardetng's guess for 8-bit text (Windows code pages, ISO-8859,
 /// KOI8, Shift_JIS, GB18030, Big5, EUC, ISO-2022…). `None` for UTF-8, and for bytes
 /// that aren't text in any encoding: NULs, or more than a few control bytes, mean
 /// binary, which the Raw facet shows better than garbled characters.
-pub fn legacy_encoding(header: &[u8]) -> Option<&'static encoding_rs::Encoding> {
+pub fn legacy_encoding(header: &[u8]) -> Option<TextEncoding> {
+    guess(header).map(TextEncoding)
+}
+
+fn guess(header: &[u8]) -> Option<&'static encoding_rs::Encoding> {
     if header.is_empty() || is_text(header) {
         return None;
     }
@@ -209,7 +231,7 @@ fn utf16_without_bom(header: &[u8]) -> Option<&'static encoding_rs::Encoding> {
 
 /// `src` decoded from `enc` into UTF-8, as a source of its own: read whole, so held to
 /// the context's memory limit.
-fn decoded(src: &FileSource, enc: &'static encoding_rs::Encoding, cx: &ParseContext) -> Result<FileSource> {
+fn decoded(src: &FileSource, enc: TextEncoding, cx: &ParseContext) -> Result<FileSource> {
     let len = src.len();
     // UTF-8 can take up to three bytes for each byte of an 8-bit encoding.
     cx.limits.check(libfileparser_core::Limit::Memory, len.saturating_mul(3))?;
@@ -223,7 +245,7 @@ fn decoded(src: &FileSource, enc: &'static encoding_rs::Encoding, cx: &ParseCont
     } else {
         src.bytes()
     };
-    let (text, _, _) = enc.decode(bytes);
+    let text = enc.decode(bytes);
     cx.cancel.check()?;
     Ok(FileSource::from_bytes(src.name(), text.into_owned().into_bytes()))
 }
@@ -304,15 +326,15 @@ mod tests {
     #[test]
     fn text_in_other_encodings_is_found_and_binary_is_not() {
         let (cp1251, _, _) = encoding_rs::WINDOWS_1251.encode("Съешь же ещё этих мягких французских булок, да выпей чаю.\n");
-        assert_eq!(legacy_encoding(&cp1251), Some(encoding_rs::WINDOWS_1251));
+        assert_eq!(legacy_encoding(&cp1251), Some(TextEncoding(encoding_rs::WINDOWS_1251)));
         let (sjis, _, _) = encoding_rs::SHIFT_JIS.encode("いろはにほへと ちりぬるを わかよたれそ つねならむ\n");
-        assert_eq!(legacy_encoding(&sjis), Some(encoding_rs::SHIFT_JIS));
+        assert_eq!(legacy_encoding(&sjis), Some(TextEncoding(encoding_rs::SHIFT_JIS)));
         let utf16le: Vec<u8> = "plain words in UTF-16, little end first\n".encode_utf16().flat_map(u16::to_le_bytes).collect();
-        assert_eq!(legacy_encoding(&utf16le), Some(encoding_rs::UTF_16LE));
+        assert_eq!(legacy_encoding(&utf16le), Some(TextEncoding(encoding_rs::UTF_16LE)));
         let bom: Vec<u8> = [0xfe, 0xff].into_iter().chain("big end".encode_utf16().flat_map(u16::to_be_bytes)).collect();
-        assert_eq!(legacy_encoding(&bom), Some(encoding_rs::UTF_16BE));
+        assert_eq!(legacy_encoding(&bom), Some(TextEncoding(encoding_rs::UTF_16BE)));
         let ja: Vec<u8> = "いろはにほへと ちりぬるを\nわかよたれそ つねならむ\n".encode_utf16().flat_map(u16::to_be_bytes).collect();
-        assert_eq!(legacy_encoding(&ja), Some(encoding_rs::UTF_16BE), "UTF-16 with no ASCII to give it away");
+        assert_eq!(legacy_encoding(&ja), Some(TextEncoding(encoding_rs::UTF_16BE)), "UTF-16 with no ASCII to give it away");
         assert_eq!(legacy_encoding(b"already UTF-8"), None);
         assert_eq!(legacy_encoding(b"PK\x03\x04\x14\0\0\0\x08\0"), None, "binary with NULs");
         let noise: Vec<u8> = (0..2000u32).map(|i| (i.wrapping_mul(2654435761) >> 13) as u8 | 1).collect();

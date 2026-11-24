@@ -26,6 +26,18 @@ impl core::hash::Hash for scene_data::ColorSpace
 pub fn scene_data::ColorSpace::hash<__H: core::hash::Hasher>(&self, &mut __H)
 impl core::marker::Copy for scene_data::ColorSpace
 impl core::marker::StructuralPartialEq for scene_data::ColorSpace
+#[non_exhaustive] pub enum scene_data::Compression
+pub scene_data::Compression::Bc7
+pub scene_data::Compression::None
+impl core::clone::Clone for scene_data::Compression
+pub fn scene_data::Compression::clone(&self) -> scene_data::Compression
+impl core::cmp::Eq for scene_data::Compression
+impl core::cmp::PartialEq for scene_data::Compression
+pub fn scene_data::Compression::eq(&self, &scene_data::Compression) -> bool
+impl core::fmt::Debug for scene_data::Compression
+pub fn scene_data::Compression::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for scene_data::Compression
+impl core::marker::StructuralPartialEq for scene_data::Compression
 #[non_exhaustive] pub enum scene_data::Error
 pub scene_data::Error::BadMaterial(&'static str)
 pub scene_data::Error::BadNode(&'static str)
@@ -520,5 +532,9 @@ impl scene_data::TextureSink
 pub fn scene_data::TextureSink::set_texture(&self, scene_data::TextureId, scene_data::TextureData) -> scene_data::Result<()>
 impl core::clone::Clone for scene_data::TextureSink
 pub fn scene_data::TextureSink::clone(&self) -> scene_data::TextureSink
+pub fn scene_data::compress_for_gpu(scene_data::TextureData) -> scene_data::TextureData
+pub fn scene_data::compression() -> scene_data::Compression
+pub fn scene_data::encode_bc7(u32, u32, &[u8]) -> alloc::vec::Vec<u8>
+pub fn scene_data::set_compression(scene_data::Compression)
 pub type scene_data::Bytes = alloc::sync::Arc<(dyn core::convert::AsRef<[u8]> + core::marker::Send + core::marker::Sync)>
 pub type scene_data::Result<T> = core::result::Result<T, scene_data::Error>

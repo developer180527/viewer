@@ -500,6 +500,7 @@ pub fn libfileparser_core::Dependency::fmt(&self, &mut core::fmt::Formatter<'_>)
 impl core::marker::StructuralPartialEq for libfileparser_core::Dependency
 pub struct libfileparser_core::DependencyTable(_)
 impl libfileparser_core::TableSource for libfileparser_core::DependencyTable
+pub fn libfileparser_core::DependencyTable::cells(&self, core::ops::range::Range<u64>, core::ops::range::Range<usize>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 pub fn libfileparser_core::DependencyTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::DependencyTable::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::DependencyTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
@@ -778,6 +779,7 @@ pub fn libfileparser_core::OwnedTable::new(alloc::vec::Vec<libfileparser_core::C
 pub fn libfileparser_core::OwnedTable::text(alloc::vec::Vec<alloc::string::String>, alloc::vec::Vec<alloc::vec::Vec<alloc::string::String>>) -> Self
 pub fn libfileparser_core::OwnedTable::with_cells(self, alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>) -> Self
 impl libfileparser_core::TableSource for libfileparser_core::OwnedTable
+pub fn libfileparser_core::OwnedTable::cells(&self, core::ops::range::Range<u64>, core::ops::range::Range<usize>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 pub fn libfileparser_core::OwnedTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::OwnedTable::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::OwnedTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
@@ -1031,14 +1033,17 @@ pub fn libfileparser_core::Spawn::spawn(&self, alloc::boxed::Box<(dyn core::ops:
 impl libfileparser_core::Spawn for libfileparser_core::InlineSpawn
 pub fn libfileparser_core::InlineSpawn::spawn(&self, alloc::boxed::Box<(dyn core::ops::function::FnOnce() + core::marker::Send + 'static)>)
 pub trait libfileparser_core::TableSource: core::marker::Send + core::marker::Sync
+pub fn libfileparser_core::TableSource::cells(&self, core::ops::range::Range<u64>, core::ops::range::Range<usize>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 pub fn libfileparser_core::TableSource::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::TableSource::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::TableSource::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 impl libfileparser_core::TableSource for libfileparser_core::DependencyTable
+pub fn libfileparser_core::DependencyTable::cells(&self, core::ops::range::Range<u64>, core::ops::range::Range<usize>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 pub fn libfileparser_core::DependencyTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::DependencyTable::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::DependencyTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 impl libfileparser_core::TableSource for libfileparser_core::OwnedTable
+pub fn libfileparser_core::OwnedTable::cells(&self, core::ops::range::Range<u64>, core::ops::range::Range<usize>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>
 pub fn libfileparser_core::OwnedTable::info(&self) -> libfileparser_core::TableInfo
 pub fn libfileparser_core::OwnedTable::memory(&self) -> libfileparser_core::MemoryUse
 pub fn libfileparser_core::OwnedTable::rows(&self, core::ops::range::Range<u64>) -> libfileparser_core::Result<alloc::vec::Vec<alloc::vec::Vec<libfileparser_core::Cell>>>

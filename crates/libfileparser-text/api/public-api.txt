@@ -1,5 +1,18 @@
 pub mod libfileparser_text
 pub use libfileparser_text::is_text
+pub struct libfileparser_text::TextEncoding(_)
+impl libfileparser_text::TextEncoding
+pub fn libfileparser_text::TextEncoding::decode(self, &[u8]) -> alloc::borrow::Cow<'_, str>
+pub fn libfileparser_text::TextEncoding::name(self) -> &'static str
+impl core::clone::Clone for libfileparser_text::TextEncoding
+pub fn libfileparser_text::TextEncoding::clone(&self) -> libfileparser_text::TextEncoding
+impl core::cmp::Eq for libfileparser_text::TextEncoding
+impl core::cmp::PartialEq for libfileparser_text::TextEncoding
+pub fn libfileparser_text::TextEncoding::eq(&self, &libfileparser_text::TextEncoding) -> bool
+impl core::fmt::Debug for libfileparser_text::TextEncoding
+pub fn libfileparser_text::TextEncoding::fmt(&self, &mut core::fmt::Formatter<'_>) -> core::fmt::Result
+impl core::marker::Copy for libfileparser_text::TextEncoding
+impl core::marker::StructuralPartialEq for libfileparser_text::TextEncoding
 pub struct libfileparser_text::TextReader
 impl libfileparser_core::reader::Reader for libfileparser_text::TextReader
 pub fn libfileparser_text::TextReader::detect(&self, &[u8], &str) -> libfileparser_core::reader::Detection
@@ -7,6 +20,7 @@ pub fn libfileparser_text::TextReader::info(&self) -> &libfileparser_core::reade
 pub fn libfileparser_text::TextReader::open(&self, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub fn libfileparser_text::detect(&[u8], &str) -> alloc::vec::Vec<(&'static dyn libfileparser_core::reader::Reader, libfileparser_core::reader::Detection)>
 pub fn libfileparser_text::language(&str, &[u8]) -> core::option::Option<&'static str>
+pub fn libfileparser_text::legacy_encoding(&[u8]) -> core::option::Option<libfileparser_text::TextEncoding>
 pub fn libfileparser_text::open(&libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub fn libfileparser_text::open_with(&str, &libfileparser_core::source::FileSource, &libfileparser_core::hooks::ParseContext) -> libfileparser_core::error::Result<libfileparser_core::document::Document>
 pub fn libfileparser_text::readers() -> &'static [&'static dyn libfileparser_core::reader::Reader]

@@ -5,8 +5,12 @@
 #   scripts/api.sh           check: fail, with the diff, when an API differs from its snapshot
 #   scripts/api.sh --update  write the snapshots (after an intended change; review the diff)
 #
-# Needs `cargo install cargo-public-api` and a nightly toolchain (it reads rustdoc's JSON).
+# Needs `cargo install cargo-public-api` and the nightly below (it reads rustdoc's JSON).
+# The nightly is pinned: rustdoc's paths change between nightlies (`alloc::sync::Arc`
+# became `alloc::rcs::arc::Arc`), which would fail every snapshot with no change of ours.
+# Move it here and in .github/workflows/ci.yml together, then run --update.
 set -euo pipefail
+NIGHTLY=nightly-2026-09-18
 cd "$(dirname "$0")/.."
 
 crates=(libfileparser-core libfileparser libfileparser-3d libfileparser-images libfileparser-text
@@ -17,7 +21,7 @@ trap 'rm -f "$diff_out"' EXIT
 for c in "${crates[@]}"; do
     snapshot="crates/$c/api/public-api.txt"
     # Simplified: no blanket or auto-trait impls, which change with the compiler, not with us.
-    api=$(cargo public-api -p "$c" -ss --color never 2>/dev/null)
+    api=$(cargo "+$NIGHTLY" public-api -p "$c" -ss --color never 2>/dev/null)
     if [[ "${1:-}" == --update ]]; then
         mkdir -p "$(dirname "$snapshot")"
         printf '%s\n' "$api" > "$snapshot"

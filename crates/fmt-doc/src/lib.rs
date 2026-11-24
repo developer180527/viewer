@@ -61,7 +61,7 @@ impl FormatLoader for TextLoader {
         let decoded;
         let src = match legacy {
             Some(enc) => {
-                let (text, _, _) = enc.decode(src.bytes());
+                let text = enc.decode(src.bytes());
                 decoded = FileSource::from_bytes(src.name().to_string(), text.into_owned().into_bytes());
                 &decoded
             }

@@ -160,8 +160,11 @@ jobs:
           # The baseline commit for semver checks.
           fetch-depth: 0
 
-      # cargo-public-api reads rustdoc's JSON, which needs nightly.
-      - uses: dtolnay/rust-toolchain@nightly
+      # cargo-public-api reads rustdoc's JSON, which needs nightly: the one
+      # scripts/api.sh pins, so a new nightly's paths don't fail the snapshots.
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: nightly-2026-09-18
       - uses: dtolnay/rust-toolchain@stable
 
       - uses: Swatinem/rust-cache@v2
