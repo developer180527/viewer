@@ -79,6 +79,9 @@ targets:
         # ProMotion iPhones: let the canvas ask for 120 Hz while the user interacts
         # (Shared/Pacing.swift); without this key iPhones cap apps at 60.
         CADisableMinimumFrameDurationOnPhone: true
+        # iPad: more than one window (Shared/Shell.swift: each its own session).
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
         CFBundleDocumentTypes:
           - CFBundleTypeName: Any file
             LSHandlerRank: Alternate

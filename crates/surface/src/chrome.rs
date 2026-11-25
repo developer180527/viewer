@@ -586,11 +586,11 @@ impl ViewerApp {
                     ui.container(Layout::column().gap(8.0).align(Align::Center, Align::Center), Frame::none(), |ui| {
                         let hint = format!("Drop a file here, or press {}", self.keys.label(Command::Open));
                         ui.text_with(&hint, 18.0, muted);
-                        let recents = self.session.recents().items();
-                        if !recents.is_empty() {
+                        let recents = self.session.recents();
+                        if !recents.items().is_empty() {
                             ui.space(12.0);
                             ui.label_muted("Recent");
-                            for r in recents.iter().take(8) {
+                            for r in recents.items().iter().take(8) {
                                 if ui.button(&r.name()).clicked {
                                     open = Some(r.path.clone());
                                 }

@@ -1,27 +1,53 @@
 // Viewer's SwiftUI shell for iPhone and iPad: the Mac shell's session and native lists
 // (Shared/), in a navigation stack, with files from the document picker or from Files
 // ("Open in Viewer"). Pages, images, 3D and formatted text are drawn by libviewer in a
-// Metal view (Canvas.swift), as on the Mac.
+// Metal view (Canvas.swift), as on the Mac. On iPad each window has its own shell (its
+// own pages), sharing the recent list and the settings.
 
 import SwiftUI
 import UniformTypeIdentifiers
 
 @main
 struct ViewerApp: App {
-    @StateObject private var shell = Shell()
+    var body: some Scene {
+        // A window's value is the file it shows (a recent's path): iPadOS keeps it to
+        // restore the window, and opening a window for a file already in one brings
+        // that one forward.
+        WindowGroup(id: Window.id, for: String.self) { $file in
+            Window(file: $file)
+        }
+    }
+}
+
+/// One window: its own shell, opening the file it was restored or opened for.
+struct Window: View {
+    static let id = "viewer"
+    @Binding var file: String?
+    @StateObject private var shell: Shell
     @Environment(\.scenePhase) private var phase
 
-    var body: some Scene {
-        WindowGroup {
-            Root().environmentObject(shell)
-                .preferredColorScheme(shell.colorScheme)
-                // Opened from Files, Share or another app: the system grants it.
-                .onOpenURL { url in if url.isFileURL { shell.open(url) } }
-        }
-        .onChange(of: phase) { _, now in
-            // Where the reader is, for next time: the app may not be woken again.
-            if now != .active { shell.save() }
-        }
+    init(file: Binding<String?>) {
+        _file = file
+        // A window for a file opens that, not what the launch would.
+        let launch = file.wrappedValue == nil
+        _shell = StateObject(wrappedValue: Shell(launch: launch))
+    }
+
+    var body: some View {
+        Root().environmentObject(shell)
+            .preferredColorScheme(shell.colorScheme)
+            // Opened from Files, Share or another app: the system grants it.
+            .onOpenURL { url in if url.isFileURL { shell.open(url) } }
+            .task {
+                if let file, shell.rootPath != file, !shell.openRecent(path: file) { self.file = nil }
+            }
+            // The window is now for what it shows, for its next restore; from the start
+            // too, for a file that opened before the window first drew.
+            .onChange(of: shell.rootPath, initial: true) { _, now in if let now { file = now } }
+            .onChange(of: phase) { _, now in
+                // Where the reader is, for next time: the app may not be woken again.
+                if now != .active { shell.save() }
+            }
     }
 }
 
@@ -71,10 +97,15 @@ struct Root: View {
 struct Sidebar: View {
     @EnvironmentObject var shell: Shell
     @Binding var showSettings: Bool
+    @Environment(\.supportsMultipleWindows) private var windows
+    @Environment(\.openWindow) private var openWindow
     var body: some View {
         List {
             Section {
                 Button { shell.openPanel() } label: { Label("Open…", systemImage: "folder") }
+                if windows {
+                    Button { openWindow(id: Window.id) } label: { Label("New Window", systemImage: "macwindow.badge.plus") }
+                }
                 Button { showSettings = true } label: { Label("Settings", systemImage: "gearshape") }
             }
             if !shell.recents.isEmpty {
@@ -91,6 +122,14 @@ struct Sidebar: View {
                         }
                         .listRowBackground(shell.isOpen(item) ? Color.accentColor.opacity(0.15) : nil)
                         .swipeActions { Button("Remove", role: .destructive) { shell.forget(item) } }
+                        .contextMenu {
+                            if windows {
+                                Button { openWindow(id: Window.id, value: item.path) } label: {
+                                    Label("Open in New Window", systemImage: "macwindow.badge.plus")
+                                }
+                            }
+                            Button("Remove", role: .destructive) { shell.forget(item) }
+                        }
                     }
                 }
             }
@@ -107,6 +146,8 @@ struct Detail: View {
     @Binding var showSettings: Bool
     /// iPad width: view-as as a segmented control, the path in the title.
     let wide: Bool
+    @Environment(\.supportsMultipleWindows) private var windows
+    @Environment(\.openWindow) private var openWindow
 
     var body: some View {
         VStack(spacing: 0) {
@@ -165,7 +206,10 @@ struct Detail: View {
                 }
             }
         }
-        .background { Button("") { shell.openPanel() }.keyboardShortcut("o").hidden() }
+        .background {
+            Button("") { shell.openPanel() }.keyboardShortcut("o").hidden()
+            if windows { Button("") { openWindow(id: Window.id) }.keyboardShortcut("n").hidden() }
+        }
         // A column beside the content on iPad, a sheet on iPhone.
         .inspector(isPresented: $showInfo) {
             InfoPanel()

@@ -19,8 +19,9 @@ mod loading;
 pub mod recents;
 pub mod settings;
 
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::Duration;
 
 use libfileparser_core::{Container, Role};
@@ -36,6 +37,39 @@ pub type Waker = Arc<dyn Fn() + Send + Sync>;
 
 /// Startup tracing: told "file mapped", "document decoded by …".
 pub type Trace = Arc<dyn Fn(&str) + Send + Sync>;
+
+/// What sessions keep between launches: the recent list and the settings. Shared by
+/// the sessions of one app's windows ([`Session::share_kept`]).
+#[derive(Clone, Default)]
+struct Kept(Arc<Mutex<KeptFiles>>);
+
+#[derive(Default)]
+struct KeptFiles {
+    recents: Recents,
+    settings: SettingsFile,
+}
+
+impl Kept {
+    fn lock(&self) -> MutexGuard<'_, KeptFiles> {
+        self.0.lock().unwrap_or_else(|e| e.into_inner())
+    }
+}
+
+/// [`Session::recents`]: the list, locked while it's held.
+pub struct RecentsGuard<'a>(MutexGuard<'a, KeptFiles>);
+
+impl Deref for RecentsGuard<'_> {
+    type Target = Recents;
+    fn deref(&self) -> &Recents {
+        &self.0.recents
+    }
+}
+
+impl DerefMut for RecentsGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Recents {
+        &mut self.0.recents
+    }
+}
 
 /// How the session reaches its shell.
 #[derive(Clone)]
@@ -153,15 +187,14 @@ pub struct Session {
     hooks: Hooks,
     next_grant: GrantId,
     released: Arc<Mutex<Vec<GrantId>>>,
-    recents: Recents,
-    settings: SettingsFile,
+    kept: Kept,
     /// The shell's token for the root page being opened, for the recent list.
     pending_bookmark: Option<Vec<u8>>,
 }
 
 impl Session {
     pub fn new(hooks: Hooks) -> Self {
-        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default(), recents: Recents::in_memory(), settings: SettingsFile::in_memory(), pending_bookmark: None }
+        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default(), kept: Kept::default(), pending_bookmark: None }
     }
 
     // ---------------------------------------------------------------- commands
@@ -269,7 +302,7 @@ impl Session {
                 match target {
                     Target::Root => {
                         if let Some(path) = page.src.path() {
-                            self.recents.note(path, bookmark);
+                            self.kept.lock().recents.note(path, bookmark);
                         }
                         let old = std::mem::take(&mut self.pages);
                         self.closed.extend(old.iter().map(|p| p.id));
@@ -294,31 +327,41 @@ impl Session {
     /// Keeps the recent list and the settings in `dir` (the app's data folder: its
     /// Application Support on Apple platforms), loading them now. Without it they
     /// live in memory only.
+    /// Sessions sharing them ([`Self::share_kept`]) load them once, for all.
     pub fn use_data_dir(&mut self, dir: &Path) {
-        self.recents = Recents::load(dir.join("recents.txt"));
-        self.settings = SettingsFile::load(dir.join("settings.txt"));
+        let mut kept = self.kept.lock();
+        kept.recents = Recents::load(dir.join("recents.txt"));
+        kept.settings = SettingsFile::load(dir.join("settings.txt"));
+    }
+
+    /// Keeps the recent list and the settings with `other`'s (one app's windows, each
+    /// its own session): each sees the files the others open and the settings they
+    /// change, and saving writes them once.
+    pub fn share_kept(&mut self, other: &Session) {
+        self.kept = other.kept.clone();
     }
 
     /// Writes what changed: the recent list (and the places in it) and the settings.
     pub fn save(&mut self) -> std::io::Result<()> {
-        let recents = self.recents.save();
-        self.settings.save()?;
+        let mut kept = self.kept.lock();
+        let recents = kept.recents.save();
+        kept.settings.save()?;
         recents
     }
 
-    pub fn settings(&self) -> &Settings {
-        self.settings.get()
+    pub fn settings(&self) -> Settings {
+        self.kept.lock().settings.get().clone()
     }
 
     pub fn set_settings(&mut self, settings: Settings) {
-        self.settings.set(settings);
+        self.kept.lock().settings.set(settings);
     }
 
     /// At launch with nothing named: the last file again, if the settings say so and
     /// there is one. Returns whether it started opening. Shells that read through a
     /// bookmark open the newest recent themselves.
     pub fn open_last(&mut self) -> bool {
-        let Some(path) = self.settings().reopen_last.then(|| self.recents.items().first().map(|r| r.path.clone())).flatten() else {
+        let Some(path) = self.settings().reopen_last.then(|| self.recents().items().first().map(|r| r.path.clone())).flatten() else {
             return false;
         };
         self.open_path(path);
@@ -328,15 +371,16 @@ impl Session {
     /// The recent list files are noted in as they open: kept in memory until a shell
     /// sets one loaded from its file.
     pub fn set_recents(&mut self, recents: Recents) {
-        self.recents = recents;
+        self.kept.lock().recents = recents;
     }
 
-    pub fn recents(&self) -> &Recents {
-        &self.recents
+    /// The list, held for as long as the guard is (sessions sharing it wait).
+    pub fn recents(&self) -> RecentsGuard<'_> {
+        RecentsGuard(self.kept.lock())
     }
 
-    pub fn recents_mut(&mut self) -> &mut Recents {
-        &mut self.recents
+    pub fn recents_mut(&mut self) -> RecentsGuard<'_> {
+        RecentsGuard(self.kept.lock())
     }
 
     /// The file a page's place is remembered under: a root page's own file. Entries
@@ -348,13 +392,14 @@ impl Session {
 
     /// Where the reader was in this page's file when it was last open.
     pub fn place(&self, page_id: u64) -> Option<Place> {
-        self.recents.get(self.place_key(page_id)?)?.place
+        let path = self.place_key(page_id)?;
+        self.kept.lock().recents.get(path)?.place
     }
 
     /// Where the reader is in this page now.
     pub fn set_place(&mut self, page_id: u64, place: Place) {
         if let Some(path) = self.place_key(page_id).map(Path::to_path_buf) {
-            self.recents.set_place(&path, place);
+            self.kept.lock().recents.set_place(&path, place);
         }
     }
 

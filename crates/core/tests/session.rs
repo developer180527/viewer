@@ -206,7 +206,7 @@ fn the_data_dir_keeps_settings_and_the_last_file() {
     assert!(!s.open_last(), "nothing opened yet");
     s.open_path(root().join("samples/data.json"));
     settle(&mut s);
-    s.set_settings(viewer_core::Settings { theme: viewer_core::Theme::Dark, ..s.settings().clone() });
+    s.set_settings(viewer_core::Settings { theme: viewer_core::Theme::Dark, ..s.settings() });
     s.save().unwrap();
     // The next launch.
     let (mut next, _) = session();
@@ -215,7 +215,32 @@ fn the_data_dir_keeps_settings_and_the_last_file() {
     assert!(next.open_last());
     settle(&mut next);
     assert_eq!(next.current().unwrap().src.name(), "data.json");
-    next.set_settings(viewer_core::Settings { reopen_last: false, ..next.settings().clone() });
+    next.set_settings(viewer_core::Settings { reopen_last: false, ..next.settings() });
     assert!(!next.open_last(), "not when the settings say no");
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn windows_sharing_what_is_kept_see_each_others_files_and_settings() {
+    let dir = std::env::temp_dir().join(format!("viewer-shared-{}", std::process::id()));
+    let (mut first, _) = session();
+    first.use_data_dir(&dir);
+    let (mut second, _) = session();
+    second.share_kept(&first);
+    second.open_path(root().join("samples/data.json"));
+    settle(&mut second);
+    first.open_path(root().join("samples/example.toml"));
+    settle(&mut first);
+    let names = |s: &viewer_core::Session| s.recents().items().iter().map(|r| r.name()).collect::<Vec<_>>();
+    assert_eq!(names(&first), ["example.toml", "data.json"]);
+    assert_eq!(names(&second), names(&first), "one list for both");
+    second.set_settings(viewer_core::Settings { theme: viewer_core::Theme::Light, ..second.settings() });
+    assert_eq!(first.settings().theme, viewer_core::Theme::Light);
+    // Either one saves both windows' files.
+    second.save().unwrap();
+    let (mut next, _) = session();
+    next.use_data_dir(&dir);
+    assert_eq!(names(&next), ["example.toml", "data.json"]);
+    assert_eq!(next.settings().theme, viewer_core::Theme::Light);
     std::fs::remove_dir_all(&dir).unwrap();
 }

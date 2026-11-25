@@ -30,6 +30,8 @@ final class Shell: ObservableObject {
     @Published private(set) var canGoBack = false
     /// The page on screen; views key their caches by it.
     @Published private(set) var page: UInt64?
+    /// The file or folder this window's pages were opened from, as the recents name it.
+    @Published private(set) var rootPath: String?
     /// Why the Metal view can't draw (no GPU), once it has tried.
     @Published private(set) var canvasError: String?
     /// Recently opened files, newest first (viewer-core's list).
@@ -47,16 +49,31 @@ final class Shell: ObservableObject {
     /// The Metal view's: a wake may mean a decoded texture or a compiled shader.
     var onWake: (() -> Void)?
 
-    init() {
+    /// The app's windows, each with its own shell; they share the recent list and the
+    /// settings (one window's `session` is the others' to share).
+    private static var windows: [Weak] = []
+    private struct Weak { weak var shell: Shell? }
+
+    /// The first window's shell loads the recent list and settings and does what the
+    /// launch asks (`launch`); a later window's shares them and opens nothing.
+    init(launch: Bool = true) {
         Metrics.start()
         let wake = Wake()
-        session = ViewerSession(waker: wake)
-        wake.shell = self
-        if let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) {
-            session.useDataDir(dir: dir.path)
+        Shell.windows.removeAll { $0.shell == nil }
+        if let other = Shell.windows.first?.shell {
+            session = ViewerSession.sharing(other: other.session, waker: wake)
+        } else {
+            session = ViewerSession(waker: wake)
+            if let dir = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true) {
+                session.useDataDir(dir: dir.path)
+            }
         }
+        let first = Shell.windows.isEmpty
+        wake.shell = self
+        Shell.windows.append(Weak(shell: self))
         recents = session.recents()
         settings = session.settings()
+        guard first, launch else { return }
         // For testing: `-open <path>` at launch (simctl launch, Xcode's scheme).
         let args = ProcessInfo.processInfo.arguments
         // The stress runner (Stress.swift), once the window is up: `-stress a,b`, or
@@ -154,7 +171,16 @@ final class Shell: ObservableObject {
 
     /// The file on screen (or the one its pages were opened from): the newest recent,
     /// while something is open.
-    func isOpen(_ item: RecentItem) -> Bool { page != nil && item.path == recents.first?.path }
+    func isOpen(_ item: RecentItem) -> Bool { page != nil && item.path == rootPath }
+
+    /// Opens a recent file by its path (a window restored, or opened for it); `false`
+    /// when the list has no such file any more.
+    @discardableResult
+    func openRecent(path: String) -> Bool {
+        guard let item = recents.first(where: { $0.path == path }) else { return false }
+        openRecent(item)
+        return true
+    }
 
     func forget(_ item: RecentItem) { session.forgetRecent(path: item.path); save(); refresh() }
 
@@ -163,6 +189,17 @@ final class Shell: ObservableObject {
     /// Writes the recent list and the places in it.
     func save() {
         if let why = session.save() { NSLog("Viewer: recent files and settings not saved: %@", why) }
+        // The other windows show the same list and settings.
+        for other in Shell.windows.compactMap(\.shell) where other !== self { other.keptChanged() }
+    }
+
+    /// Another window opened a file, forgot one or changed a setting.
+    private func keptChanged() {
+        let list = session.recents()
+        if list != recents { recents = list }
+        let now = session.settings()
+        if now != settings { settings = now }
+        onWake?()
     }
 
     #if os(macOS)
@@ -213,6 +250,7 @@ final class Shell: ObservableObject {
         if now != settings { settings = now }
         let was = page
         page = session.pageId()
+        rootPath = session.rootPath()
         recents = session.recents()
         // Another file: keep where the reader was in the last one.
         if page != was {

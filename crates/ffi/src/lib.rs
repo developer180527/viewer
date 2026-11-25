@@ -162,6 +162,15 @@ impl ViewerSession {
         Arc::new(Self { inner: Mutex::new(Session::new(hooks)), waker })
     }
 
+    /// Another window's session: its own pages, `other`'s recent list and settings
+    /// (each window sees the files the others open, and one save writes them).
+    #[uniffi::constructor]
+    pub fn sharing(other: Arc<ViewerSession>, waker: Arc<dyn Waker>) -> Arc<Self> {
+        let this = Self::new(waker);
+        this.session().share_kept(&other.session());
+        this
+    }
+
     // ---------------------------------------------------------------- commands
 
     /// Opens a file or folder as the new root.
@@ -289,6 +298,11 @@ impl ViewerSession {
     }
 
     /// The current page's id, stable for its life: a key for its view's state.
+    /// The file or folder the pages were opened from, as the recent list names it.
+    pub fn root_path(&self) -> Option<String> {
+        self.session().pages().first().and_then(|p| p.src.path()).map(|p| p.display().to_string())
+    }
+
     pub fn page_id(&self) -> Option<u64> {
         self.session().current().map(|p| p.id)
     }
