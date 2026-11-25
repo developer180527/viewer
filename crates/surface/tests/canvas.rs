@@ -129,3 +129,18 @@ fn a_resize_lays_out_again() {
     let (left, right) = (drawn[0], w as usize - 1 - drawn[drawn.len() - 1]);
     assert!(left.abs_diff(right) <= 4, "page not centred after the resize: {left} px left, {right} px right");
 }
+
+/// The SwiftUI shell's windows draw on one GPU: one device, and RendererX's pipelines
+/// compiled once, not once per window; a new one once none is left.
+#[test]
+fn canvases_share_one_gpu_context() {
+    let Ok(first) = viewer_surface::GpuContext::shared() else {
+        eprintln!("no GPU; skipped");
+        return;
+    };
+    let second = viewer_surface::GpuContext::shared().unwrap();
+    assert!(std::sync::Arc::ptr_eq(&first, &second));
+    let weak = std::sync::Arc::downgrade(&first);
+    drop((first, second));
+    assert!(weak.upgrade().is_none(), "freed with the last canvas");
+}

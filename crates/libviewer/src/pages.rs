@@ -15,9 +15,12 @@
 //!   the remaining pages.
 //! - **The cache** keeps rendered tiles on the GPU within a budget sized to the view
 //!   ([`cache_budget`]: some screenfuls, between `MIN_CACHE_BYTES` and `CACHE_BYTES`), dropping
-//!   the ones drawn longest ago.
+//!   the ones drawn longest ago. `CACHE_BYTES` is for every view in the process together
+//!   ([`shared_budget`]), and a view out of sight gives its tiles back
+//!   ([`PagesView::trim`]).
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
@@ -66,6 +69,22 @@ const SCREENS_CACHED: usize = 8;
 fn cache_budget(width: f32, height: f32) -> usize {
     let screen = (width.max(0.0) * height.max(0.0) * 4.0) as usize;
     (screen * SCREENS_CACHED).clamp(MIN_CACHE_BYTES, CACHE_BYTES)
+}
+
+/// Tile bytes held by every page view in the process (each window's, each page's),
+/// and how many views hold any: [`CACHE_BYTES`] is for all of them together, so a
+/// second window showing a document doesn't double what the app holds.
+static HELD: AtomicUsize = AtomicUsize::new(0);
+static HOLDERS: AtomicUsize = AtomicUsize::new(0);
+
+/// A view's budget (`own`, sized to the view) within what all views share, given the
+/// bytes it already holds (`mine`): what nobody else holds, and never less than an
+/// even share. A view over its share frees the rest the next time it draws; one that
+/// doesn't draw (a hidden window) is trimmed by its shell ([`PagesView::trim`]).
+fn shared_budget(own: usize, mine: usize, held: usize, holders: usize) -> usize {
+    let others = held.saturating_sub(mine);
+    let holders = if mine == 0 { holders + 1 } else { holders.max(1) };
+    own.min((CACHE_BYTES / holders).max(CACHE_BYTES.saturating_sub(others)))
 }
 /// Bytes uploaded per frame (at least one tile); the rest wait, so scrolling stays smooth.
 const UPLOAD_BYTES: usize = if TOUCH { 4 << 20 } else { 16 << 20 };
@@ -331,6 +350,8 @@ pub struct PagesView {
     /// when: see [`PagesView::steady_step`].
     rendered_step: Option<i16>,
     pending: Option<(i16, Instant)>,
+    /// The tile bytes this view counts in [`HELD`].
+    published: Published,
 }
 
 impl Default for PagesView {
@@ -349,7 +370,38 @@ impl Default for PagesView {
             fling: Vec2::ZERO,
             rendered_step: None,
             pending: None,
+            published: Published(0),
         }
+    }
+}
+
+/// A view's tile bytes as counted in [`HELD`] and [`HOLDERS`]; uncounted when the
+/// view goes.
+#[derive(Default)]
+struct Published(usize);
+
+impl Published {
+    fn set(&mut self, bytes: usize) {
+        let was = std::mem::replace(&mut self.0, bytes);
+        if was == bytes {
+            return;
+        }
+        if bytes > was {
+            HELD.fetch_add(bytes - was, Ordering::Relaxed);
+        } else {
+            HELD.fetch_sub(was - bytes, Ordering::Relaxed);
+        }
+        if was == 0 {
+            HOLDERS.fetch_add(1, Ordering::Relaxed);
+        } else if bytes == 0 {
+            HOLDERS.fetch_sub(1, Ordering::Relaxed);
+        }
+    }
+}
+
+impl Drop for Published {
+    fn drop(&mut self) {
+        self.set(0);
     }
 }
 
@@ -378,6 +430,26 @@ impl PagesView {
 
     pub fn textures(&self) -> Vec<TextureId> {
         self.tiles.values().map(|t| t.tex).collect()
+    }
+
+    /// Frees every tile, for a view that isn't on screen (its window hidden, the
+    /// system short of memory). It renders what it needs again when next drawn.
+    pub fn trim(&mut self, tex: &mut dyn Host) {
+        for (_, t) in self.tiles.drain() {
+            tex.free(t.tex);
+        }
+        self.wanted.clear();
+        if let Some(w) = &self.worker {
+            let mut s = w.lock();
+            s.wanted.clear();
+            s.done.clear();
+        }
+        self.publish(0);
+    }
+
+    /// Counts the `bytes` of tiles this view holds now in what all views hold.
+    fn publish(&mut self, bytes: usize) {
+        self.published.set(bytes);
     }
 
     /// Renders at `step` from now on.
@@ -509,6 +581,7 @@ impl PagesView {
     fn evict(&mut self, tex: &mut dyn Host, step: i16, budget: usize) {
         let mut total: usize = self.tiles.values().map(|t| t.bytes).sum();
         if total <= budget {
+            self.publish(total);
             return;
         }
         let wanted: HashSet<TileKey> = self.wanted.iter().copied().collect();
@@ -525,6 +598,7 @@ impl PagesView {
             total -= t.bytes;
             forgotten.push(key);
         }
+        self.publish(total);
         if let Some(w) = &self.worker {
             let mut s = w.lock();
             for key in forgotten {
@@ -760,7 +834,7 @@ pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &m
     // No more than the cache holds: what's on screen always, the neighbours while they
     // fit. Asking for more than fits would evict wanted tiles and render them again,
     // over and over (a 3x phone with its previews and the next page's tiles).
-    let budget = cache_budget(rect.w * ppp, rect.h * ppp);
+    let budget = shared_budget(cache_budget(rect.w * ppp, rect.h * ppp), st.published.0, HELD.load(Ordering::Relaxed), HOLDERS.load(Ordering::Relaxed));
     let keep = (budget / TILE_BYTES).max(placed.len() + visible.len());
     wanted.truncate(keep);
     if wanted != st.wanted {
@@ -905,6 +979,21 @@ mod tests {
         assert_eq!(v.steady_step(-2, false, ms(400) + ZOOM_SETTLE), (-2, None));
         // Screenshots don't wait.
         assert_eq!(v.steady_step(5, true, ms(401)), (5, None));
+    }
+
+    #[test]
+    fn views_share_one_cache() {
+        let own = CACHE_BYTES;
+        // Alone: all of it.
+        assert_eq!(shared_budget(own, 0, 0, 0), CACHE_BYTES);
+        // A second window while the first holds it all: an even share, which the first
+        // comes down to when it next draws.
+        assert_eq!(shared_budget(own, 0, CACHE_BYTES, 1), CACHE_BYTES / 2);
+        assert_eq!(shared_budget(own, CACHE_BYTES, CACHE_BYTES + CACHE_BYTES / 2, 2), CACHE_BYTES / 2);
+        // What the others leave, when that's more than a share.
+        assert_eq!(shared_budget(own, 0, CACHE_BYTES / 4, 1), CACHE_BYTES - CACHE_BYTES / 4);
+        // Never more than the view itself wants.
+        assert_eq!(shared_budget(MIN_CACHE_BYTES, 0, 0, 0), MIN_CACHE_BYTES);
     }
 
     #[test]

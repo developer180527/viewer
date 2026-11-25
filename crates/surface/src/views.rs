@@ -36,6 +36,13 @@ impl ViewState {
         }
     }
 
+    /// Frees what the view can make again (a paged document's tiles).
+    pub fn trim(&mut self, host: &mut dyn Host) {
+        if let Self::Model(v) = self {
+            v.trim(host);
+        }
+    }
+
     /// GPU textures this page owns, to free when it is closed.
     pub fn textures(&self) -> Vec<TextureId> {
         match self {

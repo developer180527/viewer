@@ -428,7 +428,7 @@ impl Host {
             w.idle = 0.0;
             w.ui.begin_frame(info);
             let t = Instant::now();
-            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, scale, settle: &mut settle, freed: &mut freed, pool: &mut w.pool, uploader: Some(w.uploader.clone()), pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
+            let mut gpu = Gpu { device: &w.device, queue: &w.queue, renderer: &mut w.renderer, rx: &mut w.rx, shared: None, scale, settle: &mut settle, freed: &mut freed, pool: &mut w.pool, uploader: Some(w.uploader.clone()), pinch: w.pinch - 1.0, wake: &w.wake, touch_screen: cfg!(any(target_os = "ios", target_os = "android")) };
             w.pinch = 1.0;
             app.ui(&mut w.ui, &mut gpu);
             // Open… asked for this frame: the picker comes up now.

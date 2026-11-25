@@ -15,7 +15,10 @@ use viewer_core::Page;
 
 use crate::chrome::ViewerApp;
 use crate::views::{self, Action, ViewState};
-use crate::{Gpu, GpuUploader, Rx, TexturePool, Wake, fonts, open_device};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use crate::{Gpu, GpuContext, GpuUploader, Rx, TexturePool, Wake, fonts};
 
 /// What a frame asks of the shell.
 pub struct Drawn {
@@ -34,6 +37,10 @@ pub struct Canvas {
     offscreen: Option<wgpu::Texture>,
     /// The size and format drawn at (configured on the surface, if any).
     config: wgpu::SurfaceConfiguration,
+    /// The GPU, shared with the process's other canvases (or this one's own).
+    ctx: Arc<GpuContext>,
+    /// This canvas among the context's wakes.
+    id: u64,
     device: wgpu::Device,
     queue: wgpu::Queue,
     renderer: libgui_wgpu::Renderer,
@@ -72,37 +79,36 @@ impl Canvas {
     /// # Safety
     /// `layer` is a valid `CAMetalLayer` that outlives the canvas.
     #[cfg(any(target_os = "macos", target_os = "ios", target_os = "visionos"))]
+    /// Every canvas made this way shares one GPU context ([`GpuContext::shared`]).
     pub unsafe fn on_metal_layer(layer: *mut std::ffi::c_void, width: u32, height: u32, scale: f32, dark: bool, wake: Wake) -> anyhow::Result<Self> {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let ctx = GpuContext::shared()?;
         // SAFETY: the caller's.
-        let surface = unsafe { instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(layer)) }.context("creating the surface")?;
-        Self::on_surface(&instance, surface, width, height, scale, dark, wake)
+        let surface = unsafe { ctx.instance.create_surface_unsafe(wgpu::SurfaceTargetUnsafe::CoreAnimationLayer(layer)) }.context("creating the surface")?;
+        Self::with_context(ctx, surface, width, height, scale, dark, wake)
     }
 
-    /// A canvas on a surface made from `instance`.
-    pub fn on_surface(instance: &wgpu::Instance, surface: wgpu::Surface<'static>, width: u32, height: u32, scale: f32, dark: bool, wake: Wake) -> anyhow::Result<Self> {
-        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
-            power_preference: wgpu::PowerPreference::LowPower,
-            compatible_surface: Some(&surface),
-            ..Default::default()
-        }))
-        .context("no GPU adapter for the view")?;
-        let (device, queue) = open_device(&adapter)?;
-        let mut config = surface.get_default_config(&adapter, width.max(1), height.max(1)).context("the surface has no configuration")?;
-        let caps = surface.get_capabilities(&adapter);
+    /// A canvas on a surface made from `instance`, with a GPU context of its own.
+    pub fn on_surface(instance: wgpu::Instance, surface: wgpu::Surface<'static>, width: u32, height: u32, scale: f32, dark: bool, wake: Wake) -> anyhow::Result<Self> {
+        let ctx = Arc::new(GpuContext::new(instance, Some(&surface))?);
+        Self::with_context(ctx, surface, width, height, scale, dark, wake)
+    }
+
+    /// A canvas on a surface made from `ctx`'s instance.
+    pub fn with_context(ctx: Arc<GpuContext>, surface: wgpu::Surface<'static>, width: u32, height: u32, scale: f32, dark: bool, wake: Wake) -> anyhow::Result<Self> {
+        let mut config = surface.get_default_config(&ctx.adapter, width.max(1), height.max(1)).context("the surface has no configuration")?;
+        let caps = surface.get_capabilities(&ctx.adapter);
         // libgui blends in non-sRGB space, as the app's window does.
         config.format = caps.formats.iter().copied().find(|f| !f.is_srgb()).ok_or_else(|| anyhow!("no non-sRGB surface format"))?;
         config.present_mode = wgpu::PresentMode::AutoVsync;
-        surface.configure(&device, &config);
-        Self::build(Some(surface), device, queue, config, scale, dark, wake)
+        surface.configure(&ctx.device, &config);
+        Self::build(Some(surface), ctx, config, scale, dark, wake)
     }
 
     /// A canvas that draws into a texture of its own, `width`×`height` pixels: for
     /// tests, and for shells that composite the pixels themselves.
     pub fn offscreen(width: u32, height: u32, scale: f32, dark: bool, wake: Wake) -> anyhow::Result<Self> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
-        let adapter = pollster::block_on(instance.request_adapter(&Default::default())).context("no GPU adapter")?;
-        let (device, queue) = open_device(&adapter)?;
+        let ctx = Arc::new(GpuContext::new(instance, None)?);
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: wgpu::TextureFormat::Rgba8Unorm,
@@ -114,10 +120,14 @@ impl Canvas {
             view_formats: Vec::new(),
             color_space: Default::default(),
         };
-        Self::build(None, device, queue, config, scale, dark, wake)
+        Self::build(None, ctx, config, scale, dark, wake)
     }
 
-    fn build(surface: Option<wgpu::Surface<'static>>, device: wgpu::Device, queue: wgpu::Queue, config: wgpu::SurfaceConfiguration, scale: f32, dark: bool, wake: Wake) -> anyhow::Result<Self> {
+    fn build(surface: Option<wgpu::Surface<'static>>, ctx: Arc<GpuContext>, config: wgpu::SurfaceConfiguration, scale: f32, dark: bool, wake: Wake) -> anyhow::Result<Self> {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let id = NEXT.fetch_add(1, Ordering::Relaxed);
+        ctx.add_wake(id, wake.clone());
+        let (device, queue) = (ctx.device.clone(), ctx.queue.clone());
         let renderer = libgui_wgpu::Renderer::new(&device, &queue, config.format);
         let ui = fonts::new_ui(dark)?;
         let offscreen = surface.is_none().then(|| target(&device, &config));
@@ -128,6 +138,8 @@ impl Canvas {
             surface,
             offscreen,
             config,
+            ctx,
+            id,
             device,
             queue,
             renderer,
@@ -196,6 +208,43 @@ impl Canvas {
     }
 
     pub fn touch(&mut self) {
+        self.stale = true;
+    }
+
+    /// Frees what can be made again: the page views' tiles and the spare textures kept
+    /// for reuse. For a canvas whose window isn't on screen, or when the system is short
+    /// of memory; what's shown is rendered again when it next draws.
+    pub fn trim(&mut self) {
+        let mut freed = Vec::new();
+        let mut settle = false;
+        let mut gpu = Gpu {
+            device: &self.device,
+            queue: &self.queue,
+            renderer: &mut self.renderer,
+            rx: &mut self.rx,
+            shared: Some(&self.ctx),
+            scale: self.scale,
+            settle: &mut settle,
+            freed: &mut freed,
+            pool: &mut self.pool,
+            uploader: None,
+            pinch: 0.0,
+            wake: &self.wake,
+            touch_screen: self.touch_screen,
+        };
+        for view in self.views.values_mut() {
+            view.trim(&mut gpu);
+        }
+        for id in freed {
+            if self.pool.forget(id) {
+                self.renderer.unregister_texture(id);
+            }
+        }
+        for id in self.pool.drop_spares() {
+            self.renderer.unregister_texture(id);
+        }
+        // Lets wgpu give the freed textures back now, not at the next frame.
+        let _ = self.device.poll(wgpu::PollType::Poll);
         self.stale = true;
     }
 
@@ -296,6 +345,7 @@ impl Canvas {
                 queue: &self.queue,
                 renderer: &mut self.renderer,
                 rx: &mut self.rx,
+                shared: Some(&self.ctx),
                 scale,
                 settle: &mut settle,
                 freed: &mut freed,
@@ -438,6 +488,7 @@ fn target(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> wgpu::T
 
 impl Drop for Canvas {
     fn drop(&mut self) {
+        self.ctx.forget_wake(self.id);
         for view in self.views.values() {
             for id in view.textures() {
                 self.renderer.unregister_texture(id);

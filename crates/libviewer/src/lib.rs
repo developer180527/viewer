@@ -98,6 +98,14 @@ impl View {
         }
     }
 
+    /// Frees what the view can make again (a paged document's tiles), for a view not
+    /// on screen; the rest stays.
+    pub fn trim(&mut self, host: &mut dyn Host) {
+        if let Self::Pages(st) = self {
+            st.trim(host);
+        }
+    }
+
     /// GPU textures this view owns, to free with [`Host::free`] when its page closes.
     pub fn textures(&self) -> Vec<TextureId> {
         match self {

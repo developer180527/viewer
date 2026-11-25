@@ -44,6 +44,7 @@ pub fn probe_texture_compression() {
 /// froze the window on the first 3D file and stalled a frame per shading model. Now
 /// a model shows as soon as clay is ready and switches to its own shading as each
 /// pipeline arrives.
+#[derive(Clone)]
 pub struct Rx {
     renderer: Arc<rendererx::Renderer>,
     /// Wakes the worker; one slot, so nudges while it is busy merge.
@@ -76,6 +77,75 @@ impl Rx {
 
     fn nudge(&self) {
         let _ = self.kick.try_send(());
+    }
+}
+
+/// One GPU for every canvas in the process (each window of the SwiftUI shell): the
+/// device and queue, and RendererX with its compiled pipelines, made once instead of
+/// once per window. A canvas keeps only its surface, its UI renderer and its views.
+/// Lives while any canvas does.
+pub struct GpuContext {
+    pub instance: wgpu::Instance,
+    pub adapter: wgpu::Adapter,
+    pub device: wgpu::Device,
+    pub queue: wgpu::Queue,
+    /// RendererX, made the first time any canvas draws a 3D scene.
+    rx: Mutex<Option<Rx>>,
+    /// The canvases' wakes: a compiled pipeline may be any window's.
+    wakes: Arc<Mutex<Vec<(u64, Wake)>>>,
+}
+
+/// The shared context, while a canvas holds it.
+static SHARED: Mutex<std::sync::Weak<GpuContext>> = Mutex::new(std::sync::Weak::new());
+
+impl GpuContext {
+    /// The process's context: the one in use, or a new one.
+    pub fn shared() -> anyhow::Result<Arc<Self>> {
+        let mut shared = SHARED.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(ctx) = shared.upgrade() {
+            return Ok(ctx);
+        }
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
+        let ctx = Arc::new(Self::new(instance, None)?);
+        *shared = Arc::downgrade(&ctx);
+        Ok(ctx)
+    }
+
+    /// A context of its own on `instance`, for `surface` if given.
+    pub fn new(instance: wgpu::Instance, surface: Option<&wgpu::Surface<'_>>) -> anyhow::Result<Self> {
+        let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::LowPower,
+            compatible_surface: surface,
+            ..Default::default()
+        }))
+        .context("no GPU adapter for the view")?;
+        let (device, queue) = open_device(&adapter)?;
+        Ok(Self { instance, adapter, device, queue, rx: Mutex::default(), wakes: Arc::default() })
+    }
+
+    /// Wakes `wake` too when a pipeline compiles, until [`Self::forget_wake`].
+    pub(crate) fn add_wake(&self, id: u64, wake: Wake) {
+        self.wakes.lock().unwrap_or_else(|e| e.into_inner()).push((id, wake));
+    }
+
+    pub(crate) fn forget_wake(&self, id: u64) {
+        self.wakes.lock().unwrap_or_else(|e| e.into_inner()).retain(|(i, _)| *i != id);
+    }
+
+    /// RendererX, made now if no canvas has needed it yet.
+    pub(crate) fn rx(&self) -> Rx {
+        let mut rx = self.rx.lock().unwrap_or_else(|e| e.into_inner());
+        rx.get_or_insert_with(|| {
+            let wakes = self.wakes.clone();
+            let wake: Wake = Arc::new(move || {
+                let all: Vec<Wake> = wakes.lock().unwrap_or_else(|e| e.into_inner()).iter().map(|(_, w)| w.clone()).collect();
+                for w in all {
+                    w();
+                }
+            });
+            Rx::new(&self.device, &self.queue, wake)
+        })
+        .clone()
     }
 }
 
@@ -244,6 +314,9 @@ pub struct Gpu<'a> {
     /// RendererX on the same device, created the first time a 3D view needs it so
     /// startup never pays for its pipelines.
     pub rx: &'a mut Option<Rx>,
+    /// Where RendererX comes from when `rx` has none: a context shared with other
+    /// canvases. `None` makes one for this host alone.
+    pub shared: Option<&'a GpuContext>,
     pub scale: f32,
     /// Set by `uploads_done`: the shell waits for the GPU before the next frame.
     pub settle: &'a mut bool,
@@ -328,7 +401,10 @@ impl Host for Gpu<'_> {
     }
 
     fn render_scene(&mut self, st: &mut SceneGpu, scene: &CpuScene, size: (u32, u32), camera: &Camera, background: [f32; 4]) -> Frame3d {
-        let rx = self.rx.get_or_insert_with(|| Rx::new(self.device, self.queue, self.wake.clone()));
+        let rx = match self.shared {
+            Some(ctx) => self.rx.get_or_insert_with(|| ctx.rx()),
+            None => self.rx.get_or_insert_with(|| Rx::new(self.device, self.queue, self.wake.clone())),
+        };
         let busy = draw_scene((&rx.renderer, self.device, self.queue), st, scene, size, camera, background, false);
         // The frame queued pipelines it lacked (drawing clay, or nothing, meanwhile).
         if rx.renderer.pipelines_pending() {

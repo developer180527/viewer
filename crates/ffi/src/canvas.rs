@@ -249,6 +249,13 @@ impl ViewerCanvas {
         with(self.id, |c| c.touch());
     }
 
+    /// Frees what the canvas can render again (a paged document's tiles, spare
+    /// textures): its window went to the background, or the system is short of
+    /// memory. It renders what's on screen again when it next draws.
+    pub fn trim(&self) {
+        with(self.id, |c| c.trim());
+    }
+
     // ---------------------------------------------------------------- input, in points
 
     pub fn pointer_moved(&self, x: f32, y: f32) {

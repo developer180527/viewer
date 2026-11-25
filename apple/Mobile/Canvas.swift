@@ -41,6 +41,8 @@ final class CanvasView: UIView {
     /// Touches by the number libgui knows them by.
     private var fingers: [ObjectIdentifier: UInt64] = [:]
     private var nextFinger: UInt64 = 1
+    /// The window's scene going to the background and coming back, memory warnings.
+    private var observers: [NSObjectProtocol] = []
 
     override class var layerClass: AnyClass { CAMetalLayer.self }
 
@@ -98,13 +100,53 @@ final class CanvasView: UIView {
             return
         }
         shell.stressTarget = self
+        observe()
         let link = CADisplayLink(target: self, selector: #selector(tick))
         link.isPaused = true
         link.add(to: .main, forMode: .common)
         self.link = link
     }
 
+    /// A window out of sight gives back what it can render again (its document's tiles),
+    /// so the app's other windows have the memory: when its scene goes to the
+    /// background, and on a memory warning unless it's the window in front. It renders
+    /// what's on screen again when it's back.
+    private func observe() {
+        let center = NotificationCenter.default
+        // Notifications aren't Sendable: what's needed of one, taken before the main actor.
+        let from = { (note: Notification) in note.object.map { ObjectIdentifier($0 as AnyObject) } }
+        let trim: @Sendable (Notification) -> Void = { [weak self] note in
+            let (name, object) = (note.name, from(note))
+            MainActor.assumeIsolated {
+                guard let self, let scene = self.window?.windowScene else { return }
+                if name == UIScene.didEnterBackgroundNotification, object != ObjectIdentifier(scene) { return }
+                if name == UIApplication.didReceiveMemoryWarningNotification, scene.activationState == .foregroundActive { return }
+                guard let canvas = self.canvas else { return }
+                let before = Metrics.footprint()
+                canvas.trim()
+                // The textures go back once the GPU is done with them: measured a moment on.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                    Metrics.log("a window out of sight gave back its tiles: \(before), now \(Metrics.footprint())")
+                }
+            }
+        }
+        observers = [
+            center.addObserver(forName: UIScene.didEnterBackgroundNotification, object: nil, queue: .main, using: trim),
+            center.addObserver(forName: UIApplication.didReceiveMemoryWarningNotification, object: nil, queue: .main, using: trim),
+            center.addObserver(forName: UIScene.willEnterForegroundNotification, object: nil, queue: .main) { [weak self] note in
+                let object = from(note)
+                MainActor.assumeIsolated {
+                    guard let self, let scene = self.window?.windowScene, object == ObjectIdentifier(scene) else { return }
+                    self.canvas?.touch()
+                    self.redraw()
+                }
+            },
+        ]
+    }
+
     func close() {
+        for o in observers { NotificationCenter.default.removeObserver(o) }
+        observers = []
         link?.invalidate()
         link = nil
         timer?.invalidate()
