@@ -181,7 +181,7 @@ impl Reader for MediaReader {
             let raster = if is_video {
                 m.poster(cx)?
             } else if has_cover {
-                m.cover_raster().map_or_else(|| m.waveform(cx), Ok)?
+                m.cover_raster(cx).map_or_else(|| m.waveform(cx), Ok)?
             } else {
                 m.waveform(cx)?
             };
@@ -454,9 +454,19 @@ impl Opened {
         (unsafe { ffi::vm_cover(self.m, &mut data, &mut len) } == 0 && len > 0).then(|| unsafe { std::slice::from_raw_parts(data, len as usize) })
     }
 
-    /// The cover art, decoded (it's a JPEG or PNG inside the file).
-    fn cover_raster(&self) -> Option<Raster> {
-        let img = image::load_from_memory(self.cover()?).ok()?.into_rgba8();
+    /// The cover art, decoded (it's a JPEG or PNG inside the file), held to the same pixel
+    /// and allocation limits as any other image: its header is the file's to lie about.
+    fn cover_raster(&self, cx: &ParseContext) -> Option<Raster> {
+        let mut reader = image::ImageReader::new(std::io::Cursor::new(self.cover()?)).with_guessed_format().ok()?;
+        let mut limits = image::Limits::default();
+        limits.max_alloc = Some(cx.limits.allocation);
+        reader.limits(limits);
+        let decoder = reader.into_decoder().ok()?;
+        let (w, h) = image::ImageDecoder::dimensions(&decoder);
+        if u64::from(w) * u64::from(h) > cx.limits.image_pixels {
+            return None;
+        }
+        let img = image::DynamicImage::from_decoder(decoder).ok()?.into_rgba8();
         let (w, h) = img.dimensions();
         Raster::new(w, h, img.into_raw()).ok()
     }

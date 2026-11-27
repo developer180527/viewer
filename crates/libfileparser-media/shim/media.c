@@ -248,6 +248,13 @@ static AVCodecContext *open_decoder(AVStream *s, int64_t max_pixels) {
     return c;
 }
 
+// Only stream `si`'s packets are read from here on: demuxers that can (MP4, MKV) skip
+// the others' bytes instead of reading them, so a film's waveform doesn't read its video.
+// Each reader calls this for its own stream, which also undoes another reader's choice.
+static void only(vm_media *m, int si) {
+    for (unsigned i = 0; i < m->fmt->nb_streams; i++) m->fmt->streams[i]->discard = (int)i == si ? AVDISCARD_DEFAULT : AVDISCARD_ALL;
+}
+
 // The best video stream's frame nearest `at_us` (the first frame after the keyframe
 // before it), scaled to fit `max_side` and converted to RGBA, in a buffer to free
 // with vm_free. 0 on success; a negative AVERROR otherwise.
@@ -258,6 +265,7 @@ int vm_frame(vm_media *m, int64_t at_us, int max_side, int64_t max_pixels, uint8
     if (s->disposition & AV_DISPOSITION_ATTACHED_PIC) return AVERROR_STREAM_NOT_FOUND;
     AVCodecContext *c = open_decoder(s, max_pixels);
     if (!c) return AVERROR_DECODER_NOT_FOUND;
+    only(m, si);
     if (at_us > 0) {
         int64_t ts = av_rescale_q(at_us, AV_TIME_BASE_Q, s->time_base);
         if (av_seek_frame(m->fmt, si, ts, AVSEEK_FLAG_BACKWARD) < 0) av_seek_frame(m->fmt, si, 0, AVSEEK_FLAG_BACKWARD);
@@ -385,11 +393,13 @@ static int mono_for(mono *m, const AVFrame *frame, peak_state *st) {
 // stretches of its length (0–1). `max_seconds` stops a very long file early (0: all).
 // Returns how many buckets were reached, or a negative AVERROR.
 int vm_peaks(vm_media *m, int buckets, float *out, double max_seconds) {
+    if (buckets <= 0 || !out) return AVERROR(EINVAL);
     int si = av_find_best_stream(m->fmt, AVMEDIA_TYPE_AUDIO, -1, -1, NULL, 0);
     if (si < 0) return si;
     AVStream *s = m->fmt->streams[si];
     AVCodecContext *c = open_decoder(s, 0);
     if (!c) return AVERROR_DECODER_NOT_FOUND;
+    only(m, si);
     double seconds = s->duration != AV_NOPTS_VALUE ? s->duration * av_q2d(s->time_base) : m->fmt->duration != AV_NOPTS_VALUE ? m->fmt->duration / (double)AV_TIME_BASE : 0;
     if (max_seconds > 0 && (seconds <= 0 || seconds > max_seconds)) seconds = max_seconds;
     if (seconds <= 0) seconds = 600;
