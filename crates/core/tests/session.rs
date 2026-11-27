@@ -244,3 +244,48 @@ fn windows_sharing_what_is_kept_see_each_others_files_and_settings() {
     assert_eq!(next.settings().theme, viewer_core::Theme::Light);
     std::fs::remove_dir_all(&dir).unwrap();
 }
+
+#[test]
+fn a_file_open_in_two_windows_is_read_once() {
+    let (mut first, _) = session();
+    let (mut second, _) = session();
+    second.share_kept(&first);
+    let file = root().join("samples/data.json");
+    first.open_path(file.clone());
+    settle(&mut first);
+    second.open_path(file.clone());
+    settle(&mut second);
+    let doc = |s: &Session| s.current().unwrap().doc.clone();
+    assert!(Arc::ptr_eq(&doc(&first), &doc(&second)), "one document for both windows");
+    assert_eq!(second.current().unwrap().loader, first.current().unwrap().loader);
+    assert_eq!(second.take_title().as_deref(), Some("data.json"));
+    let shared = doc(&first);
+    // Viewed another way, it's another document.
+    let (mut third, _) = session();
+    third.share_kept(&first);
+    third.open_path_as(file.clone(), Some("hex".into()));
+    settle(&mut third);
+    assert!(!Arc::ptr_eq(&doc(&third), &shared));
+    // Gone from every window, it's gone: the next window reads it afresh.
+    drop(first);
+    drop(second);
+    assert_eq!(Arc::strong_count(&shared), 1, "only this test holds it now");
+    drop(shared);
+    let (mut fourth, _) = session();
+    fourth.share_kept(&third);
+    fourth.open_path(file);
+    settle(&mut fourth);
+    assert_eq!(Arc::strong_count(&doc(&fourth)), 2, "a fresh document, this window's alone (and the clone here)");
+}
+
+#[test]
+fn windows_without_shared_kept_files_read_their_own() {
+    let (mut a, _) = session();
+    let (mut b, _) = session();
+    let file = root().join("samples/data.json");
+    a.open_path(file.clone());
+    settle(&mut a);
+    b.open_path(file);
+    settle(&mut b);
+    assert!(!Arc::ptr_eq(&a.current().unwrap().doc, &b.current().unwrap().doc));
+}

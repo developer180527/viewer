@@ -18,17 +18,19 @@
 mod loading;
 pub mod recents;
 pub mod settings;
+mod shared;
 
 use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use libfileparser_core::{Container, Role};
 use viewer_formats::registry;
 use viewer_model::{Document, FileSource, Unreadable};
 
 use loading::{Job, Loaded, Target};
+use shared::{Documents, Key};
 pub use recents::{Place, Recent, Recents};
 pub use settings::{Interface, Settings, SettingsFile, Theme};
 
@@ -121,12 +123,23 @@ pub enum ViewChoice {
     Loader(&'static str),
 }
 
+/// A closed window's documents may be shown nowhere now: the cache lets go of their
+/// sources at once, not at the next open.
+impl Drop for Session {
+    fn drop(&mut self) {
+        self.pages.clear();
+        self.docs.prune();
+    }
+}
+
 /// One level of navigation: a file, or an entry opened from a container.
 pub struct Page {
     /// Stable for the page's life: a shell's key for its view state.
     pub id: u64,
     pub src: FileSource,
-    pub doc: Document,
+    /// Shared with the pages of other windows showing the same file
+    /// ([`Session::share_kept`]): it's read and decoded once.
+    pub doc: Arc<Document>,
     /// The loader that read it.
     pub loader: &'static str,
     /// Loaders that failed before it, and why.
@@ -188,13 +201,15 @@ pub struct Session {
     next_grant: GrantId,
     released: Arc<Mutex<Vec<GrantId>>>,
     kept: Kept,
+    /// Documents shown by this session's pages and its sibling windows'.
+    docs: Documents,
     /// The shell's token for the root page being opened, for the recent list.
     pending_bookmark: Option<Vec<u8>>,
 }
 
 impl Session {
     pub fn new(hooks: Hooks) -> Self {
-        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default(), kept: Kept::default(), pending_bookmark: None }
+        Self { pages: Vec::new(), job: None, error: None, next_page_id: 0, pending: None, closed: Vec::new(), title: None, hooks, next_grant: 0, released: Arc::default(), kept: Kept::default(), docs: Documents::default(), pending_bookmark: None }
     }
 
     // ---------------------------------------------------------------- commands
@@ -207,8 +222,20 @@ impl Session {
 
     /// As [`Self::open_path`], read by the loader with id `view_as`, or shown as the
     /// document's facet of that name ("Stage", "Raw").
+    /// A file another window already shows isn't read again: its page shows the same
+    /// document.
     pub fn open_path_as(&mut self, path: PathBuf, view_as: Option<String>) {
-        self.job = Some(Job::open_path(path, view_as, &self.hooks));
+        let started = Instant::now();
+        let key = Key::of(&path, view_as.as_deref());
+        let name = path.file_name().map_or_else(|| path.display().to_string(), |n| n.to_string_lossy().into());
+        self.job = Some(match key.as_ref().and_then(|k| self.docs.get(k)) {
+            Some(hit) => Job::ready(name, hit, started, &self.hooks),
+            None => {
+                let mut job = Job::open_path(path, view_as, &self.hooks);
+                job.key = key;
+                job
+            }
+        });
         self.pending = None;
         self.pending_bookmark = None;
     }
@@ -275,6 +302,7 @@ impl Session {
         if let Some(page) = self.pages.pop() {
             self.closed.push(page.id);
         }
+        self.docs.prune();
         self.error = None;
         true
     }
@@ -285,6 +313,7 @@ impl Session {
         let Some(job) = &self.job else { return false };
         let Some(result) = job.poll() else { return false };
         let target = job.target;
+        let key = job.key.clone();
         self.job = None;
         // A root page owns what was picked for it; others read through the page they
         // were opened from (or replace).
@@ -297,6 +326,9 @@ impl Session {
         match result {
             Ok(Loaded { src, doc, loader, attempts, load_time }) => {
                 self.error = None;
+                if let Some(key) = key {
+                    self.docs.put(key, &src, &doc, loader, &attempts);
+                }
                 let page = Page { id: self.next_page_id, src, doc, loader, attempts, load_time, grant };
                 self.next_page_id += 1;
                 match target {
@@ -315,6 +347,8 @@ impl Session {
                     }
                 }
                 self.pages.push(page);
+                // What the replaced pages showed may be shown nowhere now.
+                self.docs.prune();
                 self.title = Some(self.pages.iter().map(|p| p.src.name()).collect::<Vec<_>>().join(" › "));
             }
             Err(e) => self.error = Some(e),
@@ -336,9 +370,11 @@ impl Session {
 
     /// Keeps the recent list and the settings with `other`'s (one app's windows, each
     /// its own session): each sees the files the others open and the settings they
-    /// change, and saving writes them once.
+    /// change, and saving writes them once. Documents are shared too: a file open in
+    /// one window opens in another without being read again.
     pub fn share_kept(&mut self, other: &Session) {
         self.kept = other.kept.clone();
+        self.docs = other.docs.clone();
     }
 
     /// Writes what changed: the recent list (and the places in it) and the settings.

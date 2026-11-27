@@ -2,12 +2,14 @@
 //! its own thread so the UI never blocks on decoding.
 
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use viewer_formats::registry;
 use viewer_model::{Document, FileSource};
 
+use crate::shared::{Hit, Key};
 use crate::{Hooks, Waker};
 
 /// Where a finished load goes in the navigation stack.
@@ -23,7 +25,8 @@ pub enum Target {
 
 pub(crate) struct Loaded {
     pub src: FileSource,
-    pub doc: Document,
+    /// Shared: by the pages of other windows showing the same file (crate::shared).
+    pub doc: Arc<Document>,
     pub loader: &'static str,
     pub attempts: Vec<(&'static str, String)>,
     pub load_time: Duration,
@@ -32,6 +35,8 @@ pub(crate) struct Loaded {
 pub(crate) struct Job {
     pub name: String,
     pub target: Target,
+    /// For a file read afresh: what to note its document under, for other windows.
+    pub key: Option<Key>,
     rx: Receiver<Result<Loaded, String>>,
 }
 
@@ -41,7 +46,7 @@ impl Job {
         if path.is_dir() {
             return Self::run(name, Target::Root, hooks, move |started| {
                 let doc = viewer_formats::open_folder(&path).map_err(|e| format!("{}: {e:#}", path.display()))?;
-                Ok(Loaded { src: FileSource::folder(&path), doc, loader: "folder", attempts: Vec::new(), load_time: started.elapsed() })
+                Ok(Loaded { src: FileSource::folder(&path), doc: Arc::new(doc), loader: "folder", attempts: Vec::new(), load_time: started.elapsed() })
             });
         }
         let trace = hooks.trace.clone();
@@ -52,6 +57,19 @@ impl Job {
             }
             Ok(src)
         })
+    }
+
+    /// A document another window already shows: nothing to read, but it comes in
+    /// through [`Self::poll`] like any load, so the session treats it the same.
+    pub fn ready(name: String, hit: Hit, started: Instant, hooks: &Hooks) -> Self {
+        let (tx, rx) = mpsc::channel();
+        let Hit { src, doc, loader, attempts } = hit;
+        let _ = tx.send(Ok(Loaded { src, doc, loader, attempts, load_time: started.elapsed() }));
+        if let Some(t) = &hooks.trace {
+            t(&format!("document shared with another window, read by '{loader}'"));
+        }
+        (hooks.wake)();
+        Self { name, target: Target::Root, key: None, rx }
     }
 
     pub fn spawn(
@@ -72,7 +90,7 @@ impl Job {
     pub fn facet(src: FileSource, facets: viewer_model::Facets, index: usize, loader: &'static str, hooks: &Hooks) -> Self {
         Self::run(src.name().into(), Target::ReplaceTop, hooks, move |started| {
             let doc = viewer_formats::show_facet(&facets, index, &src).map_err(|e| format!("{e:#}"))?;
-            Ok(Loaded { src, doc, loader, attempts: Vec::new(), load_time: started.elapsed() })
+            Ok(Loaded { src, doc: Arc::new(doc), loader, attempts: Vec::new(), load_time: started.elapsed() })
         })
     }
 
@@ -93,7 +111,7 @@ impl Job {
                 wake();
             })
             .expect("spawn loader thread");
-        Self { name, target, rx }
+        Self { name, target, key: None, rx }
     }
 
     /// `None` while still running.
@@ -128,5 +146,5 @@ fn load(src: FileSource, view_as: Option<&str>, started: Instant) -> Result<Load
         },
         None => registry().open(&src),
     };
-    Ok(Loaded { src, doc, loader, attempts, load_time: started.elapsed() })
+    Ok(Loaded { src, doc: Arc::new(doc), loader, attempts, load_time: started.elapsed() })
 }
