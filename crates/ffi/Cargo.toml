@@ -22,7 +22,7 @@ libfileparser-core = { workspace = true, features = ["mmap", "scene"] }
 uniffi = "0.32"
 # The Metal view: libviewer drawn into the shell's layer, as the libgui app draws it.
 viewer-surface.workspace = true
-libgui = { git = "https://github.com/developer180527/libgui.git", rev = "2709ad469b741647a693c6b0e5aefe56620c20a4" }
+libgui = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
 anyhow.workspace = true
 
 [[bin]]

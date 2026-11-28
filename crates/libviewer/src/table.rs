@@ -61,22 +61,20 @@ pub fn table(ui: &mut Ui, t: &dyn TableSource, view: &mut TableView) {
     table_found(ui, t, view, None);
 }
 
-/// The table's options: the current match's row shown selected.
-fn options(ui: &Ui, search: Option<&Search>) -> TableOptions {
-    let s = ui.theme.table;
-    TableOptions {
-        row_height: s.row_height,
-        header_height: s.header_height,
-        height: Size::Grow(1.0),
-        selected: search.and_then(Search::current_spot).map(|s| s.index() as usize),
-        striped: s.row_fill_alt.a > 0.0,
-        grid_lines: true,
-    }
+/// The table's options: the current match's row selected, and brought into view
+/// (with a row either side), its column too, when it has just moved.
+fn options(ui: &mut Ui, rows: usize, search: Option<&Search>) -> TableOptions {
+    let current = search.and_then(Search::current_spot);
+    let reveal = search.and_then(|s| s.reveal_row(ui, rows, 1, Spot::index));
+    let reveal_column = match (&current, reveal) {
+        (Some(Spot::Cell { column, .. }), Some(_)) => Some(*column),
+        _ => None,
+    };
+    TableOptions { selected: current.map(|s| s.index() as usize), reveal, reveal_column, ..TableOptions::themed(&ui.theme) }
 }
 
 /// Text of a matched cell: the current match's in the accent colour, the others in the
-/// warning one. (The table can't yet be scrolled to a row from code, so a match far
-/// off is shown selected when it's scrolled to.)
+/// warning one.
 fn found_label(ui: &mut Ui, text: &str, current: bool) {
     let pal = ui.theme.palette;
     let size = ui.theme.metrics.font_size;
@@ -96,8 +94,7 @@ fn cell_match(found: &Option<(std::sync::MutexGuard<'_, crate::find::Found>, Opt
 pub fn table_found(ui: &mut Ui, t: &dyn TableSource, view: &mut TableView, search: Option<&Search>) {
     let rows = t.info().rows.known() as usize;
     let cache = RefCell::new(RowCache { row: None });
-    let opts = options(ui, search);
-    let _ = search.and_then(Search::take_reveal);
+    let opts = options(ui, rows, search);
     let found = search.map(|s| (s.found(), s.current()));
     ui.table_with("table", &mut view.state, rows, opts, |ui, row, col| {
         let cells = cache.borrow_mut().get(row, || t.rows(row as u64..row as u64 + 1).ok().and_then(|mut r| r.pop()).unwrap_or_default());
@@ -124,8 +121,7 @@ pub fn container_found(ui: &mut Ui, c: &Arc<dyn Container>, view: &mut TableView
     let count = c.entry_count().known() as usize;
     let cache: RefCell<RowCache<Option<Entry>>> = RefCell::new(RowCache { row: None });
     let entry = |row: usize| cache.borrow_mut().get(row, || c.entries(row as u64..row as u64 + 1).ok().and_then(|mut e| e.pop()));
-    let opts = options(ui, search);
-    let _ = search.and_then(Search::take_reveal);
+    let opts = options(ui, count, search);
     let found = search.map(|s| (s.found(), s.current()));
     let r = ui.table_with("entries", &mut view.state, count, opts, |ui, row, col| {
         let Some(e) = entry(row) else { return };

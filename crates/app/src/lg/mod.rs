@@ -243,8 +243,11 @@ fn headless(path: &Path, size: (f32, f32), info: bool, find: Option<&str>, sessi
         app.find(text);
     }
     // Rects are a frame late (fit-to-window zoom, table widths), so settle first; a
-    // search is let finish after the first, which starts it.
-    for frame in 1..=4 {
+    // search is let finish after the first, which starts it, and its view is let go
+    // on while it asks for frames (bringing a match into view can take a few).
+    let last = 4;
+    let most = if find.is_some() { last + 30 } else { last };
+    for frame in 1..=most {
         if frame == 2 {
             let start = Instant::now();
             while app.searching() && start.elapsed() < Duration::from_secs(30) {
@@ -262,8 +265,9 @@ fn headless(path: &Path, size: (f32, f32), info: bool, find: Option<&str>, sessi
             built.as_secs_f64() * 1000.0,
             (t.elapsed() - built).as_secs_f64() * 1000.0
         ));
-        if frame == 4 {
+        if frame >= last && (frame == most || !ui.needs_frame(info.dt)) {
             crate::save_png(path, image.width, image.height, &image.data);
+            break;
         }
     }
     Ok(())

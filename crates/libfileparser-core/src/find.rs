@@ -125,8 +125,9 @@ pub enum Spot {
     Entry { index: u64 },
     /// A tree's node, and its ancestors from the top: every node to open to see it.
     Node { path: Vec<NodeId> },
-    /// Formatted text: block `block` of the flow.
-    Block { block: u64 },
+    /// Formatted text: the `nth` time (from 0) the query is in block `block`'s
+    /// text, as a reader sees it (marks dropped, a paragraph at a time).
+    Block { block: u64, nth: usize },
     /// A page, and the rectangles the match covers on it (one per line it runs over),
     /// in points as the page is shown.
     Page { page: u64, rects: Vec<PageRect> },
@@ -141,7 +142,7 @@ impl Spot {
             Spot::Cell { row, .. } => *row,
             Spot::Entry { index } => *index,
             Spot::Node { path } => path.last().map_or(0, |n| n.0),
-            Spot::Block { block } => *block,
+            Spot::Block { block, .. } => *block,
             Spot::Page { page, .. } => *page,
         }
     }
@@ -344,8 +345,7 @@ fn walk(src: &dyn TreeSource, parent: Option<NodeId>, query: &Query, cancel: &Ca
     Ok(true)
 }
 
-/// Formatted text, block by block: a block that holds the query once or more is one
-/// match.
+/// Formatted text, block by block, each time the query is in a block's text.
 pub fn flow(src: &dyn FlowSource, query: &Query, cancel: &Cancel, found: Found) -> Result<()> {
     let mut at = 0;
     loop {
@@ -361,8 +361,10 @@ pub fn flow(src: &dyn FlowSource, query: &Query, cancel: &Cancel, found: Found) 
         for (k, b) in blocks.iter().enumerate() {
             let mut text = String::new();
             plain(b, &mut text);
-            if query.is_in(&text) && !found(Spot::Block { block: at + k as u64 }) {
-                return Ok(());
+            for nth in 0..query.find_in(&text).len() {
+                if !found(Spot::Block { block: at + k as u64, nth }) {
+                    return Ok(());
+                }
             }
         }
         at += blocks.len() as u64;
@@ -486,10 +488,10 @@ mod tests {
 
         let flow = OwnedFlow::new(vec![
             Block::Heading { level: 1, text: vec![Inline::Text("Intro".into())] },
-            Block::Paragraph(vec![Inline::Strong(vec![Inline::Text("needle".into())])]),
+            Block::Paragraph(vec![Inline::Strong(vec![Inline::Text("needle".into())]), Inline::Text(", needle".into())]),
             Block::List { ordered: false, start: 1, items: vec![vec![Block::Paragraph(vec![Inline::Text("a NEEDLE".into())])]] },
         ]);
-        assert_eq!(all(&Content::Flow(Arc::new(flow)), "needle"), vec![Spot::Block { block: 1 }, Spot::Block { block: 2 }]);
+        assert_eq!(all(&Content::Flow(Arc::new(flow)), "needle"), vec![Spot::Block { block: 1, nth: 0 }, Spot::Block { block: 1, nth: 1 }, Spot::Block { block: 2, nth: 0 }]);
     }
 
     #[test]

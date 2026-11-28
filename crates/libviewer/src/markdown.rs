@@ -30,7 +30,8 @@ use libfileparser_core::{Block, FlowSource, Inline, Pixels, Raster};
 use libgui::*;
 
 use crate::Host;
-use crate::find::Search;
+use crate::find::{Search, mark_colors};
+use libfileparser_core::find::Query;
 
 /// An image's longest side once decoded for the page, in pixels: sharp at twice a
 /// wide column's width, and at most 16 MB of texture.
@@ -57,7 +58,15 @@ pub struct FlowView {
     started: bool,
     /// The first block of each chunk, for finding which chunk shows a block.
     firsts: Vec<u64>,
+    /// A chunk being brought into view, and frames left to keep at it: the list
+    /// brings the chunk in first, then the paragraph holding the match is scrolled
+    /// to (a chunk can be taller than the window), while heights settle.
+    revealing: Option<(usize, u8)>,
 }
+
+/// Frames spent bringing a match into view: the chunk's, then its paragraph's, as
+/// the heights around them are measured.
+const REVEAL_FRAMES: u8 = 6;
 
 /// More blocks than this show as the first part, with a note (they are all parsed up
 /// front).
@@ -134,7 +143,7 @@ impl FlowView {
             chunks.push(Chunk::new(&text, count));
         }
         refs.truncate(MAX_IMAGES);
-        Self { chunks, source: src, refs, textures: HashMap::new(), stream: None, started: false, firsts }
+        Self { chunks, source: src, refs, textures: HashMap::new(), stream: None, started: false, firsts, revealing: None }
     }
 
     /// The chunk that shows block `b`.
@@ -244,13 +253,30 @@ pub fn flow(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host) {
     flow_found(ui, v, host, None);
 }
 
-/// [`flow`], with the part holding `search`'s current match tinted and brought into
-/// view. (The Markdown widget can't mark words yet: a match is shown by its part, a
-/// few paragraphs.)
+/// [`flow`], with `search`'s matches marked and the part holding the current one
+/// brought into view.
+///
+/// The Markdown widget asks for each paragraph's marks as it draws, in reading order,
+/// so the current match is told apart by counting: it's the k-th match drawn in its
+/// part, k being how many matches the search found in that part before it.
 pub fn flow_found(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host, search: Option<&Search>) {
-    let reveal = search.and_then(Search::take_reveal).map(|s| v.chunk_of(s.index()));
-    let current = search.and_then(Search::current_spot).map(|s| v.chunk_of(s.index()));
-    let tint = Frame { fill: ui.theme.palette.warning.with_alpha(0.12), radius: 6.0, ..Frame::none() };
+    if let Some(s) = search.and_then(Search::take_reveal) {
+        v.revealing = Some((v.chunk_of(s.index()), REVEAL_FRAMES));
+    }
+    // The list brings the chunk in on the first frame; scrolling to the paragraph
+    // does the rest.
+    let reveal = v.revealing.filter(|&(_, left)| left == REVEAL_FRAMES).map(|(c, _)| c);
+    let target = v.revealing.map(|(c, _)| c);
+    let query = search.and_then(|s| Query::new(s.text()));
+    let (other, now) = mark_colors(&ui.theme.palette);
+    // The current match: its part, and how many matches come before it in that part.
+    let current = search.and_then(|s| {
+        let at = s.current()?;
+        let f = s.found();
+        let chunk = v.chunk_of(f.spots.get(at)?.index());
+        let first = v.firsts[chunk];
+        Some((chunk, at - f.spots.partition_point(|sp| sp.index() < first)))
+    });
     v.load_images(host);
     // The column's width, from the last frame's layout (the window's, at first): an
     // image wider than it is drawn at its width. The list's own id, as it makes it.
@@ -266,7 +292,6 @@ pub fn flow_found(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host, search: Op
         let k = (column.max(16.0) / natural.x).min(1.0);
         Some((tex, natural * k))
     };
-    let opts = libgui_markdown::MarkdownOptions { image: Some(&image), ..Default::default() };
     // The widget's own spacing between blocks, between chunks too.
     let size = ui.theme.metrics.font_size;
     let gap = (size * 0.75).round();
@@ -280,10 +305,31 @@ pub fn flow_found(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host, search: Op
         |i| chunks[i].height(column, size, gap),
         |ui, i| {
             let id = ui.make_id(("flow-chunk", i));
-            let frame = if current == Some(i) { tint } else { Frame::none() };
-            ui.container_id(id, Layout::column().width(Size::Grow(1.0)).height(Size::Fit), frame, |ui| {
-                chunks[i].md.show_with(ui, &format!("flow-{i}"), &opts);
-            });
+            // Matches drawn so far in this part.
+            let seen = std::cell::Cell::new(0usize);
+            let marks = |text: &str| -> Vec<(std::ops::Range<usize>, Color)> {
+                let Some(q) = &query else { return Vec::new() };
+                q.find_in(text)
+                    .into_iter()
+                    .map(|r| {
+                        let k = seen.replace(seen.get() + 1);
+                        (r, if current == Some((i, k)) { now } else { other })
+                    })
+                    .collect()
+            };
+            let opts = libgui_markdown::MarkdownOptions { image: Some(&image), marks: query.as_ref().map(|_| &marks as _), ..Default::default() };
+            let r = ui.container_id(id, Layout::column().width(Size::Grow(1.0)).height(Size::Fit), Frame::none(), |ui| chunks[i].md.show_with(ui, &format!("flow-{i}"), &opts));
+            // The paragraph holding the current match, scrolled to.
+            if let Some((c, k)) = current.filter(|&(c, _)| target == Some(c) && c == i) {
+                let _ = c;
+                let mut before = 0;
+                if let Some(&(para, _)) = r.marked.iter().find(|(_, n)| {
+                    before += n;
+                    before > k
+                }) {
+                    ui.scroll_to(para);
+                }
+            }
             built.push((i, id));
         },
     );
@@ -299,7 +345,8 @@ pub fn flow_found(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host, search: Op
             }
         }
     }
-    if changed {
+    v.revealing = v.revealing.and_then(|(c, left)| (left > 1).then_some((c, left - 1)));
+    if changed || v.revealing.is_some() {
         ui.request_repaint();
     }
 }
