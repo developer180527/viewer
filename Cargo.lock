@@ -2331,7 +2331,7 @@ dependencies = [
 [[package]]
 name = "libgui"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "bytemuck",
  "fontdue",
@@ -2343,7 +2343,7 @@ dependencies = [
 [[package]]
 name = "libgui_keymap"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "libgui",
 ]
@@ -2351,7 +2351,7 @@ dependencies = [
 [[package]]
 name = "libgui_markdown"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "libgui",
  "pulldown-cmark",
@@ -2360,7 +2360,7 @@ dependencies = [
 [[package]]
 name = "libgui_shaders"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "libgui",
  "naga",
@@ -2369,7 +2369,7 @@ dependencies = [
 [[package]]
 name = "libgui_soft"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "libgui",
 ]
@@ -2377,7 +2377,7 @@ dependencies = [
 [[package]]
 name = "libgui_sysfonts"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "fontdb",
  "libgui",
@@ -2387,7 +2387,7 @@ dependencies = [
 [[package]]
 name = "libgui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "bytemuck",
  "libgui",
@@ -2398,7 +2398,7 @@ dependencies = [
 [[package]]
 name = "libgui_winit"
 version = "0.1.0"
-source = "git+https://github.com/developer180527/libgui.git?rev=d63d8365e91e855e3389234de3471514629604b9#d63d8365e91e855e3389234de3471514629604b9"
+source = "git+https://github.com/developer180527/libgui.git?rev=017ac12d7a54a0f2c82ad1d146d79737efc88471#017ac12d7a54a0f2c82ad1d146d79737efc88471"
 dependencies = [
  "libgui",
  "winit",

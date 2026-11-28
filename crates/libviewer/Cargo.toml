@@ -11,10 +11,10 @@ libfileparser-core = { workspace = true, features = ["scene"] }
 rendererx = { workspace = true, features = ["controls"] }
 wgpu = { version = "30" }
 # Pinned to the same commit as the app (libgui is pre-1.0).
-libgui = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
-libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
+libgui = { git = "https://github.com/developer180527/libgui.git", rev = "017ac12d7a54a0f2c82ad1d146d79737efc88471" }
+libgui_markdown = { git = "https://github.com/developer180527/libgui.git", rev = "017ac12d7a54a0f2c82ad1d146d79737efc88471" }
 
 [dev-dependencies]
 # Golden renders of the views, drawn on the CPU as the app's screenshots are.
-libgui_soft = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
+libgui_soft = { git = "https://github.com/developer180527/libgui.git", rev = "017ac12d7a54a0f2c82ad1d146d79737efc88471" }
 image = { version = "0.25", default-features = false, features = ["png"] }

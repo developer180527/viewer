@@ -14,10 +14,10 @@ viewer-formats.workspace = true
 anyhow.workspace = true
 rendererx = { workspace = true, features = ["controls"] }
 # Pinned with the app's (crates/app/Cargo.toml says why).
-libgui = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
-libgui_keymap = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
-libgui_wgpu = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
-libgui_sysfonts = { git = "https://github.com/developer180527/libgui.git", rev = "d63d8365e91e855e3389234de3471514629604b9" }
+libgui = { git = "https://github.com/developer180527/libgui.git", rev = "017ac12d7a54a0f2c82ad1d146d79737efc88471" }
+libgui_keymap = { git = "https://github.com/developer180527/libgui.git", rev = "017ac12d7a54a0f2c82ad1d146d79737efc88471" }
+libgui_wgpu = { git = "https://github.com/developer180527/libgui.git", rev = "017ac12d7a54a0f2c82ad1d146d79737efc88471" }
+libgui_sysfonts = { git = "https://github.com/developer180527/libgui.git", rev = "017ac12d7a54a0f2c82ad1d146d79737efc88471" }
 wgpu = { version = "30" }
 pollster = { version = "1" }
 

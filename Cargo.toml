@@ -74,4 +74,3 @@ opt-level = 2
 # office_oxide 0.1.17 with Word 97–2003's list numbering kept (third_party/README.md).
 [patch.crates-io]
 office_oxide = { path = "third_party/office_oxide" }
-
