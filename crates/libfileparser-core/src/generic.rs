@@ -115,3 +115,47 @@ pub trait FacetProvider: Send + Sync {
     /// The content of `facet`, one of those [`Self::facets`] gave for `doc`.
     fn make(&self, doc: &crate::Document, facet: &FacetInfo, cx: &crate::ParseContext) -> Result<Content>;
 }
+
+/// The HEIF still-image brand (`heic`, `avif`, `mif1`…) an ISO media file's `ftyp`
+/// box names, as its major brand or a compatible one: a photo, though its container
+/// is MP4's, so a media reader leaves it to an image reader. `None` for anything
+/// else, and for image sequences that name no still brand.
+pub fn heif_brand(header: &[u8]) -> Option<&str> {
+    // Sequences alone (`hevc`, `avis`, `msf1`: bursts, animations) aren't listed.
+    const STILL: [&[u8; 4]; 7] = [b"heic", b"heix", b"heim", b"heis", b"mif1", b"mif2", b"avif"];
+    if header.len() < 16 || &header[4..8] != b"ftyp" {
+        return None;
+    }
+    let size = (u32::from_be_bytes([header[0], header[1], header[2], header[3]]) as usize).clamp(16, header.len());
+    // The major brand, then the compatible brands after the minor version.
+    std::iter::once(&header[8..12])
+        .chain(header[16..size].as_chunks::<4>().0.iter().map(|b| b.as_slice()))
+        .find_map(|b| STILL.iter().find(|s| s.as_slice() == b))
+        .and_then(|s| std::str::from_utf8(&s[..]).ok())
+}
+
+#[cfg(test)]
+mod heif_tests {
+    use super::heif_brand;
+
+    fn ftyp(major: &[u8; 4], compat: &[&[u8; 4]]) -> Vec<u8> {
+        let mut b = Vec::new();
+        b.extend_from_slice(&((16 + 4 * compat.len()) as u32).to_be_bytes());
+        b.extend_from_slice(b"ftyp");
+        b.extend_from_slice(major);
+        b.extend_from_slice(&[0; 4]);
+        compat.iter().for_each(|c| b.extend_from_slice(&c[..]));
+        b
+    }
+
+    #[test]
+    fn photos_but_not_videos() {
+        assert_eq!(heif_brand(&ftyp(b"heic", &[b"mif1", b"heic"])), Some("heic"));
+        assert_eq!(heif_brand(&ftyp(b"avif", &[b"avif", b"mif1", b"miaf"])), Some("avif"));
+        assert_eq!(heif_brand(&ftyp(b"mif1", &[b"mif1", b"heic"])), Some("mif1"));
+        assert_eq!(heif_brand(&ftyp(b"isom", &[b"isom", b"iso2", b"avc1", b"mp41"])), None);
+        assert_eq!(heif_brand(&ftyp(b"qt  ", &[b"qt  "])), None);
+        assert_eq!(heif_brand(&ftyp(b"avis", &[b"avis", b"msf1"])), None, "an animation");
+        assert_eq!(heif_brand(b"\x89PNG\r\n\x1a\n...."), None);
+    }
+}

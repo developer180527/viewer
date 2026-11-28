@@ -2216,6 +2216,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "libfileparser-imageio"
+version = "0.3.1"
+dependencies = [
+ "libfileparser-core",
+ "libfileparser-testkit",
+ "objc2-core-foundation",
+ "objc2-core-graphics",
+ "objc2-image-io",
+]
+
+[[package]]
 name = "libfileparser-images"
 version = "0.3.1"
 dependencies = [
@@ -3020,6 +3031,16 @@ dependencies = [
  "bitflags 2.13.2",
  "objc2 0.6.5",
  "objc2-core-foundation",
+]
+
+[[package]]
+name = "objc2-image-io"
+version = "0.3.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "32b0446e98cf4a784cc7a0177715ff317eeaa8463841c616cfc78aa4f953c4ea"
+dependencies = [
+ "objc2-core-foundation",
+ "objc2-core-graphics",
 ]
 
 [[package]]
@@ -5513,6 +5534,7 @@ dependencies = [
  "anyhow",
  "libfileparser",
  "libfileparser-core",
+ "libfileparser-imageio",
  "libfileparser-images",
  "libfileparser-pdfkit",
  "viewer-fmt-doc",

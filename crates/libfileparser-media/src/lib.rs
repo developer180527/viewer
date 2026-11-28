@@ -134,6 +134,11 @@ impl Reader for MediaReader {
         if header.is_empty() {
             return if MEDIA.matches_extension(name) { Detection::new(Confidence::Extension) } else { Detection::NONE };
         }
+        // A HEIC or AVIF photo is an image in MP4's container, which FFmpeg claims
+        // with full confidence: not even its extension makes it media.
+        if libfileparser_core::heif_brand(header).is_some() {
+            return Detection::NONE;
+        }
         // The name is left out: an extension alone isn't a signature.
         let (score, demuxer) = probe(header, "");
         if score >= 76 && !not_media(&demuxer) {
@@ -147,6 +152,10 @@ impl Reader for MediaReader {
 
     fn open(&self, src: &FileSource, cx: &ParseContext) -> Result<Document> {
         cx.cancel.check()?;
+        // FFmpeg would show one tile of a photo's grid, as a one-frame video.
+        if libfileparser_core::heif_brand(src.header()).is_some() {
+            return Err(ParseError::NotThisFormat);
+        }
         let m = Opened::new(src, cx)?;
         if not_media(&m.format_name()) {
             return Err(ParseError::NotThisFormat);

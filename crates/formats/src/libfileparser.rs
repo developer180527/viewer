@@ -83,7 +83,8 @@ fn starting_facet(doc: &libfileparser::Document, cx: &ParseContext) -> usize {
     }
 }
 
-/// Viewer's libfileparser: every category, with the PDF reader this platform uses.
+/// Viewer's libfileparser: every category, with the PDF reader this platform uses, and
+/// HEIC and AVIF through ImageIO on Apple platforms.
 /// libfileparser-docs bundles MuPDF only, so PDFKit is wired here, on iOS (no MuPDF
 /// there) and on macOS when `VIEWER_PDF_BACKEND=pdfkit`, for comparing the two
 /// (docs/design/pdf.md §4). Every open goes through this one library, so the reader
@@ -92,6 +93,9 @@ pub fn library() -> &'static libfileparser::Library {
     static LIBRARY: OnceLock<libfileparser::Library> = OnceLock::new();
     LIBRARY.get_or_init(|| {
         let lib = libfileparser::Library::new();
+        // HEIC and AVIF photos, decoded by the system.
+        #[cfg(target_vendor = "apple")]
+        let lib = lib.reader(&libfileparser_imageio::HeifReader);
         #[cfg(target_vendor = "apple")]
         if cfg!(target_os = "ios") || std::env::var("VIEWER_PDF_BACKEND").is_ok_and(|b| b.eq_ignore_ascii_case("pdfkit")) {
             return lib.replace("pdf", &libfileparser_pdfkit::PdfKitReader);

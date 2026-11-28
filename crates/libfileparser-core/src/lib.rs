@@ -35,7 +35,7 @@ pub use dependency::{Dependencies, Dependency, DependencyStatus, DependencyTable
 pub use document::{Document, FacetInfo, FormatInfo, Role, Warning};
 pub use flow::{Block, FlowSource, Inline, OwnedFlow};
 pub use error::{LimitExceeded, ParseError, Position, Result};
-pub use generic::{FacetProvider, FileParts, is_text};
+pub use generic::{FacetProvider, FileParts, heif_brand, is_text};
 pub use hooks::{AnyFiles, Cancel, FileResolver, FolderFiles, InlineSpawn, NoFiles, NoNotify, Notify, ParseContext, Spawn};
 pub use limits::{Limit, Limits};
 pub use pages::{MAX_RENDER_SIDE, PageRect, PageSize, PageSource, render_size};

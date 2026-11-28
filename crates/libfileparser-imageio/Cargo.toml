@@ -1,0 +1,17 @@
+[package]
+name = "libfileparser-imageio"
+description = "HEIF, HEIC and AVIF images through Apple's ImageIO: a Reader an app registers on Apple platforms."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+libfileparser-core.workspace = true
+
+[target.'cfg(target_vendor = "apple")'.dependencies]
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFData", "CFDictionary", "CFNumber", "CFString", "CFCGTypes"] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGContext", "CGBitmapContext", "CGColorSpace", "CGImage"] }
+objc2-image-io = { version = "0.3", default-features = false, features = ["std", "CGImageSource", "CGImageProperties", "objc2-core-graphics"] }
+
+[dev-dependencies]
+libfileparser-testkit.workspace = true

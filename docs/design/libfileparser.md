@@ -41,7 +41,7 @@ optional, beside them:
 | Crate | Reads | Primary facets | Uses |
 |---|---|---|---|
 | **`-core`** | — | Defines everything below | Nothing heavy |
-| **`-images`** | PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, SVG; later HEIC, RAW, JPEG XL, PSD | Raster | A leaf |
+| **`-images`** | PNG, JPEG, WebP, GIF, TIFF, BMP, PNM, EXR, HDR, SVG; later RAW, JPEG XL, PSD. ✅ HEIC, HEIF and AVIF (2026-11-28) through ImageIO on Apple platforms: `libfileparser-imageio`, a reader the app registers, as with `-pdfkit` (tile grids assembled, orientation applied, colour converted to sRGB; elsewhere they open as hex) | Raster | A leaf |
 | **`-3d`** | glTF/GLB/VRM, FBX, OBJ, STL, PLY, USD/USDA/USDC/USDZ, `.blend`; later CAD, point clouds | Scene | `-images`, ufbx, `usd-lite` |
 | **`-docs`** | ✅ PDF, XPS, DjVu; CBZ, CBT, CB7, CBR; EPUB, MOBI/AZW, FB2; DOCX, ODT, RTF, DOC, HWP/HWPX; PPTX, PPT, ODP (slides as headings with their notes); HTML, MHTML; Markdown, Org, reStructuredText, AsciiDoc, Djot, Typst, Textile; Jupyter notebooks; MediaWiki, Creole, DokuWiki, Jira, txt2tags, Muse, Haddock, XWiki, TikiWiki, TWiki, Zim, Vimwiki, Gemtext; man and mdoc, LaTeX, Texinfo, POD, Fountain; DocBook, TEI; EML, mbox, Outlook MSG (2026-11-19) | Pages, Flow | Feature `mupdf` (AGPL, off by default) is its only PDF and XPS engine; others are wired by the app (`-pdfkit`); office_oxide (MIT/Apache) for PowerPoint and Word 97–2003 |
 | **`-data`** | Data written as text: structured, config, delimited tables, schemas, RDF, graphs, geo, logs, science records, SQL, contacts and calendars, business messages, localization, feeds (§2.1) | Tree, Table | Pure Rust, a feature per family |

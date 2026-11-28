@@ -16,6 +16,8 @@ libfileparser-images.workspace = true
 # PDFKit for PDF on Apple platforms: the reader on iOS, where MuPDF's AGPL can't ship,
 # and on macOS when VIEWER_PDF_BACKEND=pdfkit (docs/design/pdf.md §2).
 libfileparser-pdfkit.workspace = true
+# HEIC and AVIF photos through ImageIO on Apple platforms (empty elsewhere).
+libfileparser-imageio.workspace = true
 
 # Audio and video through FFmpeg and dav1d on every platform it builds for (LGPL and
 # BSD, linked statically: the app's source is open, so users can relink against a

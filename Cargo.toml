@@ -50,6 +50,7 @@ mobi-lite = { path = "crates/mobi-lite" }
 libfileparser-mupdf = { path = "crates/libfileparser-mupdf" }
 libfileparser-media = { path = "crates/libfileparser-media" }
 libfileparser-pdfkit = { path = "crates/libfileparser-pdfkit" }
+libfileparser-imageio = { path = "crates/libfileparser-imageio" }
 libfileparser-docs = { path = "crates/libfileparser-docs" }
 libfileparser-sheets = { path = "crates/libfileparser-sheets" }
 

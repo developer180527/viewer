@@ -30,7 +30,11 @@ A closed-source build would need FFmpeg as dynamic frameworks instead.
 76 or more (a signature: `ftyp`, EBML, `RIFF…AVI`, `fLaC`, an MP3 frame) is
 `Confidence::Magic`. Demuxers that read what other readers own are excluded: still
 images (`image2`, `*_pipe`, `gif`, `apng`, `mjpeg`) and subtitles and lyrics (`srt`,
-`ass`, `webvtt`, `lrc`…). Otherwise the extension (MP4, MKV, WebM, MOV, AVI, MP3,
+`ass`, `webvtt`, `lrc`…), and HEIF and AVIF photos (`heif_brand` in `-core`: an
+`ftyp` naming `heic`, `mif1`, `avif`…), which use MP4's container and which FFmpeg
+claims with full confidence but reads as one tile of the photo's grid: the reader
+declines them whatever their name, even when asked by id (2026-11-28; they open with
+`libfileparser-imageio` on Apple platforms). Otherwise the extension (MP4, MKV, WebM, MOV, AVI, MP3,
 FLAC, WAV, Ogg, Opus, M4A and 50 more). A file opens as media only when it has audio,
 or video that isn't just a cover picture.
 
