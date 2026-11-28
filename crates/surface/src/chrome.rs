@@ -86,6 +86,67 @@ enum Command {
     Open,
     Back,
     ToggleInfo,
+    Find,
+    FindNext,
+    FindPrevious,
+}
+
+/// Find in file: what's typed, and the search of the current page for it.
+#[derive(Default)]
+struct FindBar {
+    text: String,
+    /// What it searches (the page, and the document it shows: View as changes it),
+    /// and the search; `None` until there's text, or when there's nothing to search.
+    search: Option<(SearchOf, Option<libviewer::Search>)>,
+    /// Put the keyboard in the field next frame.
+    focus: bool,
+}
+
+impl FindBar {
+    fn search(&self) -> Option<&libviewer::Search> {
+        self.search.as_ref().and_then(|(_, s)| s.as_ref())
+    }
+
+    fn search_mut(&mut self) -> Option<&mut libviewer::Search> {
+        self.search.as_mut().and_then(|(_, s)| s.as_mut())
+    }
+
+    /// "3 of 120", "No matches", "Searching…".
+    fn status(&self) -> String {
+        let Some((_, search)) = &self.search else { return String::new() };
+        let Some(s) = search else { return "Nothing to find here".into() };
+        let p = s.progress();
+        if let Some(e) = p.error {
+            return format!("Couldn't search: {e}");
+        }
+        let more = if p.capped { "+" } else if p.done { "" } else { "…" };
+        match (p.count, p.current) {
+            (0, _) if p.done => "No matches".into(),
+            (0, _) => "Searching…".into(),
+            (n, Some(c)) => format!("{} of {}{more}", group(c as u64 + 1), group(n as u64)),
+            (n, None) => format!("{}{more}", group(n as u64)),
+        }
+    }
+}
+
+/// A page and the document it shows.
+type SearchOf = (u64, usize);
+
+fn search_of(page: &viewer_core::Page) -> SearchOf {
+    (page.id, std::sync::Arc::as_ptr(&page.doc) as usize)
+}
+
+/// 12,345.
+fn group(n: u64) -> String {
+    let s = n.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
 }
 
 /// Below this height (a phone sideways) the status bar goes, to leave the content room.
@@ -119,6 +180,8 @@ pub struct ViewerApp {
     keys: Keymap<Command>,
     /// The page whose file was current when the recent list was last saved.
     saved_for: Option<u64>,
+    /// Find in file, while its bar is open.
+    find: Option<FindBar>,
 }
 
 impl ViewerApp {
@@ -140,6 +203,7 @@ impl ViewerApp {
             offers_native: false,
             keys: Self::keymap(),
             saved_for: None,
+            find: None,
         }
     }
 
@@ -177,7 +241,10 @@ impl ViewerApp {
         keys.bind(Chord::primary(Key::O), Command::Open)
             .bind(Chord::key(Key::ArrowLeft).alt(), Command::Back)
             .bind(Key::Backspace, Command::Back)
-            .bind(Key::I, Command::ToggleInfo);
+            .bind(Key::I, Command::ToggleInfo)
+            .bind(Chord::primary(Key::F), Command::Find)
+            .bind(Chord::primary(Key::G), Command::FindNext)
+            .bind(Chord::primary(Key::G).shift(), Command::FindPrevious);
         keys
     }
 
@@ -294,6 +361,7 @@ impl ViewerApp {
             } else {
                 self.toolbar(ui, class);
             }
+            self.find_bar(ui, tex, class);
             let panel = Frame { fill: pal.bg_panel, border: pal.border, border_width: 1.0, ..Frame::none() };
             let central = Id::from_name("central");
             ui.container(Layout::row().height(Size::Grow(1.0)), Frame::none(), |ui| {
@@ -345,6 +413,105 @@ impl ViewerApp {
         if self.keys.triggered(ui, Command::ToggleInfo) {
             self.show_info = !self.show_info;
         }
+        if self.keys.triggered(ui, Command::Find) {
+            self.open_find();
+        }
+        if self.keys.triggered(ui, Command::FindNext) {
+            self.find_step(true);
+        }
+        if self.keys.triggered(ui, Command::FindPrevious) {
+            self.find_step(false);
+        }
+    }
+
+    /// Finds `text` in the current page, as if typed in the find bar (for screenshots).
+    pub fn find(&mut self, text: &str) {
+        self.find = Some(FindBar { text: text.to_owned(), ..FindBar::default() });
+    }
+
+    /// A search is still finding matches.
+    pub fn searching(&self) -> bool {
+        self.find.as_ref().and_then(FindBar::search).is_some_and(|s| !s.progress().done)
+    }
+
+    /// Opens the find bar (or puts the keyboard back in it), its text selected.
+    fn open_find(&mut self) {
+        if self.session.current().is_some() {
+            self.find.get_or_insert_with(FindBar::default).focus = true;
+        }
+    }
+
+    /// The next match (or the previous one).
+    fn find_step(&mut self, forward: bool) {
+        if let Some(s) = self.find.as_mut().and_then(FindBar::search_mut) {
+            if forward { s.next() } else { s.previous() }
+        }
+    }
+
+    /// The find bar, under the toolbar while it's open: the field, where the search
+    /// is, previous and next, Done. A search follows the field and the current page.
+    fn find_bar(&mut self, ui: &mut Ui, tex: &mut dyn Host, class: WidthClass) {
+        // Hidden while nothing is open (a file still loading).
+        let Some(page) = self.session.current() else { return };
+        let of = search_of(page);
+        let Some(bar) = self.find.as_mut() else { return };
+        let pal = ui.theme.palette;
+        let layout = Layout::row().padding(Insets::xy(8.0, 6.0)).gap(8.0).align(Align::Start, Align::Center);
+        let frame = Frame { fill: pal.bg_panel, border: pal.border, border_width: 1.0, ..Frame::none() };
+        let mut close = false;
+        let mut step = None;
+        ui.container_id(Id::from_name("find bar"), layout, frame, |ui| {
+            // On a phone the field takes what the buttons leave.
+            let compact = class == WidthClass::Compact;
+            let width = if compact { Size::Grow(1.0) } else { Size::Fixed(260.0) };
+            let field = ui.container(Layout::row().width(width), Frame::none(), |ui| ui.text_input("find", &mut bar.text, "Find in file"));
+            if std::mem::take(&mut bar.focus) {
+                ui.set_focus(Some(field.response.id));
+            }
+            if field.submitted {
+                // Enter is the next match, Shift-Enter the one before; the keyboard
+                // stays in the field.
+                step = Some(!ui.input().modifiers.shift);
+                ui.set_focus(Some(field.response.id));
+            }
+            if field.cancelled {
+                close = true;
+            }
+            ui.label_muted(&bar.status());
+            if !compact {
+                ui.flex();
+            }
+            let found = bar.search().is_some_and(|s| s.progress().count > 0);
+            ui.enabled(found, |ui| {
+                if ui.button("‹").clicked {
+                    step = Some(false);
+                }
+                if ui.button("›").clicked {
+                    step = Some(true);
+                }
+            });
+            if ui.button("Done").clicked {
+                close = true;
+            }
+        });
+        if close {
+            self.find = None;
+            return;
+        }
+        // A new search when the text or the page changes; none for no text.
+        let stale = match &bar.search {
+            Some((was, s)) => *was != of || s.as_ref().map_or("", |s| s.text()) != bar.text,
+            None => !bar.text.is_empty(),
+        };
+        if stale {
+            bar.search = (!bar.text.is_empty()).then(|| (of, views::search(page, &bar.text, tex.waker())));
+        }
+        if let Some(s) = bar.search_mut() {
+            s.poll();
+            if let Some(forward) = step {
+                if forward { s.next() } else { s.previous() }
+            }
+        }
     }
 
     /// The compact top bar: Back, the current file's name, and a "···" menu with
@@ -370,6 +537,9 @@ impl ViewerApp {
                 recent = self.recent_menu(ui, true);
                 settings = self.settings_menu(ui, true);
                 if self.session.current().is_some() {
+                    if ui.menu_item("Find in file").clicked {
+                        self.open_find();
+                    }
                     if ui.menu_item(if self.show_info { "Hide info" } else { "Show info" }).clicked {
                         self.show_info = !self.show_info;
                     }
@@ -501,6 +671,13 @@ impl ViewerApp {
                     self.session.view(choices[selected].0);
                 }
             }
+            if self.session.current().is_some() {
+                let find = ui.button("Find");
+                ui.tooltip(&find, &format!("Find in file ({})", self.keys.label(Command::Find)));
+                if find.clicked {
+                    self.open_find();
+                }
+            }
             ui.container(Layout::row().width(Size::Fit), Frame::none(), |ui| {
                 let info = ui.toggle("Info", &mut self.show_info);
                 ui.tooltip(&info, "I");
@@ -578,7 +755,10 @@ impl ViewerApp {
         let dark = self.dark;
         let page = self.session.current();
         match page.and_then(|p| self.views.get_mut(&p.id).map(|v| (p, v))) {
-            Some((page, view)) => views::show(ui, page, view, tex, dark),
+            Some((page, view)) => {
+                let search = self.find.as_ref().and_then(|f| f.search.as_ref()).filter(|(of, _)| *of == search_of(page)).and_then(|(_, s)| s.as_ref());
+                views::show(ui, page, view, tex, search, dark)
+            }
             None => {
                 let mut open = None;
                 if !self.loading() {

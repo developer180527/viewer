@@ -194,3 +194,38 @@ int vw_metadata(vw_doc *d, const char *key, char *buf, size_t len) {
 	}
 	return r;
 }
+
+/* Where `needle` (UTF-8) is on page `index`, ignoring case: up to `max` rectangles,
+ * x0, y0, x1, y1 in points from the page's top left as shown, into `rects`, and
+ * `starts[i]` 1 where a match begins (one match runs over a rectangle a line).
+ * Returns how many rectangles, or -1. */
+int vw_find(vw_doc *d, int index, const char *needle, float *rects, int *starts, int max, char *err, size_t err_len) {
+	fz_stext_page *text = NULL;
+	fz_quad *quads = NULL;
+	int n = 0;
+	fz_var(text);
+	fz_var(quads);
+	fz_try(d->ctx) {
+		fz_rect b;
+		fz_display_list *list = page_list(d, index, &b);
+		text = fz_new_stext_page_from_display_list(d->ctx, list, NULL);
+		quads = fz_malloc_array(d->ctx, max, fz_quad);
+		n = fz_search_stext_page(d->ctx, text, needle, starts, quads, max);
+		for (int i = 0; i < n; i++) {
+			fz_rect r = fz_rect_from_quad(quads[i]);
+			rects[i * 4 + 0] = r.x0 - b.x0;
+			rects[i * 4 + 1] = r.y0 - b.y0;
+			rects[i * 4 + 2] = r.x1 - b.x0;
+			rects[i * 4 + 3] = r.y1 - b.y0;
+		}
+	}
+	fz_always(d->ctx) {
+		fz_free(d->ctx, quads);
+		fz_drop_stext_page(d->ctx, text);
+	}
+	fz_catch(d->ctx) {
+		caught(d->ctx, err, err_len);
+		return -1;
+	}
+	return n;
+}

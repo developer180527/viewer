@@ -30,6 +30,8 @@ OPTIONS:
     --benchmark             Trace startup and exit after the first frame showing the file
     --screenshot <PNG>      Save a screenshot once the file is shown, then exit
     --info                  Open with the info panel shown
+    --find <TEXT>           Find TEXT in the file, as typed in the find bar (with
+                            --screenshot: shot once every match is found)
     --size <WxH>            Window size in points for --screenshot (default 1100x760)
     --data-dir <DIR>        Keep the recent files and settings in DIR (with
                             --screenshot, which otherwise uses none)
@@ -46,6 +48,7 @@ pub struct Args {
     pub screenshot: Option<PathBuf>,
     pub size: Option<(f32, f32)>,
     pub info: bool,
+    pub find: Option<String>,
     pub data_dir: Option<PathBuf>,
 }
 
@@ -82,6 +85,9 @@ fn parse_args() -> Result<Args, String> {
                 args.screenshot = Some(it.next().ok_or("--screenshot needs a path")?.into());
             }
             Some("--info") => args.info = true,
+            Some("--find") => {
+                args.find = Some(it.next().ok_or("--find needs text")?.to_string_lossy().into_owned());
+            }
             Some("--data-dir") => {
                 args.data_dir = Some(it.next().ok_or("--data-dir needs a folder")?.into());
             }

@@ -9,7 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// (name, sample, width × height in points, info panel open)
+/// (name, sample, width × height in points, info panel open). A name starting
+/// `find-` also finds [`FIND`] in the sample.
 const CASES: &[(&str, &str, (u32, u32), bool)] = &[
     ("text-compact", "main.rs", (390, 844), false),
     ("text-medium", "main.rs", (800, 600), false),
@@ -22,9 +23,14 @@ const CASES: &[(&str, &str, (u32, u32), bool)] = &[
     ("tree-medium", "data.json", (800, 600), false),
     ("image-compact", "gradient.png", (390, 844), false),
     ("archive-expanded", "bundle.zip", (1100, 760), false),
+    ("find-compact", "main.rs", (390, 844), false),
+    ("find-expanded", "main.rs", (1100, 760), false),
     // No file: the empty screen, with recent files from a data folder (see `shoot`).
     ("recent-expanded", "", (1100, 760), false),
 ];
+
+/// What the `find-` cases look for.
+const FIND: &str = "fn";
 
 /// A pixel counts as changed when a channel moves more than this: font
 /// rasterisation and blending round slightly differently across CPUs.
@@ -37,12 +43,15 @@ fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-fn shoot(sample: &str, (w, h): (u32, u32), info: bool, out: &Path) -> image::RgbaImage {
+fn shoot(sample: &str, (w, h): (u32, u32), info: bool, find: bool, out: &Path) -> image::RgbaImage {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_viewer"));
     // From the workspace root, so the info panel's path reads the same everywhere.
     cmd.current_dir(root()).arg("--screenshot").arg(out).arg("--size").arg(format!("{w}x{h}"));
     if info {
         cmd.arg("--info");
+    }
+    if find {
+        cmd.arg("--find").arg(FIND);
     }
     if sample.is_empty() {
         // Three recent files, and no reopening at launch.
@@ -92,7 +101,7 @@ fn goldens() {
                 let (dir, out) = (&dir, &out);
                 s.spawn(move || -> Option<String> {
                     let got_path = out.join(format!("{name}.png"));
-                    let got = shoot(sample, size, info, &got_path);
+                    let got = shoot(sample, size, info, name.starts_with("find-"), &got_path);
                     let golden_path = dir.join(format!("{name}.png"));
                     if update {
                         std::fs::copy(&got_path, &golden_path).unwrap();

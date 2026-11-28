@@ -40,7 +40,7 @@ use viewer_surface::{Gpu, GpuUploader, Rx, TexturePool, Wake, open_device};
 
 pub fn run(title: String, args: Args, session: viewer_core::Session) -> anyhow::Result<()> {
     if let Some(path) = &args.screenshot {
-        return headless(path, args.size.unwrap_or(SIZE), args.info, session);
+        return headless(path, args.size.unwrap_or(SIZE), args.info, args.find.as_deref(), session);
     }
     let el = EventLoop::<()>::with_user_event().build().context("creating the event loop")?;
     startup::mark("event loop created");
@@ -62,6 +62,9 @@ pub fn run(title: String, args: Args, session: viewer_core::Session) -> anyhow::
     });
     let mut app = ViewerApp::new(session, true);
     app.show_info = args.info;
+    if let Some(text) = &args.find {
+        app.find(text);
+    }
     let mut host = Host { title, app: Some(app), benchmark: args.benchmark, gpu: Some(gpu), ..Default::default() };
     el.run_app(&mut host).context("running the event loop")?;
     host.error.map_or(Ok(()), Err)
@@ -220,7 +223,7 @@ const HEADLESS_SCALE: f32 = 2.0;
 
 /// `--screenshot`: wait for the file, draw it on the CPU at 2× and save the
 /// pixels. No window, no GPU, so it runs anywhere (CI included).
-fn headless(path: &Path, size: (f32, f32), info: bool, session: viewer_core::Session) -> anyhow::Result<()> {
+fn headless(path: &Path, size: (f32, f32), info: bool, find: Option<&str>, session: viewer_core::Session) -> anyhow::Result<()> {
     let mut app = ViewerApp::new(session, true);
     app.show_info = info;
     app.stable = true;
@@ -236,8 +239,18 @@ fn headless(path: &Path, size: (f32, f32), info: bool, session: viewer_core::Ses
     let scale = HEADLESS_SCALE;
     let info = FrameInfo { screen_size: Vec2::new(size.0, size.1), scale, dt: 1.0 / 60.0 };
     let (w, h) = ((size.0 * scale) as u32, (size.1 * scale) as u32);
-    // Rects are a frame late (fit-to-window zoom, table widths), so settle first.
-    for frame in 1..=3 {
+    if let Some(text) = find {
+        app.find(text);
+    }
+    // Rects are a frame late (fit-to-window zoom, table widths), so settle first; a
+    // search is let finish after the first, which starts it.
+    for frame in 1..=4 {
+        if frame == 2 {
+            let start = Instant::now();
+            while app.searching() && start.elapsed() < Duration::from_secs(30) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        }
         let t = Instant::now();
         ui.begin_frame(info);
         app.ui(&mut ui, &mut tex);
@@ -249,7 +262,7 @@ fn headless(path: &Path, size: (f32, f32), info: bool, session: viewer_core::Ses
             built.as_secs_f64() * 1000.0,
             (t.elapsed() - built).as_secs_f64() * 1000.0
         ));
-        if frame == 3 {
+        if frame == 4 {
             crate::save_png(path, image.width, image.height, &image.data);
         }
     }

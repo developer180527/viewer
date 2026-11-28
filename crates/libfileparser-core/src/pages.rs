@@ -71,6 +71,13 @@ pub trait PageSource: Send + Sync {
     fn render(&self, index: u64, scale: f32, region: PageRect, rgba: &mut Vec<u8>, cancel: &Cancel) -> Result<(u32, u32)>;
     /// The engine's name, for an info panel ("MuPDF", "PDFKit").
     fn engine(&self) -> &str;
+    /// Where `needle` is on page `index`, ignoring case: each match as the rectangles
+    /// it covers (one per line it runs over), in points as the page is shown. Empty
+    /// from an engine that can't search, and for a page with no text (a scan).
+    fn find_text(&self, index: u64, needle: &str) -> Result<Vec<Vec<PageRect>>> {
+        let _ = (index, needle);
+        Ok(Vec::new())
+    }
     fn memory(&self) -> MemoryUse {
         MemoryUse::default()
     }

@@ -30,6 +30,7 @@ use libfileparser_core::{Block, FlowSource, Inline, Pixels, Raster};
 use libgui::*;
 
 use crate::Host;
+use crate::find::Search;
 
 /// An image's longest side once decoded for the page, in pixels: sharp at twice a
 /// wide column's width, and at most 16 MB of texture.
@@ -54,6 +55,8 @@ pub struct FlowView {
     /// Decoded images from the thread, once it's started; `None` when it's done.
     stream: Option<Receiver<Decoded>>,
     started: bool,
+    /// The first block of each chunk, for finding which chunk shows a block.
+    firsts: Vec<u64>,
 }
 
 /// More blocks than this show as the first part, with a note (they are all parsed up
@@ -101,10 +104,14 @@ impl FlowView {
             Err(e) => (Vec::new(), Some(e.to_string())),
         };
         let mut chunks = Vec::new();
+        let mut firsts = Vec::new();
         let mut text = String::new();
         let mut count = 0;
         let mut refs = Vec::new();
-        for b in &blocks {
+        for (i, b) in blocks.iter().enumerate() {
+            if count == 0 {
+                firsts.push(i as u64);
+            }
             block(b, "", &mut text, &mut refs);
             count += 1;
             if text.len() >= CHUNK_CHARS {
@@ -112,6 +119,9 @@ impl FlowView {
                 text.clear();
                 count = 0;
             }
+        }
+        if firsts.len() == chunks.len() {
+            firsts.push(blocks.len() as u64);
         }
         if let Some(e) = error {
             text.push_str(&format!("*This document couldn't be read: {e}*\n"));
@@ -124,7 +134,12 @@ impl FlowView {
             chunks.push(Chunk::new(&text, count));
         }
         refs.truncate(MAX_IMAGES);
-        Self { chunks, source: src, refs, textures: HashMap::new(), stream: None, started: false }
+        Self { chunks, source: src, refs, textures: HashMap::new(), stream: None, started: false, firsts }
+    }
+
+    /// The chunk that shows block `b`.
+    fn chunk_of(&self, b: u64) -> usize {
+        self.firsts.partition_point(|&f| f <= b).saturating_sub(1).min(self.chunks.len().saturating_sub(1))
     }
 
     /// GPU textures this view owns, to free when its page closes.
@@ -226,6 +241,16 @@ const PADDING: Insets = Insets::xy(24.0, 16.0);
 
 /// Draws formatted text, in a scroll, with its images as they arrive.
 pub fn flow(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host) {
+    flow_found(ui, v, host, None);
+}
+
+/// [`flow`], with the part holding `search`'s current match tinted and brought into
+/// view. (The Markdown widget can't mark words yet: a match is shown by its part, a
+/// few paragraphs.)
+pub fn flow_found(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host, search: Option<&Search>) {
+    let reveal = search.and_then(Search::take_reveal).map(|s| v.chunk_of(s.index()));
+    let current = search.and_then(Search::current_spot).map(|s| v.chunk_of(s.index()));
+    let tint = Frame { fill: ui.theme.palette.warning.with_alpha(0.12), radius: 6.0, ..Frame::none() };
     v.load_images(host);
     // The column's width, from the last frame's layout (the window's, at first): an
     // image wider than it is drawn at its width. The list's own id, as it makes it.
@@ -245,7 +270,7 @@ pub fn flow(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host) {
     // The widget's own spacing between blocks, between chunks too.
     let size = ui.theme.metrics.font_size;
     let gap = (size * 0.75).round();
-    let list_opts = ListOptions { gap, padding: PADDING, overscan: 1, ..ListOptions::new(0.0) };
+    let list_opts = ListOptions { gap, padding: PADDING, overscan: 1, reveal, ..ListOptions::new(0.0) };
     let chunks = &v.chunks;
     let mut built = Vec::new();
     ui.virtual_rows_with(
@@ -255,7 +280,8 @@ pub fn flow(ui: &mut Ui, v: &mut FlowView, host: &mut dyn Host) {
         |i| chunks[i].height(column, size, gap),
         |ui, i| {
             let id = ui.make_id(("flow-chunk", i));
-            ui.container_id(id, Layout::column().width(Size::Grow(1.0)).height(Size::Fit), Frame::none(), |ui| {
+            let frame = if current == Some(i) { tint } else { Frame::none() };
+            ui.container_id(id, Layout::column().width(Size::Grow(1.0)).height(Size::Fit), frame, |ui| {
                 chunks[i].md.show_with(ui, &format!("flow-{i}"), &opts);
             });
             built.push((i, id));

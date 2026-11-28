@@ -13,6 +13,9 @@
 //! | `Pages` | [`pages`]: every page in a vertical scroll, rendered in tiles on a thread, only where the window looks |
 //! | `Flow` | [`flow`]: formatted text (headings, lists, tables, code…) |
 //!
+//! [`Search`] finds text in any of them on a thread of its own; [`show_found`] draws
+//! a content with its matches marked and the current one in view.
+//!
 //! [`View`] keeps one content's view state between frames (scroll, what's expanded,
 //! the GPU tiles) and [`show`] draws any content with the right view. The app is the
 //! [`Host`]: where images go, how 3D is drawn, how the window is woken.
@@ -25,6 +28,7 @@
 //! }
 //! ```
 
+mod find;
 mod host;
 mod markdown;
 mod pages;
@@ -39,16 +43,17 @@ use std::sync::Arc;
 use libfileparser_core::{Container, Content};
 use libgui::{TextureId, Ui};
 
+pub use find::{MAX_MATCHES, Progress, Search};
 pub use host::{Frame3d, Host, ImageOpener, SceneGpu, TileUploader, Uploaded, Waker, draw_scene};
-pub use markdown::{FlowView, flow};
-pub use pages::{PagesPlace, PagesView, pages};
+pub use markdown::{FlowView, flow, flow_found};
+pub use pages::{PagesPlace, PagesView, pages, pages_found};
 pub use raster::{RasterView, raster};
 pub use scene::{SceneView, scene};
-pub use table::{TableView, container, human_bytes, table};
+pub use table::{TableView, container, container_found, human_bytes, table, table_found};
 #[allow(deprecated)]
 pub use text::hex;
-pub use text::{Highlights, hex_file, text};
-pub use tree::{TreeView, tree};
+pub use text::{Highlights, hex_file, hex_file_found, text, text_found};
+pub use tree::{TreeView, tree, tree_found};
 
 /// Something a view asks the app to do.
 #[non_exhaustive]
@@ -121,16 +126,22 @@ impl View {
 /// Draws `content` with its view. `view` must be [`View::new`] of the same content.
 /// `highlights` colours text.
 pub fn show(ui: &mut Ui, content: &Content, view: &mut View, host: &mut dyn Host, highlights: Option<&dyn Highlights>, dark: bool) -> Option<Action> {
+    show_found(ui, content, view, host, highlights, None, dark)
+}
+
+/// [`show`], with `search`'s matches marked and its current one brought into view.
+/// `search` must be of this content ([`Search::content`]).
+pub fn show_found(ui: &mut Ui, content: &Content, view: &mut View, host: &mut dyn Host, highlights: Option<&dyn Highlights>, search: Option<&Search>, dark: bool) -> Option<Action> {
     match (content, view) {
-        (Content::Text(t), _) => text(ui, t.as_ref(), highlights, dark),
-        (Content::Hex(src), _) => hex_file(ui, src),
-        (Content::Tree(t), View::Tree(v)) => tree(ui, t.as_ref(), v),
-        (Content::Table(t), View::Table(v)) => table(ui, t.as_ref(), v),
-        (Content::Container(c), View::Table(v)) => return container(ui, c, v).map(|i| Action::OpenEntry(c.clone(), i)),
+        (Content::Text(t), _) => text_found(ui, t.as_ref(), highlights, search, dark),
+        (Content::Hex(src), _) => hex_file_found(ui, src, search),
+        (Content::Tree(t), View::Tree(v)) => tree_found(ui, t.as_ref(), v, search),
+        (Content::Table(t), View::Table(v)) => table_found(ui, t.as_ref(), v, search),
+        (Content::Container(c), View::Table(v)) => return container_found(ui, c, v, search).map(|i| Action::OpenEntry(c.clone(), i)),
         (Content::Raster(r), View::Raster(v)) => raster(ui, r, v, host),
         (Content::Scene(s), View::Scene(v)) => scene(ui, s, v, host),
-        (Content::Pages(p), View::Pages(v)) => pages(ui, p, v, host),
-        (Content::Flow(_), View::Flow(v)) => flow(ui, v, host),
+        (Content::Pages(p), View::Pages(v)) => pages_found(ui, p, v, host, search),
+        (Content::Flow(_), View::Flow(v)) => flow_found(ui, v, host, search),
         (Content::Scene(_) | Content::Raster(_) | Content::Tree(_) | Content::Table(_) | Content::Container(_) | Content::Pages(_) | Content::Flow(_), _) => {
             ui.label_muted("This view was made for other content.");
         }

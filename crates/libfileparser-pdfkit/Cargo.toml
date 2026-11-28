@@ -11,10 +11,10 @@ libfileparser-docs.workspace = true
 
 [target.'cfg(target_vendor = "apple")'.dependencies]
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString", "NSDictionary", "NSGeometry", "objc2-core-foundation"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSData", "NSString", "NSDictionary", "NSGeometry", "NSArray", "NSRange", "NSEnumerator", "objc2-core-foundation"] }
 objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFCGTypes"] }
 objc2-core-graphics = { version = "0.3", default-features = false, features = ["std", "CGContext", "CGBitmapContext", "CGColorSpace", "CGImage", "objc2"] }
-objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "PDFPage", "objc2-core-graphics"] }
+objc2-pdf-kit = { version = "0.3", default-features = false, features = ["std", "PDFDocument", "PDFPage", "PDFSelection", "objc2-core-graphics"] }
 
 [dev-dependencies]
 libfileparser-testkit.workspace = true

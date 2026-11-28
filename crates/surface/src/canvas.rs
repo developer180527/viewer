@@ -298,7 +298,7 @@ impl Canvas {
             let mut action = None;
             ui.container_id(Id::from_name("canvas"), Layout::column(), Frame { fill, clip: true, ..Frame::none() }, |ui| {
                 if let Some((page, view)) = current.and_then(|p| views.get_mut(&p.id).map(|v| (p, v))) {
-                    action = views::show(ui, page, view, gpu, dark);
+                    action = views::show(ui, page, view, gpu, None, dark);
                 }
             });
             action

@@ -18,7 +18,7 @@ use objc2::AnyThread;
 use objc2::rc::{Retained, autoreleasepool};
 use objc2_core_foundation::{CGPoint, CGRect, CGSize};
 use objc2_core_graphics::{CGBitmapContextCreate, CGColorSpace, CGContext, CGImageAlphaInfo};
-use objc2_foundation::NSData;
+use objc2_foundation::{NSData, NSRange};
 use objc2_pdf_kit::{PDFDisplayBox, PDFDocument, PDFPage};
 use libfileparser_core::{Cancel, Detection, Document, FileSource, PageRect, PageSize, PageSource, ParseContext, ParseError, Reader, ReaderInfo, Result, render_size};
 
@@ -56,6 +56,9 @@ pub struct PdfKitDocument {
     pages: u64,
     sizes: Vec<OnceLock<std::result::Result<PageSize, String>>>,
 }
+
+/// Matches kept per page; a page with more shows the first.
+const MAX_PAGE_HITS: usize = 2000;
 
 /// The box pages are shown and measured by, as viewers do.
 const BOX: PDFDisplayBox = PDFDisplayBox::CropBox;
@@ -107,9 +110,56 @@ impl PdfKitDocument {
     }
 }
 
+/// `r`, in a page's box `b` (y up) turned by `rot`, as a rectangle on the page as
+/// shown (y down, from its top left).
+fn shown_rect(r: CGRect, b: CGRect, rot: i64) -> PageRect {
+    let (w, h) = (b.size.width, b.size.height);
+    let corner = |u: f64, v: f64| -> (f64, f64) {
+        let (u, v) = (u - b.origin.x, v - b.origin.y);
+        match rot {
+            90 => (v, u),
+            180 => (w - u, v),
+            270 => (h - v, w - u),
+            _ => (u, h - v),
+        }
+    };
+    let (x0, y0) = corner(r.origin.x, r.origin.y);
+    let (x1, y1) = corner(r.origin.x + r.size.width, r.origin.y + r.size.height);
+    PageRect::new(x0.min(x1) as f32, y0.min(y1) as f32, (x1 - x0).abs() as f32, (y1 - y0).abs() as f32)
+}
+
 impl PageSource for PdfKitDocument {
     fn engine(&self) -> &str {
         "PDFKit"
+    }
+
+    fn find_text(&self, index: u64, needle: &str) -> Result<Vec<Vec<PageRect>>> {
+        self.check(index)?;
+        let Some(query) = libfileparser_core::find::Query::new(needle) else { return Ok(Vec::new()) };
+        let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
+        autoreleasepool(|_| {
+            let page = Self::page(&doc.0, index)?;
+            // SAFETY: plain getters on a valid page.
+            let Some(text) = (unsafe { page.string() }) else { return Ok(Vec::new()) };
+            let text = text.to_string();
+            let (b, rot) = Self::geometry(&page);
+            let mut hits = Vec::new();
+            // UTF-16 offsets, as NSString counts, walking the text once.
+            let (mut at, mut units) = (0, 0);
+            for range in query.find_in(&text).into_iter().take(MAX_PAGE_HITS) {
+                units += text[at..range.start].encode_utf16().count();
+                let len = text[range.clone()].encode_utf16().count();
+                at = range.start;
+                // SAFETY: the range is within the page's string.
+                let Some(sel) = (unsafe { page.selectionForRange(NSRange::new(units, len)) }) else { continue };
+                let lines = unsafe { sel.selectionsByLine() };
+                let rects: Vec<PageRect> = lines.iter().map(|l| shown_rect(unsafe { l.boundsForPage(&page) }, b, rot)).filter(|r| r.width > 0.0 && r.height > 0.0).collect();
+                if !rects.is_empty() {
+                    hits.push(rects);
+                }
+            }
+            Ok(hits)
+        })
     }
 
     fn page_count(&self) -> u64 {

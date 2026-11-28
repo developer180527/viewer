@@ -17,6 +17,7 @@ mod dependency;
 mod document;
 mod error;
 mod flow;
+pub mod find;
 mod generic;
 mod hooks;
 mod limits;

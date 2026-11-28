@@ -5,8 +5,11 @@
 use std::cell::RefCell;
 use std::sync::Arc;
 
+use libfileparser_core::find::Spot;
 use libfileparser_core::{Cell, Container, Entry, EntryKind, TableSource};
 use libgui::*;
+
+use crate::find::{Search, matching};
 
 /// A table's state: its columns (made when it is first shown) and libgui's.
 pub struct TableView {
@@ -55,15 +58,57 @@ impl<T: Clone> RowCache<T> {
 }
 
 pub fn table(ui: &mut Ui, t: &dyn TableSource, view: &mut TableView) {
+    table_found(ui, t, view, None);
+}
+
+/// The table's options: the current match's row shown selected.
+fn options(ui: &Ui, search: Option<&Search>) -> TableOptions {
+    let s = ui.theme.table;
+    TableOptions {
+        row_height: s.row_height,
+        header_height: s.header_height,
+        height: Size::Grow(1.0),
+        selected: search.and_then(Search::current_spot).map(|s| s.index() as usize),
+        striped: s.row_fill_alt.a > 0.0,
+        grid_lines: true,
+    }
+}
+
+/// Text of a matched cell: the current match's in the accent colour, the others in the
+/// warning one. (The table can't yet be scrolled to a row from code, so a match far
+/// off is shown selected when it's scrolled to.)
+fn found_label(ui: &mut Ui, text: &str, current: bool) {
+    let pal = ui.theme.palette;
+    let size = ui.theme.metrics.font_size;
+    ui.text_with(text, size, if current { pal.accent } else { pal.warning });
+}
+
+/// Whether the cell at `row`, `col` is a match, and the current one.
+fn cell_match(found: &Option<(std::sync::MutexGuard<'_, crate::find::Found>, Option<usize>)>, row: usize, col: Option<usize>) -> Option<bool> {
+    let (f, at) = found.as_ref()?;
+    matching(&f.spots, row as u64, Spot::index).find(|&k| match &f.spots[k] {
+        Spot::Cell { column, .. } => Some(*column) == col,
+        _ => true,
+    }).map(|k| *at == Some(k))
+}
+
+/// [`table`], with `search`'s matching cells marked and the current one's row selected.
+pub fn table_found(ui: &mut Ui, t: &dyn TableSource, view: &mut TableView, search: Option<&Search>) {
     let rows = t.info().rows.known() as usize;
     let cache = RefCell::new(RowCache { row: None });
-    ui.table("table", &mut view.state, rows, |ui, row, col| {
+    let opts = options(ui, search);
+    let _ = search.and_then(Search::take_reveal);
+    let found = search.map(|s| (s.found(), s.current()));
+    ui.table_with("table", &mut view.state, rows, opts, |ui, row, col| {
         let cells = cache.borrow_mut().get(row, || t.rows(row as u64..row as u64 + 1).ok().and_then(|mut r| r.pop()).unwrap_or_default());
         match cells.get(col) {
             // Null isn't empty text: shown, but quietly.
             Some(Cell::Null) => ui.label_muted("null"),
             Some(Cell::Error(why)) => ui.label_muted(&format!("⚠ {why}")),
-            Some(cell) => ui.label(&cell.to_string()),
+            Some(cell) => match cell_match(&found, row, Some(col)) {
+                Some(current) => found_label(ui, &cell.to_string(), current),
+                None => ui.label(&cell.to_string()),
+            },
             None => {}
         }
     });
@@ -71,13 +116,23 @@ pub fn table(ui: &mut Ui, t: &dyn TableSource, view: &mut TableView) {
 
 /// A container's entries; returns the one clicked, to open as a file of its own.
 pub fn container(ui: &mut Ui, c: &Arc<dyn Container>, view: &mut TableView) -> Option<u64> {
+    container_found(ui, c, view, None)
+}
+
+/// [`container`], with `search`'s matching entries marked and the current one selected.
+pub fn container_found(ui: &mut Ui, c: &Arc<dyn Container>, view: &mut TableView, search: Option<&Search>) -> Option<u64> {
     let count = c.entry_count().known() as usize;
     let cache: RefCell<RowCache<Option<Entry>>> = RefCell::new(RowCache { row: None });
     let entry = |row: usize| cache.borrow_mut().get(row, || c.entries(row as u64..row as u64 + 1).ok().and_then(|mut e| e.pop()));
-    let r = ui.table("entries", &mut view.state, count, |ui, row, col| {
+    let opts = options(ui, search);
+    let _ = search.and_then(Search::take_reveal);
+    let found = search.map(|s| (s.found(), s.current()));
+    let r = ui.table_with("entries", &mut view.state, count, opts, |ui, row, col| {
         let Some(e) = entry(row) else { return };
         let folder = e.kind == EntryKind::Folder;
+        let hit = if col == 0 { cell_match(&found, row, None) } else { None };
         match col {
+            0 if hit.is_some() => found_label(ui, &if folder { format!("{}/", e.path.trim_end_matches('/')) } else { e.path.clone() }, hit == Some(true)),
             0 if folder => ui.label_muted(&format!("{}/", e.path.trim_end_matches('/'))),
             0 => ui.label(&e.path),
             1 if !folder => ui.label(&human_bytes(e.size)),

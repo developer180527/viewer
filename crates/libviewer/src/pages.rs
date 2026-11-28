@@ -24,8 +24,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
+use libfileparser_core::find::Spot;
 use libfileparser_core::{Cancel, PageRect, PageSize, PageSource};
 use libgui::*;
+
+use crate::find::{Search, mark_colors, matching};
 
 use crate::{Host, TileUploader, Uploaded, Waker};
 
@@ -632,6 +635,12 @@ struct Placed {
 /// Draws pages: a vertical scroll of every page, rendered in tiles on a thread of the
 /// view's own, only where the window looks.
 pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mut dyn Host) {
+    pages_found(ui, src, st, tex, None);
+}
+
+/// [`pages`], with `search`'s matches boxed on the pages and the current one scrolled
+/// to.
+pub fn pages_found(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &mut dyn Host, search: Option<&Search>) {
     if st.worker.is_none() && st.error.is_none() {
         st.start(src, tex.waker(), tex.tile_uploader());
     }
@@ -757,6 +766,22 @@ pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &m
         st.set_top_y(top + d.y, zoom, rect.h);
         let content_w = st.layout.widest * zoom + 2.0 * MARGIN;
         st.x = (st.x + d.x).clamp(0.0, (content_w - rect.w).max(0.0));
+
+        // The current match moved: its first line a third of the way down, and in view
+        // across when the pages are wider than the window.
+        if let Some(Spot::Page { page, rects }) = search.and_then(Search::take_reveal)
+            && let Some(r) = rects.first()
+            && (page as usize) < n
+        {
+            let i = page as usize;
+            st.fling = Vec2::ZERO;
+            st.set_top_y(st.layout.top(i, zoom) + r.y * zoom - rect.h / 3.0, zoom, rect.h);
+            let left = pad(rect.w, st.layout.widest, zoom) + (st.layout.widest - st.layout.sizes[i].width) * zoom / 2.0;
+            let (x0, x1) = (left + r.x * zoom, left + (r.x + r.width) * zoom);
+            if x0 < st.x + MARGIN || x1 > st.x + rect.w - MARGIN {
+                st.x = (x0 - rect.w / 3.0).clamp(0.0, (content_w - rect.w).max(0.0));
+            }
+        }
     }
 
     // The pages in the window, placed.
@@ -873,6 +898,25 @@ pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &m
     }
     draws.sort_by_key(|d| d.2);
 
+    // Matches on the pages in view, boxed.
+    let mut marks: Vec<(Rect, Color)> = Vec::new();
+    if let Some(search) = search {
+        let (other, now) = mark_colors(&ui.theme.palette);
+        let at = search.current();
+        let f = search.found();
+        for p in &placed {
+            for k in matching(&f.spots, p.index as u64, Spot::index) {
+                if let Spot::Page { rects, .. } = &f.spots[k] {
+                    let fill = if at == Some(k) { now } else { other };
+                    for r in rects {
+                        let pad = 1.0;
+                        marks.push((Rect::new(p.rect.x + r.x * zoom - pad, p.rect.y + r.y * zoom - pad, r.width * zoom + 2.0 * pad, r.height * zoom + 2.0 * pad), fill));
+                    }
+                }
+            }
+        }
+    }
+
     let current = placed.iter().min_by(|a, b| (a.rect.center().y - middle.y).abs().total_cmp(&(b.rect.center().y - middle.y).abs())).map_or(0, |p| p.index);
     let label = format!("{} / {n}  ·  {:.0}%", current + 1, zoom * 100.0);
     let pages: Vec<(Rect, Option<String>)> = placed.iter().map(|p| (p.rect, st.errors.get(&p.index).cloned())).collect();
@@ -889,6 +933,9 @@ pub fn pages(ui: &mut Ui, src: &Arc<dyn PageSource>, st: &mut PagesView, tex: &m
             }
             for (r, t, _) in &draws {
                 p.image_with_alpha(*r, *t, [0.0, 0.0, 1.0, 1.0], 0.0, Color::WHITE, ImageAlpha::Straight);
+            }
+            for (r, fill) in &marks {
+                p.rect(*r, *fill, 2.0);
             }
             let size = p.measure(12.0, label.as_str());
             let chip = Rect::new(area.x + 10.0, area.y + area.h - size.y - 20.0, size.x + 24.0, size.y + 10.0);

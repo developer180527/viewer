@@ -28,7 +28,11 @@ unsafe extern "C" {
     fn vw_page_bounds(d: *mut VwDoc, index: c_int, out: *mut f32, err: *mut c_char, err_len: usize) -> c_int;
     fn vw_render(d: *mut VwDoc, index: c_int, scale: f32, x: f32, y: f32, w: c_int, h: c_int, rgba: *mut u8, err: *mut c_char, err_len: usize) -> c_int;
     fn vw_metadata(d: *mut VwDoc, key: *const c_char, buf: *mut c_char, len: usize) -> c_int;
+    fn vw_find(d: *mut VwDoc, index: c_int, needle: *const c_char, rects: *mut f32, starts: *mut c_int, max: c_int, err: *mut c_char, err_len: usize) -> c_int;
 }
+
+/// Rectangles of matches kept per page; a page with more shows the first.
+const MAX_PAGE_RECTS: usize = 2000;
 
 /// MuPDF's cache of decoded fonts and images, per document.
 const STORE_BYTES: usize = 64 << 20;
@@ -189,6 +193,32 @@ impl PageSource for MupdfDocument {
 
     fn engine(&self) -> &str {
         "MuPDF"
+    }
+
+    fn find_text(&self, index: u64, needle: &str) -> Result<Vec<Vec<PageRect>>> {
+        self.check(index)?;
+        let Ok(needle) = CString::new(needle) else { return Ok(Vec::new()) };
+        let mut rects = vec![0f32; MAX_PAGE_RECTS * 4];
+        let mut starts = vec![0 as c_int; MAX_PAGE_RECTS];
+        let doc = self.doc.lock().unwrap_or_else(|e| e.into_inner());
+        let mut err = ErrBuf::new();
+        let (e, el) = err.ptr();
+        // SAFETY: `doc` is open and locked; `rects` and `starts` hold MAX_PAGE_RECTS.
+        let n = unsafe { vw_find(doc.0, index as c_int, needle.as_ptr(), rects.as_mut_ptr(), starts.as_mut_ptr(), MAX_PAGE_RECTS as c_int, e, el) };
+        drop(doc);
+        if n < 0 {
+            return Err(ParseError::corrupt(format!("page {}: {}", index + 1, err.message())));
+        }
+        let mut hits: Vec<Vec<PageRect>> = Vec::new();
+        for i in 0..n as usize {
+            let [x0, y0, x1, y1] = [rects[i * 4], rects[i * 4 + 1], rects[i * 4 + 2], rects[i * 4 + 3]];
+            let r = PageRect::new(x0, y0, x1 - x0, y1 - y0);
+            match hits.last_mut() {
+                Some(hit) if starts[i] == 0 => hit.push(r),
+                _ => hits.push(vec![r]),
+            }
+        }
+        Ok(hits)
     }
 
     fn memory(&self) -> MemoryUse {

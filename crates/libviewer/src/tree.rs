@@ -5,8 +5,11 @@ use std::borrow::Cow;
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+use libfileparser_core::find::Spot;
 use libfileparser_core::{NodeId, TreeSource, ValueKind};
 use libgui::*;
+
+use crate::find::Search;
 
 /// Children shown per node; past this the rest are summarised in one row.
 const MAX_CHILDREN: u64 = 10_000;
@@ -38,6 +41,8 @@ impl Default for TreeView {
 struct Lazy<'a> {
     source: &'a dyn TreeSource,
     read: &'a RefCell<Read>,
+    /// The current match, shown selected.
+    current: Option<u64>,
 }
 
 impl Lazy<'_> {
@@ -93,10 +98,29 @@ impl libgui::TreeSource for Lazy<'_> {
     fn label(&self, node: u64) -> Cow<'_, str> {
         Cow::Owned(self.read.borrow().nodes.get(&node).map_or_else(String::new, |(l, _)| l.clone()))
     }
+
+    fn selected(&self, node: u64) -> bool {
+        self.current == Some(node)
+    }
 }
 
 pub fn tree(ui: &mut Ui, source: &dyn TreeSource, view: &mut TreeView) {
-    let lazy = Lazy { source, read: &view.read };
+    tree_found(ui, source, view, None);
+}
+
+/// [`tree`], with `search`'s current match shown selected, its branches opened to it.
+pub fn tree_found(ui: &mut Ui, source: &dyn TreeSource, view: &mut TreeView, search: Option<&Search>) {
+    if let Some(Spot::Node { path }) = search.and_then(Search::take_reveal)
+        && let Some(&last) = path.last()
+    {
+        let parent = |k: u64| path.iter().position(|n| n.0 == k).and_then(|i| i.checked_sub(1)).map(|i| path[i].0);
+        view.state.reveal(last.0, parent);
+    }
+    let current = match search.and_then(Search::current_spot) {
+        Some(Spot::Node { path }) => path.last().map(|n| n.0),
+        _ => None,
+    };
+    let lazy = Lazy { source, read: &view.read, current };
     ui.container(Layout::column().padding(Insets::xy(8.0, 4.0)), Frame::none(), |ui| {
         ui.tree_view("tree", &mut view.state, &lazy);
     });

@@ -55,3 +55,18 @@ fn the_reader_conforms_and_shapes_documents_as_docs_does() {
     let doc = libfileparser_core::Reader::open(&PdfKitReader, &FileSource::from_bytes("t.pdf", pdf(&[(10.0, 10.0, 0)])), &libfileparser_core::ParseContext::new()).unwrap();
     assert!(doc.metadata().iter().any(|(k, v)| k == "Rendered by" && v == "PDFKit"));
 }
+
+#[test]
+fn text_is_found_where_it_is_drawn() {
+    use libfileparser_testkit::pdf::pdf_text;
+    let doc = open(pdf_text(300.0, 200.0, &[&[(20.0, 40.0, 20.0, "Hello world"), (20.0, 100.0, 10.0, "say HELLO")], &[(50.0, 150.0, 12.0, "nothing here")]]));
+    let hits = doc.find_text(0, "hello").unwrap();
+    assert_eq!(hits.len(), 2, "{hits:?}");
+    let r = hits[0][0];
+    // "Hello" at 20 pt, its baseline 40 pt down: the box sits above it, from x = 20.
+    assert!((r.x - 20.0).abs() < 1.0 && r.y > 15.0 && r.y < 30.0 && r.y + r.height > 38.0 && r.y + r.height < 46.0, "{r:?}");
+    assert!(r.width > 30.0 && r.width < 60.0, "{r:?}");
+    assert!(hits[1][0].y > 85.0 && hits[1][0].y < 100.0, "{:?}", hits[1]);
+    assert!(doc.find_text(1, "hello").unwrap().is_empty());
+    assert!(doc.find_text(9, "hello").is_err());
+}
